@@ -1,0 +1,6 @@
+{
+  "name": "TeleVault",
+  "description": "Unlimited personal cloud storage backend powered by your private Telegram account with chunked uploads, checksum validation, and folder management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
