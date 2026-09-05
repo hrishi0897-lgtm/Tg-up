@@ -36,6 +36,7 @@ class TelegramRepository(
     private val captionMetaAdapter = moshi.adapter(ChunkCaptionMeta::class.java)
 
     companion object {
+        const val BASE_API_URL = "https://api.telegram.org"
         const val MANIFEST_PREFIX = "TELEVAULT_MANIFEST_V1:"
         const val CHUNK_CAPTION_PREFIX = "TELEVAULT_CHUNK:"
         private const val MAX_RETRIES = 3
@@ -48,6 +49,17 @@ class TelegramRepository(
                 .writeTimeout(120, TimeUnit.SECONDS)
                 .retryOnConnectionFailure(true)
                 .build()
+        }
+
+        internal fun botUrl(token: String, method: String): String {
+            val cleanToken = token.trim()
+            return "$BASE_API_URL/bot$cleanToken/$method"
+        }
+
+        internal fun fileDownloadUrl(token: String, filePath: String): String {
+            val cleanToken = token.trim()
+            val cleanPath = filePath.trim().removePrefix("/")
+            return "$BASE_API_URL/file/bot$cleanToken/$cleanPath"
         }
     }
 
@@ -134,7 +146,7 @@ class TelegramRepository(
      */
     suspend fun validateCredentials(token: String, chatId: String): Result<TelegramUser> {
         val userResult = executeWithRetry("Validating Bot Token") {
-            api.getMe(token)
+            api.getMe(botUrl(token, "getMe"))
         }
         if (userResult.isFailure) {
             return userResult
@@ -160,7 +172,7 @@ class TelegramRepository(
     suspend fun sendTestMessage(token: String, chatId: String): Result<TelegramMessage> {
         val text = "🔒 *TeleVault Connected*\nYour personal cloud storage is ready. Encrypted chunked transfers will be securely archived in this chat."
         return executeWithRetry("Sending Test Message") {
-            api.sendMessage(token, chatId, text)
+            api.sendMessage(botUrl(token, "sendMessage"), chatId, text)
         }
     }
 
@@ -196,7 +208,7 @@ class TelegramRepository(
         val captionBody = captionJson.toRequestBody("text/plain".toMediaTypeOrNull())
 
         return executeWithRetry("Uploading chunk ${chunkIndex + 1}/$totalChunks") {
-            api.sendDocument(token, chatIdBody, captionBody, multipart)
+            api.sendDocument(botUrl(token, "sendDocument"), chatIdBody, captionBody, multipart)
         }
     }
 
@@ -210,7 +222,7 @@ class TelegramRepository(
     ): Result<TelegramMessage> {
         val manifestJson = MANIFEST_PREFIX + manifestAdapter.toJson(manifest)
         return executeWithRetry("Uploading file manifest") {
-            api.sendMessage(token, chatId, manifestJson)
+            api.sendMessage(botUrl(token, "sendMessage"), chatId, manifestJson)
         }
     }
 
@@ -219,7 +231,7 @@ class TelegramRepository(
      */
     suspend fun getFileInfo(token: String, fileId: String): Result<TelegramRemoteFile> {
         return executeWithRetry("Fetching file metadata") {
-            api.getFile(token, fileId)
+            api.getFile(botUrl(token, "getFile"), fileId)
         }
     }
 
@@ -233,7 +245,7 @@ class TelegramRepository(
         while (attempt < MAX_RETRIES) {
             attempt++
             try {
-                val response = api.downloadFile(token, filePath)
+                val response = api.downloadFile(fileDownloadUrl(token, filePath))
                 if (response.isSuccessful && response.body() != null) {
                     return Result.success(response.body()!!)
                 }
@@ -264,7 +276,7 @@ class TelegramRepository(
      */
     suspend fun deleteMessage(token: String, chatId: String, messageId: Long): Result<Boolean> {
         return executeWithRetry("Deleting remote message") {
-            api.deleteMessage(token, chatId, messageId)
+            api.deleteMessage(botUrl(token, "deleteMessage"), chatId, messageId)
         }
     }
 
@@ -273,7 +285,7 @@ class TelegramRepository(
      */
     suspend fun fetchManifestsFromChat(token: String): Result<List<FileManifest>> {
         return try {
-            val response = api.getUpdates(token, offset = null, limit = 100)
+            val response = api.getUpdates(botUrl(token, "getUpdates"), offset = null, limit = 100)
             if (response.isSuccessful && response.body()?.ok == true) {
                 val updates = response.body()?.result ?: emptyList()
                 val manifests = mutableListOf<FileManifest>()
