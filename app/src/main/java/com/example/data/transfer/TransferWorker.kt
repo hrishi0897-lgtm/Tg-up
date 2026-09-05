@@ -59,19 +59,23 @@ class TransferWorker(
         private const val WORK_NAME = "televault_network_resume_work"
 
         fun scheduleNetworkResume(context: Context) {
-            val constraints = Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
+            try {
+                val constraints = Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
 
-            val request = OneTimeWorkRequestBuilder<TransferWorker>()
-                .setConstraints(constraints)
-                .build()
+                val request = OneTimeWorkRequestBuilder<TransferWorker>()
+                    .setConstraints(constraints)
+                    .build()
 
-            WorkManager.getInstance(context).enqueueUniqueWork(
-                WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
-                request
-            )
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    WORK_NAME,
+                    ExistingWorkPolicy.REPLACE,
+                    request
+                )
+            } catch (e: Exception) {
+                android.util.Log.w("TransferWorker", "Could not initialize WorkManager: ${e.message}")
+            }
         }
     }
 }
