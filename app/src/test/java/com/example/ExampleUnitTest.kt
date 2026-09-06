@@ -67,28 +67,29 @@ class ExampleUnitTest {
   }
 
   @Test
-  fun chunkSplitting_for55MBFile_generatesTwoBalanced27MBChunksUnderLimit() {
+  fun chunkSplitting_for55MBFile_with18MBChunkSize_generatesSafeChunksUnder20MBDownloadLimit() {
     val fileSizeBytes = 57_776_537L // ~55.1 MB
-    val maxChunkSize = 45L * 1024 * 1024 // 45 MB user setting
+    val maxChunkSize = com.example.data.transfer.TransferManager.CHUNK_SIZE_BYTES // 18 MB global safe limit
     val totalChunks = ((fileSizeBytes + maxChunkSize - 1) / maxChunkSize).toInt().coerceAtLeast(1)
     val targetChunkSize = ((fileSizeBytes + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
 
-    assertEquals(2, totalChunks)
-    assertEquals(28_888_269L, targetChunkSize) // ~27.55 MB
+    // With 18MB max chunk size, a 55.1MB file is split into 4 balanced chunks of ~13.77MB each
+    assertEquals(4, totalChunks)
+    assertEquals(14_444_135L, targetChunkSize) // ~13.77 MB
 
-    val chunk0Offset = 0 * targetChunkSize
-    val chunk0Length = minOf(targetChunkSize, fileSizeBytes - chunk0Offset)
+    val telegram20MbDownloadLimit = 20L * 1024 * 1024 // 20 MB Telegram getFile limit
+    val safe18MbLimit = 18L * 1024 * 1024 // 18 MB headroom limit
 
-    val chunk1Offset = 1 * targetChunkSize
-    val chunk1Length = minOf(targetChunkSize, fileSizeBytes - chunk1Offset)
+    var accumulatedBytes = 0L
+    for (i in 0 until totalChunks) {
+      val offset = i * targetChunkSize
+      val length = minOf(targetChunkSize, fileSizeBytes - offset)
+      accumulatedBytes += length
+      assertTrue("Chunk $i ($length bytes) must be <= 18MB safe limit", length <= safe18MbLimit)
+      assertTrue("Chunk $i ($length bytes) must be <= 20MB Telegram getFile download limit", length <= telegram20MbDownloadLimit)
+    }
 
-    assertEquals(28_888_269L, chunk0Length)
-    assertEquals(28_888_268L, chunk1Length)
-    assertEquals(fileSizeBytes, chunk0Length + chunk1Length)
-
-    val telegram50MbLimit = 50L * 1024 * 1024
-    assertTrue("Chunk 0 must be <= 50MB", chunk0Length <= telegram50MbLimit)
-    assertTrue("Chunk 1 must be <= 50MB", chunk1Length <= telegram50MbLimit)
+    assertEquals(fileSizeBytes, accumulatedBytes)
   }
 
   @Test

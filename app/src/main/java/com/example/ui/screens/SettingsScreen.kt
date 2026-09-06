@@ -188,7 +188,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Telegram limits standard bot downloads to 20MB per file via getFile. Slices are capped at 19MB so files can be seamlessly uploaded and re-downloaded.",
+                        text = "Telegram limits standard bot downloads to 20MB per file via getFile. Slices are capped at 18MB to leave safe headroom for multipart overhead so files can be seamlessly uploaded and re-downloaded.",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         lineHeight = 16.sp
@@ -200,7 +200,7 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf(10, 15, 19).forEach { size ->
+                        listOf(10, 14, 18).forEach { size ->
                             FilterChip(
                                 selected = chunkSizeMb == size,
                                 onClick = { onChunkSizeChange(size) },

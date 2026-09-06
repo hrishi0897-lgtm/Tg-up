@@ -150,6 +150,15 @@ class TransferManager private constructor(
     }
 
     companion object {
+        /**
+         * Global chunk size constant: 18MB.
+         * Telegram Bot API limits sendDocument (upload) to 50MB, but getFile (download) is strictly
+         * capped at 20MB. 18MB leaves comfortable headroom for multipart overhead and network transport.
+         */
+        const val CHUNK_SIZE_BYTES: Long = 18 * 1024 * 1024L
+        const val DEFAULT_CHUNK_SIZE_MB = 18
+        const val MAX_SAFE_CHUNK_SIZE_MB = 18
+
         @Volatile
         private var INSTANCE: TransferManager? = null
 
@@ -189,9 +198,9 @@ class TransferManager private constructor(
                 val actualSize = stagingFile.length()
                 val overallChecksum = ChecksumUtil.computeSha256(stagingFile)
 
-                // 3. Compute chunk count based on user-configured max chunk size (capped at 48MB)
+                // 3. Compute chunk count based on global safe chunk size CHUNK_SIZE_BYTES (18MB)
                 // and compute balanced target chunk size (total file size divided by number of chunks)
-                val maxChunkSize = credentialsManager.getChunkSizeMb() * 1024 * 1024L
+                val maxChunkSize = minOf(credentialsManager.getChunkSizeMb() * 1024 * 1024L, CHUNK_SIZE_BYTES)
                 val totalChunks = ((actualSize + maxChunkSize - 1) / maxChunkSize).toInt().coerceAtLeast(1)
                 val targetChunkSize = ((actualSize + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
 
@@ -836,7 +845,7 @@ class TransferManager private constructor(
                             // Check chunk size against Telegram Bot API's 20MB getFile download limit
                             val telegramGetFileLimit = 20 * 1024 * 1024L
                             if (chunk.size > telegramGetFileLimit) {
-                                val limitMsg = "Telegram Bot API getFile download limit is 20MB. Chunk size of ${ChecksumUtil.formatBytes(chunk.size)} exceeds Telegram's limit. Chunks must be <= 19MB to download with a bot."
+                                val limitMsg = "Telegram Bot API getFile download limit is 20MB. Chunk size of ${ChecksumUtil.formatBytes(chunk.size)} exceeds Telegram's limit. Chunks must be <= 18MB to download with a bot. Please delete and re-upload this file."
                                 Log.e("TransferManager", "[Download getFile] $limitMsg")
                                 throw IllegalStateException(limitMsg)
                             }
@@ -1207,8 +1216,8 @@ class TransferManager private constructor(
         val actualSize = stagingFile.length()
         val overallChecksum = ChecksumUtil.computeSha256(stagingFile)
 
-        // 5. Calculate chunk sizing: must be <= 19MB so Telegram can both upload and download via getFile
-        val maxChunkSize = credentialsManager.getChunkSizeMb() * 1024 * 1024L
+        // 5. Calculate chunk sizing: must be <= 18MB so Telegram can both upload and download via getFile
+        val maxChunkSize = minOf(credentialsManager.getChunkSizeMb() * 1024 * 1024L, CHUNK_SIZE_BYTES)
         val totalChunks = ((actualSize + maxChunkSize - 1) / maxChunkSize).toInt().coerceAtLeast(1)
         val targetChunkSize = ((actualSize + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
 
