@@ -75,6 +75,23 @@ object ChecksumUtil {
     }
 
     /**
+     * Formats estimated time remaining into a concise, human-readable string.
+     * Examples: "45s left", "2m 15s left", "1h 10m left", "< 1s left"
+     */
+    fun formatEta(etaSeconds: Long?): String {
+        if (etaSeconds == null) return "Estimating…"
+        if (etaSeconds <= 0) return "Almost done"
+        val hours = etaSeconds / 3600
+        val minutes = (etaSeconds % 3600) / 60
+        val seconds = etaSeconds % 60
+        return when {
+            hours > 0 -> "${hours}h ${minutes}m left"
+            minutes > 0 -> "${minutes}m ${seconds}s left"
+            else -> "${seconds}s left"
+        }
+    }
+
+    /**
      * Formats timestamp into clean date string.
      */
     fun formatDate(timestamp: Long): String {

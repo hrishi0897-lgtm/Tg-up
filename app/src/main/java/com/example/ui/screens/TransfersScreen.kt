@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,6 +52,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -304,7 +308,13 @@ private fun TransferRowCard(
     onRetry: () -> Unit
 ) {
     val isFailed = transfer.status == FileStatus.FAILED
-    val percent = (transfer.progressFraction * 100).toInt()
+    val percent = (transfer.progressFraction * 100).toInt().coerceIn(0, 100)
+
+    val animatedProgress by animateFloatAsState(
+        targetValue = transfer.progressFraction.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 200, easing = LinearOutSlowInEasing),
+        label = "transfer_progress_${transfer.fileId}"
+    )
 
     Card(
         colors = CardDefaults.cardColors(containerColor = OledCard),
@@ -490,20 +500,24 @@ private fun TransferRowCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Progress Bar
+            // Smooth Animated Progress Bar
             LinearProgressIndicator(
-                progress = { transfer.progressFraction.coerceIn(0f, 1f) },
+                progress = { animatedProgress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp)),
-                color = if (isFailed) StatusError else TelegramBlue,
+                color = when {
+                    isFailed -> StatusError
+                    transfer.status == FileStatus.COMPLETED -> StatusSuccess
+                    else -> TelegramBlue
+                },
                 trackColor = OledSurface,
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Progress Info Row: Chunk progress, percentage, speed/bytes
+            // Primary Metrics Row: Chunk progress, overall percent, transferred / total bytes
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -512,19 +526,73 @@ private fun TransferRowCard(
                 Text(
                     text = "Chunk ${transfer.currentChunk} of ${transfer.totalChunks} · $percent%",
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
                     color = TextPrimary
                 )
 
                 Text(
-                    text = if (transfer.status == FileStatus.UPLOADING || transfer.status == FileStatus.DOWNLOADING) {
-                        "${ChecksumUtil.formatBytes(transfer.bytesTransferred)} / ${ChecksumUtil.formatBytes(transfer.totalBytes)} · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
-                    } else {
-                        "${ChecksumUtil.formatBytes(transfer.bytesTransferred)} of ${ChecksumUtil.formatBytes(transfer.totalBytes)}"
-                    },
+                    text = "${ChecksumUtil.formatBytes(transfer.bytesTransferred)} / ${ChecksumUtil.formatBytes(transfer.totalBytes)}",
                     fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
                     color = TextSecondary
                 )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Secondary Metrics Row: Live Transfer Speed & Estimated Time Remaining (ETA)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val speedText = when (transfer.status) {
+                    FileStatus.UPLOADING, FileStatus.DOWNLOADING -> {
+                        if (transfer.speedBytesPerSec > 0) {
+                            "${if (transfer.isUpload) "↑" else "↓"} ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
+                        } else {
+                            "Connecting…"
+                        }
+                    }
+                    FileStatus.PAUSED -> "Paused"
+                    FileStatus.COMPLETED -> "Finished"
+                    FileStatus.FAILED -> "Failed"
+                    else -> "Queued"
+                }
+
+                Text(
+                    text = speedText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (transfer.status == FileStatus.UPLOADING || transfer.status == FileStatus.DOWNLOADING) TelegramBlue else TextTertiary
+                )
+
+                val etaText = when (transfer.status) {
+                    FileStatus.UPLOADING, FileStatus.DOWNLOADING -> {
+                        if (transfer.speedBytesPerSec > 0 && transfer.etaSeconds != null) {
+                            ChecksumUtil.formatEta(transfer.etaSeconds)
+                        } else if (transfer.bytesTransferred >= transfer.totalBytes && transfer.totalBytes > 0) {
+                            "Finalizing…"
+                        } else {
+                            "Estimating…"
+                        }
+                    }
+                    FileStatus.PAUSED -> {
+                        val remaining = (transfer.totalBytes - transfer.bytesTransferred).coerceAtLeast(0L)
+                        "${ChecksumUtil.formatBytes(remaining)} left"
+                    }
+                    FileStatus.COMPLETED -> "Verified SHA-256"
+                    else -> ""
+                }
+
+                if (etaText.isNotEmpty()) {
+                    Text(
+                        text = etaText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = TextTertiary
+                    )
+                }
             }
 
             // Visible Failure Reason

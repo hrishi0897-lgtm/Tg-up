@@ -1,5 +1,8 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +38,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -254,8 +258,13 @@ private fun TransferItemCard(
             // Progress bar
             if (transfer.status == FileStatus.UPLOADING || transfer.status == FileStatus.DOWNLOADING || transfer.status == FileStatus.PAUSED) {
                 Spacer(modifier = Modifier.height(10.dp))
+                val animatedProgress by animateFloatAsState(
+                    targetValue = transfer.progressFraction.coerceIn(0f, 1f),
+                    animationSpec = tween(durationMillis = 200, easing = LinearOutSlowInEasing),
+                    label = "sheet_progress_${transfer.fileId}"
+                )
                 LinearProgressIndicator(
-                    progress = { transfer.progressFraction },
+                    progress = { animatedProgress },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(4.dp)
@@ -268,14 +277,20 @@ private fun TransferItemCard(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    val rate = if (transfer.speedBytesPerSec > 0) " · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}" else ""
                     Text(
-                        text = "${(transfer.progressFraction * 100).toInt()}%",
+                        text = "${(transfer.progressFraction * 100).toInt().coerceIn(0, 100)}%$rate",
                         fontSize = 10.sp,
                         color = TelegramBlue,
                         fontWeight = FontWeight.SemiBold
                     )
+                    val detail = if (transfer.etaSeconds != null && transfer.speedBytesPerSec > 0) {
+                        "${ChecksumUtil.formatEta(transfer.etaSeconds)} · ${ChecksumUtil.formatFileSize(transfer.bytesTransferred)} / ${ChecksumUtil.formatFileSize(transfer.totalBytes)}"
+                    } else {
+                        "${ChecksumUtil.formatFileSize(transfer.bytesTransferred)} / ${ChecksumUtil.formatFileSize(transfer.totalBytes)}"
+                    }
                     Text(
-                        text = "${ChecksumUtil.formatFileSize(transfer.bytesTransferred)} / ${ChecksumUtil.formatFileSize(transfer.totalBytes)}",
+                        text = detail,
                         fontSize = 10.sp,
                         color = TextTertiary
                     )

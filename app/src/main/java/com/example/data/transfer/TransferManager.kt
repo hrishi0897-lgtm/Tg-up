@@ -16,6 +16,7 @@ import com.example.data.remote.ManifestChunk
 import com.example.data.remote.TelegramApiException
 import com.example.data.remote.TelegramRepository
 import com.example.domain.ChecksumUtil
+import com.example.domain.RollingSpeedEstimator
 import com.example.domain.model.TransferProgress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -352,6 +353,9 @@ class TransferManager private constructor(
             )
             notifyService("Uploading ${fileEntity.name}")
 
+            val speedEstimator = RollingSpeedEstimator(windowDurationMs = 1800L)
+            speedEstimator.addSample(System.currentTimeMillis(), totalBytesSent)
+
             try {
                 // Upload incomplete chunks in sequential order
                 for (chunk in chunks) {
@@ -421,8 +425,6 @@ class TransferManager private constructor(
 
                     while (attempt < maxRetries && !chunkSuccess) {
                         attempt++
-                        var lastTimestamp = System.currentTimeMillis()
-                        var lastBytes = 0L
                         var lastProgressUiUpdate = 0L
 
                         val uploadResult = repository.uploadChunk(
@@ -436,16 +438,18 @@ class TransferManager private constructor(
                             chunkSha256 = localChunkSha256
                         ) { bytesWritten, chunkTotal ->
                             val now = System.currentTimeMillis()
-                            val shouldUpdateUi = (now - lastProgressUiUpdate >= 100L) || (bytesWritten >= chunkTotal)
-                            if (shouldUpdateUi) {
-                                val dt = (now - lastTimestamp).coerceAtLeast(1)
-                                val speed = ((bytesWritten - lastBytes) * 1000L) / dt
-                                lastTimestamp = now
-                                lastBytes = bytesWritten
-                                lastProgressUiUpdate = now
+                            val currentTotalSent = (totalBytesSent + bytesWritten).coerceAtMost(fileEntity.size)
+                            val liveSpeed = speedEstimator.addSample(now, currentTotalSent)
 
-                                val currentTotalSent = totalBytesSent + bytesWritten
-                                val fraction = (currentTotalSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
+                            val shouldUpdateUi = (now - lastProgressUiUpdate >= 80L) || (bytesWritten >= chunkTotal)
+                            if (shouldUpdateUi) {
+                                lastProgressUiUpdate = now
+                                val fraction = if (fileEntity.size > 0) {
+                                    (currentTotalSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
+                                } else 0f
+
+                                val remainingBytes = (fileEntity.size - currentTotalSent).coerceAtLeast(0L)
+                                val etaSec = if (liveSpeed > 0L && remainingBytes > 0L) remainingBytes / liveSpeed else null
 
                                 updateProgressState(
                                     TransferProgress(
@@ -457,8 +461,9 @@ class TransferManager private constructor(
                                         progressFraction = fraction,
                                         bytesTransferred = currentTotalSent,
                                         totalBytes = fileEntity.size,
-                                        speedBytesPerSec = speed,
-                                        status = FileStatus.UPLOADING
+                                        speedBytesPerSec = liveSpeed,
+                                        status = FileStatus.UPLOADING,
+                                        etaSeconds = etaSec
                                     )
                                 )
                             }
@@ -689,6 +694,9 @@ class TransferManager private constructor(
             var downloadedBytes = chunks.filter { it.isDownloaded }.sumOf { it.size }
             var completedChunks = chunks.count { it.isDownloaded }
 
+            val speedEstimator = RollingSpeedEstimator(windowDurationMs = 1800L)
+            speedEstimator.addSample(System.currentTimeMillis(), downloadedBytes)
+
             try {
                 // Download each chunk in sequence
                 for (chunk in chunks) {
@@ -754,8 +762,8 @@ class TransferManager private constructor(
 
                             val body = streamResult.getOrThrow()
                             val digest = MessageDigest.getInstance("SHA-256")
-                            var lastTimestamp = System.currentTimeMillis()
                             var chunkWritten = 0L
+                            var lastProgressUiUpdate = 0L
 
                             body.byteStream().use { input ->
                                 FileOutputStream(chunkTempFile).use { output ->
@@ -767,26 +775,35 @@ class TransferManager private constructor(
                                         chunkWritten += read
 
                                         val now = System.currentTimeMillis()
-                                        val dt = (now - lastTimestamp).coerceAtLeast(1)
-                                        val speed = (chunkWritten * 1000L) / dt
+                                        val currentTotalDownloaded = (downloadedBytes + chunkWritten).coerceAtMost(fileEntity.size)
+                                        val liveSpeed = speedEstimator.addSample(now, currentTotalDownloaded)
 
-                                        val overallProgress = downloadedBytes + chunkWritten
-                                        val fraction = (overallProgress.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
+                                        val shouldUpdateUi = (now - lastProgressUiUpdate >= 80L) || (chunkWritten >= chunk.size)
+                                        if (shouldUpdateUi) {
+                                            lastProgressUiUpdate = now
+                                            val fraction = if (fileEntity.size > 0) {
+                                                (currentTotalDownloaded.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
+                                            } else 0f
 
-                                        updateProgressState(
-                                            TransferProgress(
-                                                fileId = fileId,
-                                                fileName = fileEntity.name,
-                                                isUpload = false,
-                                                currentChunk = chunk.chunkIndex + 1,
-                                                totalChunks = fileEntity.totalChunks,
-                                                progressFraction = fraction,
-                                                bytesTransferred = overallProgress,
-                                                totalBytes = fileEntity.size,
-                                                speedBytesPerSec = speed,
-                                                status = FileStatus.DOWNLOADING
+                                            val remainingBytes = (fileEntity.size - currentTotalDownloaded).coerceAtLeast(0L)
+                                            val etaSec = if (liveSpeed > 0L && remainingBytes > 0L) remainingBytes / liveSpeed else null
+
+                                            updateProgressState(
+                                                TransferProgress(
+                                                    fileId = fileId,
+                                                    fileName = fileEntity.name,
+                                                    isUpload = false,
+                                                    currentChunk = chunk.chunkIndex + 1,
+                                                    totalChunks = fileEntity.totalChunks,
+                                                    progressFraction = fraction,
+                                                    bytesTransferred = currentTotalDownloaded,
+                                                    totalBytes = fileEntity.size,
+                                                    speedBytesPerSec = liveSpeed,
+                                                    status = FileStatus.DOWNLOADING,
+                                                    etaSeconds = etaSec
+                                                )
                                             )
-                                        )
+                                        }
                                     }
                                 }
                             }
