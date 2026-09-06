@@ -30,7 +30,11 @@ class EncryptedCredentialsManager(context: Context) {
         private const val PREF_TOKEN = "encrypted_bot_token"
         private const val PREF_CHAT_ID = "encrypted_chat_id"
         private const val PREF_CHUNK_SIZE_MB = "chunk_size_mb"
-        private const val DEFAULT_CHUNK_SIZE_MB = 45
+        // Telegram Bot API allows uploading up to 50MB via sendDocument, BUT strictly limits
+        // downloading to 20MB via getFile. If a chunk exceeds 20MB, getFile returns HTTP 400 'Bad Request: file is too big'.
+        // Therefore, chunk size must never exceed 19MB (safe margin below 20MB) so files can be both uploaded and downloaded.
+        const val MAX_SAFE_CHUNK_SIZE_MB = 19
+        const val DEFAULT_CHUNK_SIZE_MB = 19
     }
 
     init {
@@ -125,11 +129,12 @@ class EncryptedCredentialsManager(context: Context) {
     }
 
     fun getChunkSizeMb(): Int {
-        return prefs.getInt(PREF_CHUNK_SIZE_MB, DEFAULT_CHUNK_SIZE_MB)
+        val stored = prefs.getInt(PREF_CHUNK_SIZE_MB, DEFAULT_CHUNK_SIZE_MB)
+        return stored.coerceIn(5, MAX_SAFE_CHUNK_SIZE_MB)
     }
 
     fun setChunkSizeMb(sizeMb: Int) {
-        val clamped = sizeMb.coerceIn(5, 48) // Safe margin below Telegram 50MB Bot limit
+        val clamped = sizeMb.coerceIn(5, MAX_SAFE_CHUNK_SIZE_MB) // Safe margin below Telegram 20MB getFile download limit
         prefs.edit().putInt(PREF_CHUNK_SIZE_MB, clamped).apply()
     }
 }

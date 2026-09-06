@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -566,7 +567,7 @@ class TransferManager private constructor(
                     }
 
                     if (!chunkSuccess || uploadedMessage == null) {
-                        val failReason = lastError ?: "Upload failed"
+                        val failReason = "[Upload Chunk ${(chunkIndex + 1).coerceAtMost(fileEntity.totalChunks)}/${fileEntity.totalChunks}] ${lastError ?: "Upload failed"}"
                         Log.e("TransferManager", "Marking upload for $fileId (${fileEntity.name}) as FAILED. Reason: $failReason")
                         database.fileDao().updateStatus(fileId, FileStatus.FAILED, failReason)
                         updateProgressState(
@@ -832,16 +833,30 @@ class TransferManager private constructor(
                     while (attempt < maxRetries && !chunkSuccess) {
                         attempt++
                         try {
+                            // Check chunk size against Telegram Bot API's 20MB getFile download limit
+                            val telegramGetFileLimit = 20 * 1024 * 1024L
+                            if (chunk.size > telegramGetFileLimit) {
+                                val limitMsg = "Telegram Bot API getFile download limit is 20MB. Chunk size of ${ChecksumUtil.formatBytes(chunk.size)} exceeds Telegram's limit. Chunks must be <= 19MB to download with a bot."
+                                Log.e("TransferManager", "[Download getFile] $limitMsg")
+                                throw IllegalStateException(limitMsg)
+                            }
+
                             val fileInfoResult = repository.getFileInfo(token, remoteFileId)
                             if (fileInfoResult.isFailure) {
-                                throw IllegalStateException("Failed to resolve remote path: ${fileInfoResult.exceptionOrNull()?.localizedMessage}")
+                                val rawEx = fileInfoResult.exceptionOrNull()
+                                val rawMsg = rawEx?.message ?: "Unknown error"
+                                val extraInfo = if (rawMsg.contains("file is too big", ignoreCase = true)) {
+                                    " (Telegram Bot API getFile download limit is 20MB; chunk size is ${ChecksumUtil.formatBytes(chunk.size)})"
+                                } else ""
+                                throw IllegalStateException("[Download getFile] $rawMsg$extraInfo", rawEx)
                             }
                             val remoteFilePath = fileInfoResult.getOrThrow().filePath
-                                ?: throw IllegalStateException("Telegram file_path is empty")
+                                ?: throw IllegalStateException("[Download getFile] Telegram returned an empty file_path")
 
                             val streamResult = repository.downloadFileStream(token, remoteFilePath)
                             if (streamResult.isFailure) {
-                                throw IllegalStateException("Stream download failed: ${streamResult.exceptionOrNull()?.localizedMessage}")
+                                val rawEx = streamResult.exceptionOrNull()
+                                throw IllegalStateException("[Download fileStream] ${rawEx?.message}", rawEx)
                             }
 
                             val body = streamResult.getOrThrow()
@@ -909,7 +924,7 @@ class TransferManager private constructor(
                     }
 
                     if (!chunkSuccess) {
-                        val failReason = "Chunk ${chunk.chunkIndex + 1} of ${fileEntity.totalChunks} failed: $lastError"
+                        val failReason = "[Download Chunk ${chunk.chunkIndex + 1}/${fileEntity.totalChunks}] $lastError"
                         database.fileDao().updateStatus(fileId, FileStatus.FAILED, failReason)
                         updateProgressState(
                             TransferProgress(
@@ -1145,6 +1160,109 @@ class TransferManager private constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /**
+     * Forces a completely clean retry for a file: cancels any ongoing transfer,
+     * deletes stale chunk files and stale temp downloads from disk, purges old chunk records
+     * from Room, recalculates safe chunk sizing (<= 19MB for Telegram 20MB getFile compatibility),
+     * generates fresh discrete chunk files on disk, and starts a fresh upload.
+     */
+    suspend fun forceFreshUpload(fileId: String) = withContext(Dispatchers.IO) {
+        val fileEntity = database.fileDao().getById(fileId)
+        if (fileEntity == null) {
+            Log.e("TransferManager", "forceFreshUpload: File $fileId not found in database")
+            return@withContext
+        }
+
+        Log.i("TransferManager", "forceFreshUpload: Starting fresh clean split-and-upload for fileId=$fileId (${fileEntity.name})")
+
+        // 1. Cancel running transfer job
+        cancelTransfer(fileId)
+
+        // 2. Delete stale chunk files and download temp files from disk
+        val chunksDir = File(context.cacheDir, "upload_chunks/$fileId")
+        if (chunksDir.exists()) {
+            val deleted = chunksDir.deleteRecursively()
+            Log.i("TransferManager", "forceFreshUpload: Purged stale chunks dir: $deleted")
+        }
+        val downloadTempDir = File(context.cacheDir, "downloads_temp/$fileId")
+        if (downloadTempDir.exists()) {
+            downloadTempDir.deleteRecursively()
+        }
+
+        // 3. Purge old chunk records from Room database
+        database.chunkDao().deleteForFile(fileId)
+
+        // 4. Locate source/staging file
+        val stagingFile = fileEntity.localPath?.let { File(it) } ?: File(context.cacheDir, "upload_staging/$fileId.tmp")
+        if (!stagingFile.exists() || stagingFile.length() == 0L) {
+            val errMsg = "Cannot force fresh upload: Staging file not found at ${stagingFile.absolutePath}. Please re-select the file to upload."
+            Log.e("TransferManager", errMsg)
+            database.fileDao().updateStatus(fileId, FileStatus.FAILED, errMsg)
+            _transferErrorEvents.tryEmit(errMsg)
+            return@withContext
+        }
+
+        val actualSize = stagingFile.length()
+        val overallChecksum = ChecksumUtil.computeSha256(stagingFile)
+
+        // 5. Calculate chunk sizing: must be <= 19MB so Telegram can both upload and download via getFile
+        val maxChunkSize = credentialsManager.getChunkSizeMb() * 1024 * 1024L
+        val totalChunks = ((actualSize + maxChunkSize - 1) / maxChunkSize).toInt().coerceAtLeast(1)
+        val targetChunkSize = ((actualSize + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
+
+        Log.i(
+            "TransferManager",
+            "forceFreshUpload: Re-chunking ${fileEntity.name}: actualSize=$actualSize bytes (${ChecksumUtil.formatBytes(actualSize)}), " +
+            "totalChunks=$totalChunks, targetChunkSize=$targetChunkSize bytes (${ChecksumUtil.formatBytes(targetChunkSize)})"
+        )
+
+        // 6. Write fresh chunk files to disk and generate ChunkEntity records
+        chunksDir.mkdirs()
+        val chunkEntities = mutableListOf<ChunkEntity>()
+        for (i in 0 until totalChunks) {
+            val offset = i * targetChunkSize
+            val chunkLength = minOf(targetChunkSize, actualSize - offset)
+            val chunkFile = writeChunkFileOnDisk(stagingFile, chunksDir, i, offset, chunkLength)
+            val chunkSha256 = ChecksumUtil.computeSha256(chunkFile)
+
+            Log.i(
+                "TransferManager",
+                "forceFreshUpload: Written chunk $i of $totalChunks: ${chunkFile.length()} bytes, sha256=$chunkSha256"
+            )
+
+            chunkEntities.add(
+                ChunkEntity(
+                    fileId = fileId,
+                    chunkIndex = i,
+                    size = chunkLength,
+                    checksum = chunkSha256,
+                    telegramMessageId = null,
+                    telegramFileId = null,
+                    isUploaded = false,
+                    isDownloaded = false
+                )
+            )
+        }
+
+        // 7. Insert newly generated chunk entities
+        database.chunkDao().insertAll(chunkEntities)
+
+        // 8. Update FileEntity in database
+        val updatedFile = fileEntity.copy(
+            size = actualSize,
+            checksum = overallChecksum,
+            totalChunks = totalChunks,
+            completedChunks = 0,
+            status = FileStatus.PENDING,
+            errorMessage = null,
+            manifestMessageId = null
+        )
+        database.fileDao().update(updatedFile)
+
+        // 9. Launch fresh upload
+        startUpload(fileId)
     }
 
     /**

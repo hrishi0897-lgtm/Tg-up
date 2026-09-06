@@ -53,7 +53,7 @@ data class UiState(
     val selectedFileChunks: List<ChunkEntity> = emptyList(),
     val isResyncing: Boolean = false,
     val resyncMessage: String? = null,
-    val chunkSizeMb: Int = 45,
+    val chunkSizeMb: Int = 19,
     val showTransfersSheet: Boolean = false,
     val showSettingsSheet: Boolean = false,
     val showCreateFolderDialog: Boolean = false,
@@ -406,8 +406,17 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val file = db.fileDao().getById(fileId) ?: return@launch
             val chunks = db.chunkDao().getChunksForFile(fileId)
+            val stagingFile = file.localPath?.let { java.io.File(it) }
+            val hasStaging = stagingFile != null && stagingFile.exists()
+
+            // If file has staging file available and has oversized chunks (>20MB) or un-uploaded chunks or failed status,
+            // force a completely fresh split-and-upload attempt with clean chunk files on disk and safe chunk sizes.
+            val hasOversizedChunks = chunks.any { it.size > 20 * 1024 * 1024L }
             val needsUpload = chunks.any { !it.isUploaded }
-            if (needsUpload) {
+
+            if (hasStaging && (hasOversizedChunks || needsUpload || file.status == FileStatus.FAILED)) {
+                transferManager.forceFreshUpload(fileId)
+            } else if (needsUpload) {
                 transferManager.startUpload(fileId)
             } else {
                 transferManager.startDownload(fileId)

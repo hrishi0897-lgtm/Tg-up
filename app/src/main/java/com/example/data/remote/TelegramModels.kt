@@ -117,5 +117,6 @@ data class TelegramErrorResponse(
 
 class TelegramApiException(
     message: String,
-    val errorCode: Int? = null
+    val errorCode: Int? = null,
+    val rawResponseBody: String? = null
 ) : Exception(message)

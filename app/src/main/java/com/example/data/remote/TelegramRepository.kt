@@ -155,18 +155,17 @@ class TelegramRepository(
                 }
 
                 // For client errors (400, 401, 403, 404, 413, etc.), fail immediately without retrying
-                // Surface the ACTUAL Telegram API description (e.g. "Forbidden: bot is not a member of the chat")
-                val finalError = telegramDescription ?: when (response.code()) {
-                    400 -> "Bad Request: Check that your Chat ID is correct and that you've sent /start to your bot."
-                    401 -> "Unauthorized: The Telegram Bot Token is invalid or revoked."
-                    403 -> "Forbidden: Bot lacks permission or is not a member of the chat."
-                    404 -> "Not Found: Invalid bot token or endpoint URL."
-                    413 -> "Payload Too Large: The file chunk exceeds Telegram's limit (~50MB)."
-                    else -> "Telegram API error (${response.code()}): ${response.message()}"
+                // Surface the ACTUAL unmodified Telegram API description and raw body without generic masking
+                val finalError = if (!telegramDescription.isNullOrBlank()) {
+                    telegramDescription
+                } else if (!errorBody.isNullOrBlank()) {
+                    errorBody
+                } else {
+                    "HTTP ${response.code()}: ${response.message()}"
                 }
 
-                Log.e("TelegramRepo", "Permanent client error (${response.code()}): '$finalError'")
-                return Result.failure(TelegramApiException(finalError, telegramErrorCode ?: response.code()))
+                Log.e("TelegramRepo", "<<< [TELEGRAM CLIENT ERROR] $actionName: HTTP ${response.code()} '$finalError' | Raw response body: $errorBody")
+                return Result.failure(TelegramApiException(finalError, telegramErrorCode ?: response.code(), errorBody))
 
             } catch (e: SocketTimeoutException) {
                 Log.e("TelegramRepo", "[$actionName] Socket timeout (attempt $attempt/$MAX_RETRIES): ${e.message}", e)
@@ -296,7 +295,7 @@ class TelegramRepository(
         val chatIdBody = chatId.toRequestBody("text/plain".toMediaTypeOrNull())
         val captionBody = captionJson.toRequestBody("text/plain".toMediaTypeOrNull())
 
-        return executeWithRetry("Uploading chunk ${chunkIndex + 1}/$totalChunks") {
+        return executeWithRetry("[Upload sendDocument] Chunk ${chunkIndex + 1}/$totalChunks of '$fileName'") {
             Log.i("TelegramRepo", ">>> [sendDocument NETWORK CALL] Requesting POST $redactedUrl with document part size $actualFileLength bytes ($chunkPartName)...")
             try {
                 val resp = api.sendDocument(targetUrl, chatIdBody, captionBody, multipart)
@@ -375,7 +374,7 @@ class TelegramRepository(
      * Retrieves remote file path using Telegram file_id.
      */
     suspend fun getFileInfo(token: String, fileId: String): Result<TelegramRemoteFile> {
-        return executeWithRetry("Fetching file metadata") {
+        return executeWithRetry("[Download getFile] Resolving remote file_id=$fileId") {
             api.getFile(botUrl(token, "getFile"), fileId)
         }
     }
@@ -394,26 +393,30 @@ class TelegramRepository(
                 if (response.isSuccessful && response.body() != null) {
                     return Result.success(response.body()!!)
                 }
+                val rawError = try { response.errorBody()?.string() } catch (_: Exception) { null }
+                Log.e("TelegramRepo", "<<< [RAW TELEGRAM HTTP RESPONSE BODY] [Download fileStream] code=${response.code()}: $rawError")
+
                 if (response.code() == 429) {
                     delay(3000L)
                     continue
                 }
-                if (attempt < MAX_RETRIES) {
+                if (attempt < MAX_RETRIES && response.code() in 500..504) {
                     delay(currentDelay)
                     currentDelay *= 2
                     continue
                 }
-                return Result.failure(Exception("Failed to download chunk (HTTP ${response.code()})"))
+                val errorMsg = rawError ?: "HTTP ${response.code()}: ${response.message()}"
+                return Result.failure(TelegramApiException(errorMsg, response.code(), rawError))
             } catch (e: Exception) {
                 if (attempt < MAX_RETRIES) {
                     delay(currentDelay)
                     currentDelay *= 2
                 } else {
-                    return Result.failure(Exception("Chunk download failed: ${e.localizedMessage}"))
+                    return Result.failure(Exception("[Download fileStream] Network error: ${e.localizedMessage}", e))
                 }
             }
         }
-        return Result.failure(Exception("Download failed after $MAX_RETRIES retries."))
+        return Result.failure(Exception("[Download fileStream] Failed after $MAX_RETRIES retries."))
     }
 
     /**
