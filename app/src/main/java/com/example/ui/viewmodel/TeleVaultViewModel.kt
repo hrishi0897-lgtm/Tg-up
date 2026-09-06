@@ -59,7 +59,8 @@ data class UiState(
     val showCreateFolderDialog: Boolean = false,
     val folderToRename: FolderEntity? = null,
     val itemToMove: FileEntity? = null,
-    val showInAppGuide: Boolean = false
+    val showInAppGuide: Boolean = false,
+    val transferErrorMessage: String? = null
 )
 
 class TeleVaultViewModel(application: Application) : AndroidViewModel(application) {
@@ -76,6 +77,18 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         )
     )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            transferManager.transferErrorEvents.collect { errorMsg ->
+                _uiState.update { it.copy(transferErrorMessage = errorMsg) }
+            }
+        }
+    }
+
+    fun dismissTransferError() {
+        _uiState.update { it.copy(transferErrorMessage = null) }
+    }
 
     // Storage summary reactive stats
     val storageStats: StateFlow<StorageStats> = combine(
@@ -140,14 +153,51 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         emptyList()
     )
 
-    // Live transfers state
-    val activeTransfers: StateFlow<List<TransferProgress>> = transferManager.transfers
-        .map { it.values.toList() }
-        .stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(5000),
-            emptyList()
-        )
+    // Live transfers state: combination of active in-memory transfers and all non-completed files in Room
+    val activeTransfers: StateFlow<List<TransferProgress>> = combine(
+        transferManager.transfers,
+        db.fileDao().observeTransfers(listOf(FileStatus.PENDING, FileStatus.UPLOADING, FileStatus.DOWNLOADING, FileStatus.FAILED, FileStatus.PAUSED))
+    ) { inMemoryMap, dbNonCompletedFiles ->
+        val result = mutableListOf<TransferProgress>()
+        val seenFileIds = mutableSetOf<String>()
+
+        // 1. In-memory transfers (live byte rates, chunk status) take precedence
+        for (item in inMemoryMap.values) {
+            result.add(item)
+            seenFileIds.add(item.fileId)
+        }
+
+        // 2. Persisted non-completed files from Room (ensures failed/stuck files are never invisible)
+        for (file in dbNonCompletedFiles) {
+            if (!seenFileIds.contains(file.id)) {
+                val fraction = if (file.totalChunks > 0) {
+                    (file.completedChunks.toFloat() / file.totalChunks.toFloat()).coerceIn(0f, 1f)
+                } else 0f
+                val bytesEstimate = (fraction * file.size).toLong()
+                result.add(
+                    TransferProgress(
+                        fileId = file.id,
+                        fileName = file.name,
+                        isUpload = file.localPath != null || file.manifestMessageId == null,
+                        currentChunk = file.completedChunks,
+                        totalChunks = file.totalChunks,
+                        progressFraction = fraction,
+                        bytesTransferred = bytesEstimate,
+                        totalBytes = file.size,
+                        speedBytesPerSec = 0L,
+                        status = file.status,
+                        errorMessage = file.errorMessage
+                    )
+                )
+                seenFileIds.add(file.id)
+            }
+        }
+        result
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        emptyList()
+    )
 
     val recentlyCompleted: StateFlow<List<TransferProgress>> = transferManager.recentlyCompleted
         .stateIn(

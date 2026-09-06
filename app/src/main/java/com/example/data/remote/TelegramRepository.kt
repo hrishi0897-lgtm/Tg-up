@@ -34,6 +34,7 @@ class TelegramRepository(
 
     private val manifestAdapter = moshi.adapter(FileManifest::class.java)
     private val captionMetaAdapter = moshi.adapter(ChunkCaptionMeta::class.java)
+    private val errorAdapter = moshi.adapter(TelegramErrorResponse::class.java)
 
     companion object {
         const val BASE_API_URL = "https://api.telegram.org"
@@ -82,48 +83,60 @@ class TelegramRepository(
                     if (body != null && body.ok && body.result != null) {
                         return Result.success(body.result)
                     } else {
-                        val errorMsg = body?.description ?: "Telegram API returned empty or invalid response"
-                        return Result.failure(Exception("Telegram error: $errorMsg"))
+                        val errorMsg = body?.description ?: "Telegram API returned ok=false or invalid response"
+                        return Result.failure(TelegramApiException(errorMsg, body?.errorCode))
                     }
+                }
+
+                // Parse error body JSON from Telegram API
+                val errorBody = try { response.errorBody()?.string() } catch (_: Exception) { null }
+                var telegramDescription: String? = null
+                var telegramErrorCode: Int? = null
+                var retryAfterSeconds: Int? = null
+
+                if (!errorBody.isNullOrBlank()) {
+                    try {
+                        val parsed = errorAdapter.fromJson(errorBody)
+                        telegramDescription = parsed?.description
+                        telegramErrorCode = parsed?.errorCode
+                        retryAfterSeconds = parsed?.parameters?.retryAfter
+                    } catch (_: Exception) {}
                 }
 
                 // Handle HTTP 429 (Rate Limit)
                 if (response.code() == 429) {
-                    val errorBody = response.errorBody()?.string()
-                    var retryAfterSeconds = 5
-                    if (!errorBody.isNullOrBlank()) {
-                        try {
-                            val parsed = moshi.adapter(TelegramResponse::class.java).fromJson(errorBody)
-                            parsed?.parameters?.retryAfter?.let { retryAfterSeconds = it }
-                        } catch (_: Exception) {}
-                    }
+                    val waitSec = retryAfterSeconds ?: 5
                     if (attempt < MAX_RETRIES) {
-                        delay((retryAfterSeconds * 1000L).coerceAtLeast(1000L))
+                        delay((waitSec * 1000L).coerceAtLeast(1000L))
                         continue
                     }
-                    return Result.failure(
-                        Exception("Telegram rate limit reached (HTTP 429). Please wait $retryAfterSeconds seconds.")
-                    )
+                    val msg = telegramDescription ?: "Telegram rate limit reached (HTTP 429). Please wait $waitSec seconds."
+                    return Result.failure(TelegramApiException(msg, 429))
                 }
 
-                // Translate well-known HTTP error codes into human-readable messages
-                val readableError = when (response.code()) {
+                // Handle server errors (500, 502, 503, 504) with exponential backoff
+                if (response.code() in 500..504) {
+                    if (attempt < MAX_RETRIES) {
+                        delay(currentDelay)
+                        currentDelay *= 2
+                        continue
+                    }
+                    val msg = telegramDescription ?: "Telegram server is temporarily unavailable (HTTP ${response.code()})."
+                    return Result.failure(TelegramApiException(msg, response.code()))
+                }
+
+                // For client errors (400, 401, 403, 404, 413, etc.), fail immediately without retrying
+                // Surface the ACTUAL Telegram API description (e.g. "Forbidden: bot is not a member of the chat")
+                val finalError = telegramDescription ?: when (response.code()) {
                     400 -> "Bad Request: Check that your Chat ID is correct and that you've sent /start to your bot."
                     401 -> "Unauthorized: The Telegram Bot Token is invalid or revoked."
-                    403 -> "Forbidden: Bot was blocked by the user or lacks permission to post in this chat."
+                    403 -> "Forbidden: Bot lacks permission or is not a member of the chat."
                     404 -> "Not Found: Invalid bot token or endpoint URL."
                     413 -> "Payload Too Large: The file chunk exceeds Telegram's limit (~50MB)."
-                    500, 502, 503, 504 -> "Telegram server is temporarily unavailable (HTTP ${response.code()}). Retrying..."
                     else -> "Telegram API error (${response.code()}): ${response.message()}"
                 }
 
-                if (response.code() in 500..504 && attempt < MAX_RETRIES) {
-                    delay(currentDelay)
-                    currentDelay *= 2
-                    continue
-                }
-
-                return Result.failure(Exception(readableError))
+                return Result.failure(TelegramApiException(finalError, telegramErrorCode ?: response.code()))
 
             } catch (e: IOException) {
                 if (attempt < MAX_RETRIES) {

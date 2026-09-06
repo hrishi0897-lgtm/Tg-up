@@ -103,3 +103,19 @@ data class ChunkCaptionMeta(
     @Json(name = "totalChunks") val totalChunks: Int,
     @Json(name = "sha256") val sha256: String
 )
+
+/**
+ * Standard error response from Telegram Bot API
+ */
+@JsonClass(generateAdapter = true)
+data class TelegramErrorResponse(
+    @Json(name = "ok") val ok: Boolean = false,
+    @Json(name = "error_code") val errorCode: Int? = null,
+    @Json(name = "description") val description: String? = null,
+    @Json(name = "parameters") val parameters: ResponseParameters? = null
+)
+
+class TelegramApiException(
+    message: String,
+    val errorCode: Int? = null
+) : Exception(message)

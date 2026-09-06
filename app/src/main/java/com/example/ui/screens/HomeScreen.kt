@@ -72,6 +72,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -141,6 +142,8 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onResync: () -> Unit,
     onDismissResyncMsg: () -> Unit,
+    transferErrorMessage: String? = null,
+    onDismissTransferError: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showFabMenu by remember { mutableStateOf(false) }
@@ -270,6 +273,56 @@ fun HomeScreen(
                     activeTransfersCount = activeCount
                 )
                 Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Transfer error banner if present
+            if (transferErrorMessage != null) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(StatusError.copy(alpha = 0.15f))
+                            .border(1.dp, StatusError.copy(alpha = 0.4f), RoundedCornerShape(10.dp))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Error,
+                            contentDescription = "Transfer Error",
+                            tint = StatusError,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Transfer Failed",
+                                color = StatusError,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = transferErrorMessage,
+                                color = TextPrimary,
+                                fontSize = 12.sp,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        TextButton(
+                            onClick = onOpenTransfers,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("View", color = TelegramBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        IconButton(onClick = onDismissTransferError, modifier = Modifier.size(24.dp)) {
+                            Text("✕", color = TextSecondary, fontSize = 12.sp)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
             }
 
             // Resync notification banner if present

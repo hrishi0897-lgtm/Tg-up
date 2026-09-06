@@ -12,6 +12,7 @@ import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
 import com.example.data.remote.FileManifest
 import com.example.data.remote.ManifestChunk
+import com.example.data.remote.TelegramApiException
 import com.example.data.remote.TelegramRepository
 import com.example.domain.ChecksumUtil
 import com.example.domain.model.TransferProgress
@@ -21,8 +22,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -69,6 +73,9 @@ class TransferManager private constructor(
 
     private val _recentlyCompleted = MutableStateFlow<List<TransferProgress>>(emptyList())
     val recentlyCompleted: StateFlow<List<TransferProgress>> = _recentlyCompleted.asStateFlow()
+
+    private val _transferErrorEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val transferErrorEvents: SharedFlow<String> = _transferErrorEvents.asSharedFlow()
 
     init {
         restorePersistedTransfers()
@@ -198,6 +205,22 @@ class TransferManager private constructor(
                 )
                 database.fileDao().insert(fileEntity)
 
+                // Pre-populate in-memory transfers flow immediately with PENDING state
+                updateProgressState(
+                    TransferProgress(
+                        fileId = fileId,
+                        fileName = fileName,
+                        isUpload = true,
+                        currentChunk = 0,
+                        totalChunks = totalChunks,
+                        progressFraction = 0f,
+                        bytesTransferred = 0L,
+                        totalBytes = actualSize,
+                        speedBytesPerSec = 0L,
+                        status = FileStatus.PENDING
+                    )
+                )
+
                 // 5. Pre-generate chunk entities
                 val chunkEntities = mutableListOf<ChunkEntity>()
                 for (i in 0 until totalChunks) {
@@ -221,7 +244,8 @@ class TransferManager private constructor(
                 startUpload(fileId)
 
             } catch (e: Exception) {
-                database.fileDao().updateStatus(fileId, FileStatus.FAILED, e.localizedMessage)
+                val errMsg = e.message ?: "Upload preparation failed"
+                database.fileDao().updateStatus(fileId, FileStatus.FAILED, errMsg)
                 updateProgressState(
                     TransferProgress(
                         fileId = fileId,
@@ -234,9 +258,10 @@ class TransferManager private constructor(
                         totalBytes = 0L,
                         speedBytesPerSec = 0L,
                         status = FileStatus.FAILED,
-                        errorMessage = e.localizedMessage
+                        errorMessage = errMsg
                     )
                 )
+                _transferErrorEvents.tryEmit(errMsg)
             }
         }
         return fileId
@@ -248,35 +273,81 @@ class TransferManager private constructor(
     fun startUpload(fileId: String) {
         pauseRequestedFiles.remove(fileId)
         val job = scope.launch {
+            val fileEntity = database.fileDao().getById(fileId)
+            val fileName = fileEntity?.name ?: "File"
+            val totalBytes = fileEntity?.size ?: 0L
+            val totalChunks = fileEntity?.totalChunks ?: 1
+
             val token = credentialsManager.getBotToken()
             val chatId = credentialsManager.getChatId()
             if (token.isNullOrBlank() || chatId.isNullOrBlank()) {
-                database.fileDao().updateStatus(fileId, FileStatus.FAILED, "Telegram credentials not set")
-                _transfers.update { current ->
-                    val existing = current[fileId] ?: return@update current
-                    current + (fileId to existing.copy(status = FileStatus.FAILED, errorMessage = "Telegram credentials not set"))
-                }
+                val errorMsg = "Telegram credentials not set. Please connect your bot token and chat ID in Settings."
+                database.fileDao().updateStatus(fileId, FileStatus.FAILED, errorMsg)
+                updateProgressState(
+                    TransferProgress(
+                        fileId = fileId,
+                        fileName = fileName,
+                        isUpload = true,
+                        currentChunk = fileEntity?.completedChunks ?: 0,
+                        totalChunks = totalChunks,
+                        progressFraction = 0f,
+                        bytesTransferred = 0L,
+                        totalBytes = totalBytes,
+                        speedBytesPerSec = 0L,
+                        status = FileStatus.FAILED,
+                        errorMessage = errorMsg
+                    )
+                )
+                _transferErrorEvents.tryEmit(errorMsg)
                 return@launch
             }
 
-            val fileEntity = database.fileDao().getById(fileId) ?: return@launch
+            if (fileEntity == null) return@launch
             val stagingFile = fileEntity.localPath?.let { File(it) }
             if (stagingFile == null || !stagingFile.exists()) {
-                database.fileDao().updateStatus(fileId, FileStatus.FAILED, "Source staging file missing")
-                _transfers.update { current ->
-                    val existing = current[fileId] ?: return@update current
-                    current + (fileId to existing.copy(status = FileStatus.FAILED, errorMessage = "Source staging file missing"))
-                }
+                val errorMsg = "Source staging file missing"
+                database.fileDao().updateStatus(fileId, FileStatus.FAILED, errorMsg)
+                updateProgressState(
+                    TransferProgress(
+                        fileId = fileId,
+                        fileName = fileEntity.name,
+                        isUpload = true,
+                        currentChunk = fileEntity.completedChunks,
+                        totalChunks = fileEntity.totalChunks,
+                        progressFraction = 0f,
+                        bytesTransferred = 0L,
+                        totalBytes = fileEntity.size,
+                        speedBytesPerSec = 0L,
+                        status = FileStatus.FAILED,
+                        errorMessage = errorMsg
+                    )
+                )
+                _transferErrorEvents.tryEmit(errorMsg)
                 return@launch
             }
-
-            database.fileDao().updateStatus(fileId, FileStatus.UPLOADING)
-            notifyService("Uploading ${fileEntity.name}")
 
             val chunks = database.chunkDao().getChunksForFile(fileId)
             val chunkSize = credentialsManager.getChunkSizeMb() * 1024 * 1024L
             var completedCount = chunks.count { it.isUploaded }
             var totalBytesSent = chunks.filter { it.isUploaded }.sumOf { it.size }
+            val initialFraction = if (fileEntity.size > 0) (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f) else 0f
+
+            database.fileDao().updateStatus(fileId, FileStatus.UPLOADING)
+            updateProgressState(
+                TransferProgress(
+                    fileId = fileId,
+                    fileName = fileEntity.name,
+                    isUpload = true,
+                    currentChunk = completedCount,
+                    totalChunks = fileEntity.totalChunks,
+                    progressFraction = initialFraction,
+                    bytesTransferred = totalBytesSent,
+                    totalBytes = fileEntity.size,
+                    speedBytesPerSec = 0L,
+                    status = FileStatus.UPLOADING
+                )
+            )
+            notifyService("Uploading ${fileEntity.name}")
 
             try {
                 // Upload incomplete chunks in sequential order
@@ -389,7 +460,12 @@ class TransferManager private constructor(
                             chunkSuccess = true
                             uploadedMessage = uploadResult.getOrThrow()
                         } else {
-                            lastError = uploadResult.exceptionOrNull()?.localizedMessage ?: "Network error"
+                            val exception = uploadResult.exceptionOrNull()
+                            lastError = exception?.message ?: "Network error"
+                            // If it's a permanent 4xx error (e.g. Forbidden, Bad Request), break immediately without retrying
+                            if (exception is TelegramApiException && exception.errorCode != null && exception.errorCode in 400..499 && exception.errorCode != 429) {
+                                break
+                            }
                             if (attempt < maxRetries) {
                                 delay(1000L * attempt)
                             }
@@ -397,7 +473,7 @@ class TransferManager private constructor(
                     }
 
                     if (!chunkSuccess || uploadedMessage == null) {
-                        val failReason = "Chunk ${chunkIndex + 1} of ${fileEntity.totalChunks} failed: $lastError"
+                        val failReason = lastError ?: "Upload failed"
                         database.fileDao().updateStatus(fileId, FileStatus.FAILED, failReason)
                         updateProgressState(
                             TransferProgress(
@@ -414,6 +490,8 @@ class TransferManager private constructor(
                                 errorMessage = failReason
                             )
                         )
+                        _transferErrorEvents.tryEmit(failReason)
+                        notifyService("Upload failed: ${fileEntity.name}")
                         return@launch
                     }
 
@@ -479,7 +557,7 @@ class TransferManager private constructor(
 
                 val manifestResult = repository.uploadManifest(token, chatId, manifest)
                 if (manifestResult.isFailure) {
-                    val err = manifestResult.exceptionOrNull()?.localizedMessage ?: "Manifest upload failed"
+                    val err = manifestResult.exceptionOrNull()?.message ?: "Manifest upload failed"
                     database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
                     updateProgressState(
                         TransferProgress(
@@ -496,6 +574,8 @@ class TransferManager private constructor(
                             errorMessage = err
                         )
                     )
+                    _transferErrorEvents.tryEmit(err)
+                    notifyService("Manifest upload failed: ${fileEntity.name}")
                     return@launch
                 }
 
@@ -529,7 +609,8 @@ class TransferManager private constructor(
             } catch (e: CancellationException) {
                 database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Upload paused by user")
             } catch (e: Exception) {
-                database.fileDao().updateStatus(fileId, FileStatus.FAILED, e.localizedMessage)
+                val err = e.message ?: "Upload failed"
+                database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
                 updateProgressState(
                     TransferProgress(
                         fileId = fileId,
@@ -542,9 +623,10 @@ class TransferManager private constructor(
                         totalBytes = fileEntity.size,
                         speedBytesPerSec = 0L,
                         status = FileStatus.FAILED,
-                        errorMessage = e.localizedMessage
+                        errorMessage = err
                     )
                 )
+                _transferErrorEvents.tryEmit(err)
             } finally {
                 activeJobs.remove(fileId)
             }
@@ -560,11 +642,25 @@ class TransferManager private constructor(
         val job = scope.launch {
             val token = credentialsManager.getBotToken()
             if (token.isNullOrBlank()) {
-                database.fileDao().updateStatus(fileId, FileStatus.FAILED, "Telegram bot token not configured")
-                _transfers.update { current ->
-                    val existing = current[fileId] ?: return@update current
-                    current + (fileId to existing.copy(status = FileStatus.FAILED, errorMessage = "Telegram bot token not configured"))
-                }
+                val err = "Telegram bot token not configured"
+                database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
+                val file = database.fileDao().getById(fileId)
+                updateProgressState(
+                    TransferProgress(
+                        fileId = fileId,
+                        fileName = file?.name ?: "Download",
+                        isUpload = false,
+                        currentChunk = 0,
+                        totalChunks = file?.totalChunks ?: 1,
+                        progressFraction = 0f,
+                        bytesTransferred = 0L,
+                        totalBytes = file?.size ?: 0L,
+                        speedBytesPerSec = 0L,
+                        status = FileStatus.FAILED,
+                        errorMessage = err
+                    )
+                )
+                _transferErrorEvents.tryEmit(err)
                 return@launch
             }
 
@@ -716,6 +812,8 @@ class TransferManager private constructor(
                                 errorMessage = failReason
                             )
                         )
+                        _transferErrorEvents.tryEmit(failReason)
+                        notifyService("Download failed: ${fileEntity.name}")
                         return@launch
                     }
 
@@ -789,7 +887,8 @@ class TransferManager private constructor(
             } catch (e: CancellationException) {
                 database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Download paused by user")
             } catch (e: Exception) {
-                database.fileDao().updateStatus(fileId, FileStatus.FAILED, e.localizedMessage)
+                val err = e.message ?: "Download failed"
+                database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
                 updateProgressState(
                     TransferProgress(
                         fileId = fileId,
@@ -802,9 +901,10 @@ class TransferManager private constructor(
                         totalBytes = fileEntity.size,
                         speedBytesPerSec = 0L,
                         status = FileStatus.FAILED,
-                        errorMessage = e.localizedMessage
+                        errorMessage = err
                     )
                 )
+                _transferErrorEvents.tryEmit(err)
             } finally {
                 activeJobs.remove(fileId)
             }

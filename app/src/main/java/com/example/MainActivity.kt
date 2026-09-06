@@ -24,6 +24,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import com.example.data.transfer.TransferService
 import com.example.data.transfer.TransferWorker
 import com.example.ui.screens.CreateFolderDialog
@@ -105,6 +107,14 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         }
     }
 
+    val context = LocalContext.current
+    LaunchedEffect(uiState.transferErrorMessage) {
+        val error = uiState.transferErrorMessage
+        if (!error.isNullOrBlank()) {
+            Toast.makeText(context, "Upload Failed: $error", Toast.LENGTH_LONG).show()
+        }
+    }
+
     // Notification permission launcher for Android 13+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -181,7 +191,9 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     onOpenTransfers = { viewModel.navigateToTransfersScreen() },
                     onOpenSettings = { viewModel.setShowSettingsSheet(true) },
                     onResync = { viewModel.resyncFromTelegram() },
-                    onDismissResyncMsg = { viewModel.clearResyncMessage() }
+                    onDismissResyncMsg = { viewModel.clearResyncMessage() },
+                    transferErrorMessage = uiState.transferErrorMessage,
+                    onDismissTransferError = { viewModel.dismissTransferError() }
                 )
             }
 
