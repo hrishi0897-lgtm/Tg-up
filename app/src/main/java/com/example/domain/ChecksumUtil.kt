@@ -65,6 +65,8 @@ object ChecksumUtil {
         return String.format(Locale.US, "%.1f %s", formatted, units[digitGroups])
     }
 
+    fun formatBytes(bytes: Long): String = formatFileSize(bytes)
+
     /**
      * Formats transfer speed (e.g. 2.4 MB/s)
      */

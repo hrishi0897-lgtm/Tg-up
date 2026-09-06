@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -63,6 +64,9 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -79,6 +83,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -240,6 +245,12 @@ fun HomeScreen(
                     )
                 }
             }
+        },
+        bottomBar = {
+            VaultBottomNav(
+                activeTransferCount = activeCount,
+                onTransfersSelected = onOpenTransfers
+            )
         },
         modifier = modifier
     ) { innerPadding ->
@@ -559,17 +570,19 @@ private fun HomeTopBar(
 
             Spacer(modifier = Modifier.width(6.dp))
 
-            // Transfers Sheet button with badge
+            // Transfers button with badge (accessible 48dp touch target)
             IconButton(
                 onClick = onOpenTransfers,
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier
+                    .size(48.dp)
+                    .testTag("btn_topbar_transfers")
             ) {
                 BadgedBox(
                     badge = {
                         if (activeTransferCount > 0) {
                             Badge(
                                 containerColor = TelegramBlue,
-                                contentColor = OledBlack
+                                contentColor = Color.White
                             ) {
                                 Text("$activeTransferCount", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
@@ -580,7 +593,7 @@ private fun HomeTopBar(
                         imageVector = Icons.Default.CloudSync,
                         contentDescription = "Transfers",
                         tint = if (activeTransferCount > 0) TelegramBlue else TextSecondary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
@@ -1139,3 +1152,99 @@ private fun EmptyFolderState(
         }
     }
 }
+
+@Composable
+private fun VaultBottomNav(
+    activeTransferCount: Int,
+    onTransfersSelected: () -> Unit
+) {
+    NavigationBar(
+        containerColor = OledBlack,
+        contentColor = TextPrimary,
+        tonalElevation = 0.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .border(
+                width = 1.dp,
+                color = OledBorder,
+                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+            )
+    ) {
+        NavigationBarItem(
+            selected = true,
+            onClick = { /* Already in Vault */ },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Folder,
+                    contentDescription = "Vault",
+                    modifier = Modifier.size(24.dp)
+                )
+            },
+            label = {
+                Text(
+                    text = "Vault",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = TelegramBlue,
+                selectedTextColor = TelegramBlue,
+                unselectedIconColor = TextSecondary,
+                unselectedTextColor = TextSecondary,
+                indicatorColor = Color.Transparent
+            ),
+            modifier = Modifier.testTag("tab_nav_vault")
+        )
+
+        NavigationBarItem(
+            selected = false,
+            onClick = onTransfersSelected,
+            icon = {
+                if (activeTransferCount > 0) {
+                    BadgedBox(badge = {
+                        Badge(
+                            containerColor = TelegramBlue,
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = activeTransferCount.toString(),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = "Transfers",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = "Transfers",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            },
+            label = {
+                Text(
+                    text = "Transfers",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            },
+            colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = TelegramBlue,
+                selectedTextColor = TelegramBlue,
+                unselectedIconColor = TextSecondary,
+                unselectedTextColor = TextSecondary,
+                indicatorColor = Color.Transparent
+            ),
+            modifier = Modifier.testTag("tab_nav_transfers")
+        )
+    }
+}
+

@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -23,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import com.example.data.transfer.TransferService
 import com.example.data.transfer.TransferWorker
 import com.example.ui.screens.CreateFolderDialog
 import com.example.ui.screens.FileDetailSheet
@@ -31,9 +33,11 @@ import com.example.ui.screens.MoveFileDialog
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.RenameFolderDialog
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.TransfersScreen
 import com.example.ui.screens.TransfersSheet
 import com.example.ui.theme.TeleVaultTheme
 import com.example.ui.theme.OledBlack
+import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.TeleVaultViewModel
 
 class MainActivity : ComponentActivity() {
@@ -42,6 +46,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleIntent(intent)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -65,6 +70,20 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
+        val isTransfersAction = intent.action == TransferService.ACTION_OPEN_TRANSFERS ||
+                intent.getStringExtra(TransferService.EXTRA_NAVIGATE_TO) == TransferService.DESTINATION_TRANSFERS
+        if (isTransfersAction) {
+            viewModel.navigateToTransfersScreen()
+        }
+    }
 }
 
 @Composable
@@ -75,6 +94,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
     val files by viewModel.currentFiles.collectAsState()
     val allFolders by viewModel.allFolders.collectAsState()
     val activeTransfers by viewModel.activeTransfers.collectAsState()
+    val recentlyCompleted by viewModel.recentlyCompleted.collectAsState()
 
     // File upload picker
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -96,8 +116,13 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         }
     }
 
+    // Handle back button for transfers screen
+    BackHandler(enabled = uiState.currentScreen == AppScreen.TRANSFERS) {
+        viewModel.navigateToVaultScreen()
+    }
+
     // Handle back button for folder hierarchy navigation
-    BackHandler(enabled = uiState.breadcrumbs.size > 1) {
+    BackHandler(enabled = uiState.currentScreen == AppScreen.VAULT && uiState.breadcrumbs.size > 1) {
         viewModel.navigateUp()
     }
 
@@ -115,6 +140,20 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     onConnect = { token, chatId ->
                         viewModel.validateAndSaveCredentials(token, chatId)
                     }
+                )
+            } else if (uiState.currentScreen == AppScreen.TRANSFERS) {
+                TransfersScreen(
+                    transfers = activeTransfers,
+                    recentlyCompleted = recentlyCompleted,
+                    onBack = { viewModel.navigateToVaultScreen() },
+                    onPause = { viewModel.pauseTransfer(it) },
+                    onResume = { id, isUpload -> viewModel.resumeTransfer(id, isUpload) },
+                    onCancel = { viewModel.cancelTransfer(it) },
+                    onRetry = { viewModel.retryTransfer(it) },
+                    onPauseAll = { viewModel.pauseAllTransfers() },
+                    onResumeAll = { viewModel.resumeAllTransfers() },
+                    onClearCompleted = { viewModel.clearRecentlyCompleted() },
+                    onNavigateToVault = { viewModel.navigateToVaultScreen() }
                 )
             } else {
                 HomeScreen(
@@ -139,7 +178,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     onDeleteFolder = { viewModel.deleteFolder(it) },
                     onCreateFolderClick = { viewModel.setShowCreateFolderDialog(true) },
                     onUploadFileClick = { filePickerLauncher.launch("*/*") },
-                    onOpenTransfers = { viewModel.setShowTransfersSheet(true) },
+                    onOpenTransfers = { viewModel.navigateToTransfersScreen() },
                     onOpenSettings = { viewModel.setShowSettingsSheet(true) },
                     onResync = { viewModel.resyncFromTelegram() },
                     onDismissResyncMsg = { viewModel.clearResyncMessage() }

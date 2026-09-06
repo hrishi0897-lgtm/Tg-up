@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -61,9 +62,82 @@ class TransferManager private constructor(
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeJobs = ConcurrentHashMap<String, Job>()
+    private val pauseRequestedFiles = ConcurrentHashMap.newKeySet<String>()
 
     private val _transfers = MutableStateFlow<Map<String, TransferProgress>>(emptyMap())
     val transfers: StateFlow<Map<String, TransferProgress>> = _transfers.asStateFlow()
+
+    private val _recentlyCompleted = MutableStateFlow<List<TransferProgress>>(emptyList())
+    val recentlyCompleted: StateFlow<List<TransferProgress>> = _recentlyCompleted.asStateFlow()
+
+    init {
+        restorePersistedTransfers()
+    }
+
+    /**
+     * Restores pending, paused, or interrupted transfers from Room on process initialization.
+     */
+    private fun restorePersistedTransfers() {
+        scope.launch {
+            try {
+                val incompleteFiles = database.fileDao().getFilesByStatus(
+                    listOf(
+                        FileStatus.PENDING,
+                        FileStatus.UPLOADING,
+                        FileStatus.DOWNLOADING,
+                        FileStatus.PAUSED,
+                        FileStatus.FAILED
+                    )
+                )
+                val restoredMap = mutableMapOf<String, TransferProgress>()
+                for (file in incompleteFiles) {
+                    val chunks = database.chunkDao().getChunksForFile(file.id)
+                    val isUpload = chunks.any { !it.isUploaded }
+                    val completedChunks = if (isUpload) {
+                        chunks.count { it.isUploaded }
+                    } else {
+                        chunks.count { it.isDownloaded }
+                    }
+                    val bytesTransferred = if (isUpload) {
+                        chunks.filter { it.isUploaded }.sumOf { it.size }
+                    } else {
+                        chunks.filter { it.isDownloaded }.sumOf { it.size }
+                    }
+                    val fraction = if (file.size > 0) {
+                        (bytesTransferred.toFloat() / file.size.toFloat()).coerceIn(0f, 1f)
+                    } else 0f
+
+                    // If app died while actively uploading/downloading, mark as PAUSED
+                    val restoredStatus = when (file.status) {
+                        FileStatus.UPLOADING, FileStatus.DOWNLOADING -> {
+                            database.fileDao().updateStatus(file.id, FileStatus.PAUSED, "Paused (interrupted)")
+                            FileStatus.PAUSED
+                        }
+                        else -> file.status
+                    }
+
+                    restoredMap[file.id] = TransferProgress(
+                        fileId = file.id,
+                        fileName = file.name,
+                        isUpload = isUpload,
+                        currentChunk = completedChunks,
+                        totalChunks = file.totalChunks,
+                        progressFraction = fraction,
+                        bytesTransferred = bytesTransferred,
+                        totalBytes = file.size,
+                        speedBytesPerSec = 0L,
+                        status = restoredStatus,
+                        errorMessage = file.errorMessage
+                    )
+                }
+                if (restoredMap.isNotEmpty()) {
+                    _transfers.update { current -> restoredMap + current }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("TransferManager", "Failed to restore transfers: ${e.message}")
+            }
+        }
+    }
 
     companion object {
         @Volatile
@@ -172,11 +246,16 @@ class TransferManager private constructor(
      * Executes or resumes a chunked upload.
      */
     fun startUpload(fileId: String) {
+        pauseRequestedFiles.remove(fileId)
         val job = scope.launch {
             val token = credentialsManager.getBotToken()
             val chatId = credentialsManager.getChatId()
             if (token.isNullOrBlank() || chatId.isNullOrBlank()) {
                 database.fileDao().updateStatus(fileId, FileStatus.FAILED, "Telegram credentials not set")
+                _transfers.update { current ->
+                    val existing = current[fileId] ?: return@update current
+                    current + (fileId to existing.copy(status = FileStatus.FAILED, errorMessage = "Telegram credentials not set"))
+                }
                 return@launch
             }
 
@@ -184,6 +263,10 @@ class TransferManager private constructor(
             val stagingFile = fileEntity.localPath?.let { File(it) }
             if (stagingFile == null || !stagingFile.exists()) {
                 database.fileDao().updateStatus(fileId, FileStatus.FAILED, "Source staging file missing")
+                _transfers.update { current ->
+                    val existing = current[fileId] ?: return@update current
+                    current + (fileId to existing.copy(status = FileStatus.FAILED, errorMessage = "Source staging file missing"))
+                }
                 return@launch
             }
 
@@ -198,7 +281,28 @@ class TransferManager private constructor(
             try {
                 // Upload incomplete chunks in sequential order
                 for (chunk in chunks) {
-                    if (chunk.isUploaded) continue // Resume: skip completed chunks!
+                    if (chunk.isUploaded) continue // Resume: skip already completed chunks!
+
+                    // Pause check at chunk boundary before starting chunk
+                    if (pauseRequestedFiles.contains(fileId)) {
+                        pauseRequestedFiles.remove(fileId)
+                        database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused by user")
+                        updateProgressState(
+                            TransferProgress(
+                                fileId = fileId,
+                                fileName = fileEntity.name,
+                                isUpload = true,
+                                currentChunk = completedCount,
+                                totalChunks = fileEntity.totalChunks,
+                                progressFraction = (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                                bytesTransferred = totalBytesSent,
+                                totalBytes = fileEntity.size,
+                                speedBytesPerSec = 0L,
+                                status = FileStatus.PAUSED
+                            )
+                        )
+                        return@launch
+                    }
 
                     val chunkIndex = chunk.chunkIndex
                     val offset = chunkIndex * chunkSize
@@ -214,68 +318,139 @@ class TransferManager private constructor(
                     // Verify chunk checksum before dispatching over network
                     val localChunkSha256 = ChecksumUtil.computeSha256(chunkBytes)
                     if (localChunkSha256 != chunk.checksum) {
-                        throw IllegalStateException("Local chunk $chunkIndex corrupted before upload")
-                    }
-
-                    var lastTimestamp = System.currentTimeMillis()
-                    var lastBytes = 0L
-
-                    // Upload chunk as Telegram document with caption
-                    val uploadResult = repository.uploadChunk(
-                        token = token,
-                        chatId = chatId,
-                        fileId = fileId,
-                        fileName = fileEntity.name,
-                        chunkIndex = chunkIndex,
-                        totalChunks = fileEntity.totalChunks,
-                        chunkBytes = chunkBytes,
-                        chunkSha256 = localChunkSha256
-                    ) { bytesWritten, _ ->
-                        val now = System.currentTimeMillis()
-                        val dt = (now - lastTimestamp).coerceAtLeast(1)
-                        val speed = ((bytesWritten - lastBytes) * 1000L) / dt
-                        lastTimestamp = now
-                        lastBytes = bytesWritten
-
-                        val currentTotalSent = totalBytesSent + bytesWritten
-                        val fraction = (currentTotalSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
-
+                        val errMsg = "Chunk ${chunkIndex + 1} corrupted before upload"
+                        database.fileDao().updateStatus(fileId, FileStatus.FAILED, errMsg)
                         updateProgressState(
                             TransferProgress(
                                 fileId = fileId,
                                 fileName = fileEntity.name,
                                 isUpload = true,
-                                currentChunk = chunkIndex + 1,
+                                currentChunk = completedCount,
                                 totalChunks = fileEntity.totalChunks,
-                                progressFraction = fraction,
-                                bytesTransferred = currentTotalSent,
+                                progressFraction = (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                                bytesTransferred = totalBytesSent,
                                 totalBytes = fileEntity.size,
-                                speedBytesPerSec = speed,
-                                status = FileStatus.UPLOADING
+                                speedBytesPerSec = 0L,
+                                status = FileStatus.FAILED,
+                                errorMessage = errMsg
                             )
                         )
-                    }
-
-                    if (uploadResult.isFailure) {
-                        val err = uploadResult.exceptionOrNull()?.localizedMessage ?: "Chunk upload failed"
-                        database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
                         return@launch
                     }
 
-                    val message = uploadResult.getOrThrow()
-                    val remoteFileId = message.document?.fileId ?: ""
+                    // Upload chunk with retries (up to 3 attempts)
+                    val maxRetries = 3
+                    var attempt = 0
+                    var chunkSuccess = false
+                    var lastError: String? = null
+                    var uploadedMessage: com.example.data.remote.TelegramMessage? = null
+
+                    while (attempt < maxRetries && !chunkSuccess) {
+                        attempt++
+                        var lastTimestamp = System.currentTimeMillis()
+                        var lastBytes = 0L
+
+                        val uploadResult = repository.uploadChunk(
+                            token = token,
+                            chatId = chatId,
+                            fileId = fileId,
+                            fileName = fileEntity.name,
+                            chunkIndex = chunkIndex,
+                            totalChunks = fileEntity.totalChunks,
+                            chunkBytes = chunkBytes,
+                            chunkSha256 = localChunkSha256
+                        ) { bytesWritten, _ ->
+                            val now = System.currentTimeMillis()
+                            val dt = (now - lastTimestamp).coerceAtLeast(1)
+                            val speed = ((bytesWritten - lastBytes) * 1000L) / dt
+                            lastTimestamp = now
+                            lastBytes = bytesWritten
+
+                            val currentTotalSent = totalBytesSent + bytesWritten
+                            val fraction = (currentTotalSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
+
+                            updateProgressState(
+                                TransferProgress(
+                                    fileId = fileId,
+                                    fileName = fileEntity.name,
+                                    isUpload = true,
+                                    currentChunk = chunkIndex + 1,
+                                    totalChunks = fileEntity.totalChunks,
+                                    progressFraction = fraction,
+                                    bytesTransferred = currentTotalSent,
+                                    totalBytes = fileEntity.size,
+                                    speedBytesPerSec = speed,
+                                    status = FileStatus.UPLOADING
+                                )
+                            )
+                        }
+
+                        if (uploadResult.isSuccess) {
+                            chunkSuccess = true
+                            uploadedMessage = uploadResult.getOrThrow()
+                        } else {
+                            lastError = uploadResult.exceptionOrNull()?.localizedMessage ?: "Network error"
+                            if (attempt < maxRetries) {
+                                delay(1000L * attempt)
+                            }
+                        }
+                    }
+
+                    if (!chunkSuccess || uploadedMessage == null) {
+                        val failReason = "Chunk ${chunkIndex + 1} of ${fileEntity.totalChunks} failed: $lastError"
+                        database.fileDao().updateStatus(fileId, FileStatus.FAILED, failReason)
+                        updateProgressState(
+                            TransferProgress(
+                                fileId = fileId,
+                                fileName = fileEntity.name,
+                                isUpload = true,
+                                currentChunk = completedCount,
+                                totalChunks = fileEntity.totalChunks,
+                                progressFraction = (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                                bytesTransferred = totalBytesSent,
+                                totalBytes = fileEntity.size,
+                                speedBytesPerSec = 0L,
+                                status = FileStatus.FAILED,
+                                errorMessage = failReason
+                            )
+                        )
+                        return@launch
+                    }
+
+                    val remoteFileId = uploadedMessage.document?.fileId ?: ""
 
                     // Persist chunk upload success in Room immediately
                     database.chunkDao().markChunkUploaded(
                         fileId = fileId,
                         chunkIndex = chunkIndex,
-                        messageId = message.messageId,
+                        messageId = uploadedMessage.messageId,
                         fileIdRemote = remoteFileId
                     )
 
                     completedCount++
                     totalBytesSent += chunkLength
                     database.fileDao().updateProgress(fileId, completedCount, FileStatus.UPLOADING)
+
+                    // Pause check at chunk boundary after chunk completion
+                    if (pauseRequestedFiles.contains(fileId)) {
+                        pauseRequestedFiles.remove(fileId)
+                        database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused by user")
+                        updateProgressState(
+                            TransferProgress(
+                                fileId = fileId,
+                                fileName = fileEntity.name,
+                                isUpload = true,
+                                currentChunk = completedCount,
+                                totalChunks = fileEntity.totalChunks,
+                                progressFraction = (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                                bytesTransferred = totalBytesSent,
+                                totalBytes = fileEntity.size,
+                                speedBytesPerSec = 0L,
+                                status = FileStatus.PAUSED
+                            )
+                        )
+                        return@launch
+                    }
                 }
 
                 // All chunks successfully uploaded!
@@ -306,6 +481,21 @@ class TransferManager private constructor(
                 if (manifestResult.isFailure) {
                     val err = manifestResult.exceptionOrNull()?.localizedMessage ?: "Manifest upload failed"
                     database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
+                    updateProgressState(
+                        TransferProgress(
+                            fileId = fileId,
+                            fileName = fileEntity.name,
+                            isUpload = true,
+                            currentChunk = completedCount,
+                            totalChunks = fileEntity.totalChunks,
+                            progressFraction = 1f,
+                            bytesTransferred = fileEntity.size,
+                            totalBytes = fileEntity.size,
+                            speedBytesPerSec = 0L,
+                            status = FileStatus.FAILED,
+                            errorMessage = err
+                        )
+                    )
                     return@launch
                 }
 
@@ -313,20 +503,25 @@ class TransferManager private constructor(
                 database.fileDao().updateManifestId(fileId, manifestMessage.messageId)
                 database.fileDao().updateStatus(fileId, FileStatus.COMPLETED)
 
-                updateProgressState(
-                    TransferProgress(
-                        fileId = fileId,
-                        fileName = fileEntity.name,
-                        isUpload = true,
-                        currentChunk = fileEntity.totalChunks,
-                        totalChunks = fileEntity.totalChunks,
-                        progressFraction = 1f,
-                        bytesTransferred = fileEntity.size,
-                        totalBytes = fileEntity.size,
-                        speedBytesPerSec = 0L,
-                        status = FileStatus.COMPLETED
-                    )
+                val completedProgress = TransferProgress(
+                    fileId = fileId,
+                    fileName = fileEntity.name,
+                    isUpload = true,
+                    currentChunk = fileEntity.totalChunks,
+                    totalChunks = fileEntity.totalChunks,
+                    progressFraction = 1f,
+                    bytesTransferred = fileEntity.size,
+                    totalBytes = fileEntity.size,
+                    speedBytesPerSec = 0L,
+                    status = FileStatus.COMPLETED
                 )
+
+                // Remove from active transfers so it doesn't linger at 100%
+                _transfers.update { it - fileId }
+                // Add to recently completed list (capped at 5)
+                _recentlyCompleted.update { current ->
+                    (listOf(completedProgress) + current.filter { it.fileId != fileId }).take(5)
+                }
 
                 // Safe cleanup of temporary staging file
                 stagingFile.delete()
@@ -361,10 +556,15 @@ class TransferManager private constructor(
      * Executes or resumes a chunked download and reassembles the final file.
      */
     fun startDownload(fileId: String) {
+        pauseRequestedFiles.remove(fileId)
         val job = scope.launch {
             val token = credentialsManager.getBotToken()
             if (token.isNullOrBlank()) {
                 database.fileDao().updateStatus(fileId, FileStatus.FAILED, "Telegram bot token not configured")
+                _transfers.update { current ->
+                    val existing = current[fileId] ?: return@update current
+                    current + (fileId to existing.copy(status = FileStatus.FAILED, errorMessage = "Telegram bot token not configured"))
+                }
                 return@launch
             }
 
@@ -377,89 +577,172 @@ class TransferManager private constructor(
             val completedDownloadDir = File(context.filesDir, "vault_storage").apply { mkdirs() }
             val finalTargetFile = File(completedDownloadDir, "${fileEntity.id}_${fileEntity.name}")
 
-            var downloadedBytes = 0L
-            var completedChunks = 0
+            var downloadedBytes = chunks.filter { it.isDownloaded }.sumOf { it.size }
+            var completedChunks = chunks.count { it.isDownloaded }
 
             try {
                 // Download each chunk in sequence
                 for (chunk in chunks) {
                     val chunkTempFile = File(downloadTempDir, "chunk_${chunk.chunkIndex}.part")
 
-                    // Resume check: if chunk file already exists with valid hash, skip download
-                    if (chunkTempFile.exists() && chunkTempFile.length() == chunk.size) {
-                        val existingHash = ChecksumUtil.computeSha256(chunkTempFile)
+                    // Resume check: if chunk file already exists with valid hash or marked downloaded, skip
+                    if (chunk.isDownloaded || (chunkTempFile.exists() && chunkTempFile.length() == chunk.size)) {
+                        val existingHash = if (chunkTempFile.exists()) ChecksumUtil.computeSha256(chunkTempFile) else chunk.checksum
                         if (existingHash == chunk.checksum) {
-                            database.chunkDao().markChunkDownloaded(fileId, chunk.chunkIndex)
-                            downloadedBytes += chunk.size
-                            completedChunks++
+                            if (!chunk.isDownloaded) {
+                                database.chunkDao().markChunkDownloaded(fileId, chunk.chunkIndex)
+                                downloadedBytes += chunk.size
+                                completedChunks++
+                            }
                             continue
                         }
                     }
 
-                    // Obtain Telegram file path
-                    val remoteFileId = chunk.telegramFileId ?: throw IllegalStateException("Missing Telegram file_id for chunk ${chunk.chunkIndex}")
-                    val fileInfoResult = repository.getFileInfo(token, remoteFileId)
-                    if (fileInfoResult.isFailure) {
-                        throw IllegalStateException("Failed to resolve remote path: ${fileInfoResult.exceptionOrNull()?.localizedMessage}")
+                    // Pause check at chunk boundary before starting chunk download
+                    if (pauseRequestedFiles.contains(fileId)) {
+                        pauseRequestedFiles.remove(fileId)
+                        database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused by user")
+                        updateProgressState(
+                            TransferProgress(
+                                fileId = fileId,
+                                fileName = fileEntity.name,
+                                isUpload = false,
+                                currentChunk = completedChunks,
+                                totalChunks = fileEntity.totalChunks,
+                                progressFraction = (downloadedBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                                bytesTransferred = downloadedBytes,
+                                totalBytes = fileEntity.size,
+                                speedBytesPerSec = 0L,
+                                status = FileStatus.PAUSED
+                            )
+                        )
+                        return@launch
                     }
-                    val remoteFilePath = fileInfoResult.getOrThrow().filePath
-                        ?: throw IllegalStateException("Telegram file_path is empty")
 
-                    // Download chunk binary stream
-                    val streamResult = repository.downloadFileStream(token, remoteFilePath)
-                    if (streamResult.isFailure) {
-                        throw IllegalStateException("Stream download failed: ${streamResult.exceptionOrNull()?.localizedMessage}")
-                    }
+                    // Obtain Telegram file path and download with up to 3 retries
+                    val remoteFileId = chunk.telegramFileId
+                        ?: throw IllegalStateException("Missing Telegram file_id for chunk ${chunk.chunkIndex}")
 
-                    val body = streamResult.getOrThrow()
-                    val digest = MessageDigest.getInstance("SHA-256")
-                    var lastTimestamp = System.currentTimeMillis()
-                    var chunkWritten = 0L
+                    val maxRetries = 3
+                    var attempt = 0
+                    var chunkSuccess = false
+                    var lastError: String? = null
 
-                    body.byteStream().use { input ->
-                        FileOutputStream(chunkTempFile).use { output ->
-                            val buffer = ByteArray(8192)
-                            var read: Int
-                            while (input.read(buffer).also { read = it } != -1) {
-                                output.write(buffer, 0, read)
-                                digest.update(buffer, 0, read)
-                                chunkWritten += read
+                    while (attempt < maxRetries && !chunkSuccess) {
+                        attempt++
+                        try {
+                            val fileInfoResult = repository.getFileInfo(token, remoteFileId)
+                            if (fileInfoResult.isFailure) {
+                                throw IllegalStateException("Failed to resolve remote path: ${fileInfoResult.exceptionOrNull()?.localizedMessage}")
+                            }
+                            val remoteFilePath = fileInfoResult.getOrThrow().filePath
+                                ?: throw IllegalStateException("Telegram file_path is empty")
 
-                                val now = System.currentTimeMillis()
-                                val dt = (now - lastTimestamp).coerceAtLeast(1)
-                                val speed = (chunkWritten * 1000L) / dt
+                            val streamResult = repository.downloadFileStream(token, remoteFilePath)
+                            if (streamResult.isFailure) {
+                                throw IllegalStateException("Stream download failed: ${streamResult.exceptionOrNull()?.localizedMessage}")
+                            }
 
-                                val overallProgress = downloadedBytes + chunkWritten
-                                val fraction = (overallProgress.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
+                            val body = streamResult.getOrThrow()
+                            val digest = MessageDigest.getInstance("SHA-256")
+                            var lastTimestamp = System.currentTimeMillis()
+                            var chunkWritten = 0L
 
-                                updateProgressState(
-                                    TransferProgress(
-                                        fileId = fileId,
-                                        fileName = fileEntity.name,
-                                        isUpload = false,
-                                        currentChunk = chunk.chunkIndex + 1,
-                                        totalChunks = fileEntity.totalChunks,
-                                        progressFraction = fraction,
-                                        bytesTransferred = overallProgress,
-                                        totalBytes = fileEntity.size,
-                                        speedBytesPerSec = speed,
-                                        status = FileStatus.DOWNLOADING
-                                    )
-                                )
+                            body.byteStream().use { input ->
+                                FileOutputStream(chunkTempFile).use { output ->
+                                    val buffer = ByteArray(8192)
+                                    var read: Int
+                                    while (input.read(buffer).also { read = it } != -1) {
+                                        output.write(buffer, 0, read)
+                                        digest.update(buffer, 0, read)
+                                        chunkWritten += read
+
+                                        val now = System.currentTimeMillis()
+                                        val dt = (now - lastTimestamp).coerceAtLeast(1)
+                                        val speed = (chunkWritten * 1000L) / dt
+
+                                        val overallProgress = downloadedBytes + chunkWritten
+                                        val fraction = (overallProgress.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
+
+                                        updateProgressState(
+                                            TransferProgress(
+                                                fileId = fileId,
+                                                fileName = fileEntity.name,
+                                                isUpload = false,
+                                                currentChunk = chunk.chunkIndex + 1,
+                                                totalChunks = fileEntity.totalChunks,
+                                                progressFraction = fraction,
+                                                bytesTransferred = overallProgress,
+                                                totalBytes = fileEntity.size,
+                                                speedBytesPerSec = speed,
+                                                status = FileStatus.DOWNLOADING
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Verify chunk SHA-256 integrity
+                            val computedChunkSha256 = digest.digest().joinToString("") { "%02x".format(it) }
+                            if (computedChunkSha256 != chunk.checksum) {
+                                chunkTempFile.delete()
+                                throw IllegalStateException("Checksum mismatch on chunk ${chunk.chunkIndex}! Expected ${chunk.checksum}, got $computedChunkSha256")
+                            }
+
+                            chunkSuccess = true
+                        } catch (e: Exception) {
+                            lastError = e.localizedMessage ?: "Download error"
+                            if (attempt < maxRetries) {
+                                delay(1000L * attempt)
                             }
                         }
                     }
 
-                    // Verify chunk SHA-256 integrity
-                    val computedChunkSha256 = digest.digest().joinToString("") { "%02x".format(it) }
-                    if (computedChunkSha256 != chunk.checksum) {
-                        chunkTempFile.delete()
-                        throw IllegalStateException("Checksum mismatch on chunk ${chunk.chunkIndex}! Expected ${chunk.checksum}, got $computedChunkSha256")
+                    if (!chunkSuccess) {
+                        val failReason = "Chunk ${chunk.chunkIndex + 1} of ${fileEntity.totalChunks} failed: $lastError"
+                        database.fileDao().updateStatus(fileId, FileStatus.FAILED, failReason)
+                        updateProgressState(
+                            TransferProgress(
+                                fileId = fileId,
+                                fileName = fileEntity.name,
+                                isUpload = false,
+                                currentChunk = completedChunks,
+                                totalChunks = fileEntity.totalChunks,
+                                progressFraction = (downloadedBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                                bytesTransferred = downloadedBytes,
+                                totalBytes = fileEntity.size,
+                                speedBytesPerSec = 0L,
+                                status = FileStatus.FAILED,
+                                errorMessage = failReason
+                            )
+                        )
+                        return@launch
                     }
 
                     database.chunkDao().markChunkDownloaded(fileId, chunk.chunkIndex)
                     downloadedBytes += chunk.size
                     completedChunks++
+
+                    // Pause check at chunk boundary after chunk download
+                    if (pauseRequestedFiles.contains(fileId)) {
+                        pauseRequestedFiles.remove(fileId)
+                        database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused by user")
+                        updateProgressState(
+                            TransferProgress(
+                                fileId = fileId,
+                                fileName = fileEntity.name,
+                                isUpload = false,
+                                currentChunk = completedChunks,
+                                totalChunks = fileEntity.totalChunks,
+                                progressFraction = (downloadedBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                                bytesTransferred = downloadedBytes,
+                                totalBytes = fileEntity.size,
+                                speedBytesPerSec = 0L,
+                                status = FileStatus.PAUSED
+                            )
+                        )
+                        return@launch
+                    }
                 }
 
                 // Concatenate all chunks sequentially into final destination file
@@ -483,20 +766,25 @@ class TransferManager private constructor(
                 downloadTempDir.deleteRecursively()
                 database.fileDao().markDownloaded(fileId, finalTargetFile.absolutePath)
 
-                updateProgressState(
-                    TransferProgress(
-                        fileId = fileId,
-                        fileName = fileEntity.name,
-                        isUpload = false,
-                        currentChunk = fileEntity.totalChunks,
-                        totalChunks = fileEntity.totalChunks,
-                        progressFraction = 1f,
-                        bytesTransferred = fileEntity.size,
-                        totalBytes = fileEntity.size,
-                        speedBytesPerSec = 0L,
-                        status = FileStatus.COMPLETED
-                    )
+                val completedProgress = TransferProgress(
+                    fileId = fileId,
+                    fileName = fileEntity.name,
+                    isUpload = false,
+                    currentChunk = fileEntity.totalChunks,
+                    totalChunks = fileEntity.totalChunks,
+                    progressFraction = 1f,
+                    bytesTransferred = fileEntity.size,
+                    totalBytes = fileEntity.size,
+                    speedBytesPerSec = 0L,
+                    status = FileStatus.COMPLETED
                 )
+
+                // Remove from active transfers so it doesn't linger at 100%
+                _transfers.update { it - fileId }
+                // Add to recently completed list (capped at 5)
+                _recentlyCompleted.update { current ->
+                    (listOf(completedProgress) + current.filter { it.fileId != fileId }).take(5)
+                }
 
             } catch (e: CancellationException) {
                 database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Download paused by user")
@@ -525,32 +813,79 @@ class TransferManager private constructor(
     }
 
     /**
-     * Pauses an active upload or download job.
+     * Pauses an active upload or download job at the chunk boundary.
      */
     fun pauseTransfer(fileId: String) {
+        pauseRequestedFiles.add(fileId)
+        // Immediately reflect Paused state in UI
+        _transfers.update { current ->
+            val existing = current[fileId] ?: return@update current
+            current + (fileId to existing.copy(status = FileStatus.PAUSED, speedBytesPerSec = 0L))
+        }
+        // Also cancel job in case it's in a long wait, while Room will safely retain completed chunks
         activeJobs[fileId]?.cancel()
         activeJobs.remove(fileId)
         scope.launch {
             database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused by user")
-            _transfers.update { current ->
-                val existing = current[fileId] ?: return@update current
-                current + (fileId to existing.copy(status = FileStatus.PAUSED))
+        }
+    }
+
+    /**
+     * Pauses all active or pending transfers.
+     */
+    fun pauseAll() {
+        val activeIds = _transfers.value.filter {
+            it.value.status == FileStatus.UPLOADING ||
+                    it.value.status == FileStatus.DOWNLOADING ||
+                    it.value.status == FileStatus.PENDING
+        }.keys
+        for (id in activeIds) {
+            pauseTransfer(id)
+        }
+    }
+
+    /**
+     * Resumes all paused or failed transfers.
+     */
+    fun resumeAll() {
+        val paused = _transfers.value.filter {
+            it.value.status == FileStatus.PAUSED || it.value.status == FileStatus.FAILED
+        }.values
+        for (transfer in paused) {
+            if (transfer.isUpload) {
+                startUpload(transfer.fileId)
+            } else {
+                startDownload(transfer.fileId)
             }
         }
     }
 
     /**
-     * Cancels an active or queued transfer.
+     * Cancels a transfer: stops the job, cleans up partially uploaded/downloaded chunks,
+     * deletes messages if any, removes file record from database and transfer list.
      */
     fun cancelTransfer(fileId: String) {
+        pauseRequestedFiles.remove(fileId)
         activeJobs[fileId]?.cancel()
         activeJobs.remove(fileId)
         scope.launch {
-            database.fileDao().updateStatus(fileId, FileStatus.FAILED, "Transfer cancelled")
-            _transfers.update { current ->
-                current - fileId
+            try {
+                // Delete physical chunks and manifest, clean up staging and temp dirs, remove from Room
+                deleteFile(fileId)
+            } catch (e: Exception) {
+                android.util.Log.e("TransferManager", "Error cleaning up cancelled transfer: ${e.message}")
+            } finally {
+                _transfers.update { it - fileId }
+                _recentlyCompleted.update { current -> current.filter { it.fileId != fileId } }
             }
         }
+    }
+
+    /**
+     * Clears the recently completed transfers history list.
+     */
+    fun clearRecentlyCompleted() {
+        _recentlyCompleted.value = emptyList()
     }
 
     /**

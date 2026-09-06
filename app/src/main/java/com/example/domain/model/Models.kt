@@ -43,10 +43,10 @@ data class TransferProgress(
     val isUpload: Boolean,
     val currentChunk: Int,
     val totalChunks: Int,
-    val progressFraction: Float,
-    val bytesTransferred: Long,
-    val totalBytes: Long,
-    val speedBytesPerSec: Long,
+    val progressFraction: Float = 0f,
+    val bytesTransferred: Long = 0L,
+    val totalBytes: Long = 0L,
+    val speedBytesPerSec: Long = 0L,
     val status: FileStatus,
     val errorMessage: String? = null
 )

@@ -32,8 +32,14 @@ enum class SortBy {
     NAME, DATE, SIZE
 }
 
+enum class AppScreen {
+    VAULT,
+    TRANSFERS
+}
+
 data class UiState(
     val isAuthenticated: Boolean = false,
+    val currentScreen: AppScreen = AppScreen.VAULT,
     val isValidating: Boolean = false,
     val validationSuccessUser: TelegramUser? = null,
     val validationError: String? = null,
@@ -137,6 +143,13 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     // Live transfers state
     val activeTransfers: StateFlow<List<TransferProgress>> = transferManager.transfers
         .map { it.values.toList() }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            emptyList()
+        )
+
+    val recentlyCompleted: StateFlow<List<TransferProgress>> = transferManager.recentlyCompleted
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
@@ -317,6 +330,26 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun cancelTransfer(fileId: String) {
         transferManager.cancelTransfer(fileId)
+    }
+
+    fun pauseAllTransfers() {
+        transferManager.pauseAll()
+    }
+
+    fun resumeAllTransfers() {
+        transferManager.resumeAll()
+    }
+
+    fun clearRecentlyCompleted() {
+        transferManager.clearRecentlyCompleted()
+    }
+
+    fun navigateToTransfersScreen() {
+        _uiState.update { it.copy(currentScreen = AppScreen.TRANSFERS) }
+    }
+
+    fun navigateToVaultScreen() {
+        _uiState.update { it.copy(currentScreen = AppScreen.VAULT) }
     }
 
     fun retryTransfer(fileId: String) {

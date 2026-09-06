@@ -30,6 +30,9 @@ class TransferService : Service() {
         const val NOTIFICATION_ID = 1001
 
         const val ACTION_UPDATE_STATUS = "com.example.televault.UPDATE_STATUS"
+        const val ACTION_OPEN_TRANSFERS = "com.example.televault.OPEN_TRANSFERS"
+        const val EXTRA_NAVIGATE_TO = "extra_navigate_to"
+        const val DESTINATION_TRANSFERS = "transfers"
         const val EXTRA_MESSAGE = "extra_message"
     }
 
@@ -70,10 +73,19 @@ class TransferService : Service() {
                     val percent = (active.progressFraction * 100).toInt()
                     val speed = ChecksumUtil.formatSpeed(active.speedBytesPerSec)
                     val actionLabel = if (active.isUpload) "Uploading" else "Downloading"
-                    val content = "$actionLabel ${active.fileName} (Chunk ${active.currentChunk}/${active.totalChunks}) · $percent% · $speed"
+
+                    val totalTransfers = transfersMap.size
+                    val title = if (totalTransfers > 1) {
+                        val activeIndex = (transfersMap.values.indexOf(active) + 1).coerceIn(1, totalTransfers)
+                        "$actionLabel $activeIndex of $totalTransfers files — $percent%"
+                    } else {
+                        "$actionLabel ${active.fileName} — $percent%"
+                    }
+
+                    val content = "${active.fileName} (Chunk ${active.currentChunk}/${active.totalChunks}) · $speed"
 
                     val updatedNotification = buildNotification(
-                        title = "$actionLabel in progress",
+                        title = title,
                         progress = percent,
                         maxProgress = 100,
                         content = content
@@ -94,6 +106,8 @@ class TransferService : Service() {
         content: String
     ): Notification {
         val launchIntent = Intent(this, MainActivity::class.java).apply {
+            action = ACTION_OPEN_TRANSFERS
+            putExtra(EXTRA_NAVIGATE_TO, DESTINATION_TRANSFERS)
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
         val pendingIntent = PendingIntent.getActivity(
