@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import android.util.Log
 import com.example.data.local.AppDatabase
 import com.example.data.local.EncryptedCredentialsManager
 import com.example.data.local.entity.ChunkEntity
@@ -211,7 +212,7 @@ class TransferManager private constructor(
                         fileId = fileId,
                         fileName = fileName,
                         isUpload = true,
-                        currentChunk = 0,
+                        currentChunk = 1,
                         totalChunks = totalChunks,
                         progressFraction = 0f,
                         bytesTransferred = 0L,
@@ -243,15 +244,16 @@ class TransferManager private constructor(
                 // 6. Launch the upload
                 startUpload(fileId)
 
-            } catch (e: Exception) {
-                val errMsg = e.message ?: "Upload preparation failed"
+            } catch (e: Throwable) {
+                val errMsg = e.message ?: "Upload preparation failed (${e::class.java.simpleName})"
+                Log.e("TransferManager", "Failed during enqueueUpload: $errMsg", e)
                 database.fileDao().updateStatus(fileId, FileStatus.FAILED, errMsg)
                 updateProgressState(
                     TransferProgress(
                         fileId = fileId,
                         fileName = "Upload",
                         isUpload = true,
-                        currentChunk = 0,
+                        currentChunk = 1,
                         totalChunks = 1,
                         progressFraction = 0f,
                         bytesTransferred = 0L,
@@ -332,13 +334,14 @@ class TransferManager private constructor(
             var totalBytesSent = chunks.filter { it.isUploaded }.sumOf { it.size }
             val initialFraction = if (fileEntity.size > 0) (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f) else 0f
 
+            val initialCurrentChunk = (completedCount + 1).coerceAtMost(fileEntity.totalChunks)
             database.fileDao().updateStatus(fileId, FileStatus.UPLOADING)
             updateProgressState(
                 TransferProgress(
                     fileId = fileId,
                     fileName = fileEntity.name,
                     isUpload = true,
-                    currentChunk = completedCount,
+                    currentChunk = initialCurrentChunk,
                     totalChunks = fileEntity.totalChunks,
                     progressFraction = initialFraction,
                     bytesTransferred = totalBytesSent,
@@ -420,6 +423,7 @@ class TransferManager private constructor(
                         attempt++
                         var lastTimestamp = System.currentTimeMillis()
                         var lastBytes = 0L
+                        var lastProgressUiUpdate = 0L
 
                         val uploadResult = repository.uploadChunk(
                             token = token,
@@ -430,30 +434,34 @@ class TransferManager private constructor(
                             totalChunks = fileEntity.totalChunks,
                             chunkBytes = chunkBytes,
                             chunkSha256 = localChunkSha256
-                        ) { bytesWritten, _ ->
+                        ) { bytesWritten, chunkTotal ->
                             val now = System.currentTimeMillis()
-                            val dt = (now - lastTimestamp).coerceAtLeast(1)
-                            val speed = ((bytesWritten - lastBytes) * 1000L) / dt
-                            lastTimestamp = now
-                            lastBytes = bytesWritten
+                            val shouldUpdateUi = (now - lastProgressUiUpdate >= 100L) || (bytesWritten >= chunkTotal)
+                            if (shouldUpdateUi) {
+                                val dt = (now - lastTimestamp).coerceAtLeast(1)
+                                val speed = ((bytesWritten - lastBytes) * 1000L) / dt
+                                lastTimestamp = now
+                                lastBytes = bytesWritten
+                                lastProgressUiUpdate = now
 
-                            val currentTotalSent = totalBytesSent + bytesWritten
-                            val fraction = (currentTotalSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
+                                val currentTotalSent = totalBytesSent + bytesWritten
+                                val fraction = (currentTotalSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
 
-                            updateProgressState(
-                                TransferProgress(
-                                    fileId = fileId,
-                                    fileName = fileEntity.name,
-                                    isUpload = true,
-                                    currentChunk = chunkIndex + 1,
-                                    totalChunks = fileEntity.totalChunks,
-                                    progressFraction = fraction,
-                                    bytesTransferred = currentTotalSent,
-                                    totalBytes = fileEntity.size,
-                                    speedBytesPerSec = speed,
-                                    status = FileStatus.UPLOADING
+                                updateProgressState(
+                                    TransferProgress(
+                                        fileId = fileId,
+                                        fileName = fileEntity.name,
+                                        isUpload = true,
+                                        currentChunk = chunkIndex + 1,
+                                        totalChunks = fileEntity.totalChunks,
+                                        progressFraction = fraction,
+                                        bytesTransferred = currentTotalSent,
+                                        totalBytes = fileEntity.size,
+                                        speedBytesPerSec = speed,
+                                        status = FileStatus.UPLOADING
+                                    )
                                 )
-                            )
+                            }
                         }
 
                         if (uploadResult.isSuccess) {
@@ -462,8 +470,10 @@ class TransferManager private constructor(
                         } else {
                             val exception = uploadResult.exceptionOrNull()
                             lastError = exception?.message ?: "Network error"
+                            Log.e("TransferManager", "Chunk upload failed (chunk ${chunkIndex + 1}/${fileEntity.totalChunks}, attempt $attempt/$maxRetries): $lastError", exception)
                             // If it's a permanent 4xx error (e.g. Forbidden, Bad Request), break immediately without retrying
                             if (exception is TelegramApiException && exception.errorCode != null && exception.errorCode in 400..499 && exception.errorCode != 429) {
+                                Log.e("TransferManager", "Permanent 4xx Telegram API error (${exception.errorCode}): '$lastError'. Aborting upload retries.")
                                 break
                             }
                             if (attempt < maxRetries) {
@@ -474,13 +484,14 @@ class TransferManager private constructor(
 
                     if (!chunkSuccess || uploadedMessage == null) {
                         val failReason = lastError ?: "Upload failed"
+                        Log.e("TransferManager", "Marking upload for $fileId (${fileEntity.name}) as FAILED. Reason: $failReason")
                         database.fileDao().updateStatus(fileId, FileStatus.FAILED, failReason)
                         updateProgressState(
                             TransferProgress(
                                 fileId = fileId,
                                 fileName = fileEntity.name,
                                 isUpload = true,
-                                currentChunk = completedCount,
+                                currentChunk = (chunkIndex + 1).coerceAtMost(fileEntity.totalChunks),
                                 totalChunks = fileEntity.totalChunks,
                                 progressFraction = (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
                                 bytesTransferred = totalBytesSent,
@@ -607,16 +618,18 @@ class TransferManager private constructor(
                 stagingFile.delete()
 
             } catch (e: CancellationException) {
+                Log.i("TransferManager", "Upload paused for fileId=$fileId")
                 database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Upload paused by user")
-            } catch (e: Exception) {
-                val err = e.message ?: "Upload failed"
+            } catch (e: Throwable) {
+                val err = e.message ?: "Upload failed (${e::class.java.simpleName})"
+                Log.e("TransferManager", "Fatal error during upload for $fileId (${fileEntity.name}): $err", e)
                 database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
                 updateProgressState(
                     TransferProgress(
                         fileId = fileId,
                         fileName = fileEntity.name,
                         isUpload = true,
-                        currentChunk = completedCount,
+                        currentChunk = (completedCount + 1).coerceAtMost(fileEntity.totalChunks),
                         totalChunks = fileEntity.totalChunks,
                         progressFraction = (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
                         bytesTransferred = totalBytesSent,
@@ -1089,14 +1102,18 @@ class TransferManager private constructor(
     }
 
     private fun notifyService(content: String) {
-        val intent = Intent(context, TransferService::class.java).apply {
-            action = TransferService.ACTION_UPDATE_STATUS
-            putExtra(TransferService.EXTRA_MESSAGE, content)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(intent)
-        } else {
-            context.startService(intent)
+        try {
+            val intent = Intent(context, TransferService::class.java).apply {
+                action = TransferService.ACTION_UPDATE_STATUS
+                putExtra(TransferService.EXTRA_MESSAGE, content)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        } catch (e: Exception) {
+            Log.w("TransferManager", "Failed to start TransferService foreground intent: ${e.message}")
         }
     }
 

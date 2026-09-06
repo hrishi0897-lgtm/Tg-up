@@ -9,6 +9,7 @@ import okhttp3.OkHttpClient
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
+import okhttp3.logging.HttpLoggingInterceptor
 import okio.Buffer
 import okio.BufferedSink
 import okio.ForwardingSink
@@ -18,7 +19,10 @@ import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
+import android.util.Log
 
 class TelegramRepository(
     private val okHttpClient: OkHttpClient = createDefaultOkHttpClient(),
@@ -44,10 +48,18 @@ class TelegramRepository(
         private const val BASE_BACKOFF_MS = 1000L
 
         fun createDefaultOkHttpClient(): OkHttpClient {
+            val logging = HttpLoggingInterceptor { message ->
+                Log.d("TelegramHttp", message)
+            }.apply {
+                level = HttpLoggingInterceptor.Level.BASIC
+            }
+
             return OkHttpClient.Builder()
                 .connectTimeout(60, TimeUnit.SECONDS)
-                .readTimeout(120, TimeUnit.SECONDS)
-                .writeTimeout(120, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .writeTimeout(60, TimeUnit.SECONDS)
+                .callTimeout(60, TimeUnit.SECONDS)
+                .addInterceptor(logging)
                 .retryOnConnectionFailure(true)
                 .build()
         }
@@ -77,19 +89,26 @@ class TelegramRepository(
         while (attempt < MAX_RETRIES) {
             attempt++
             try {
+                Log.i("TelegramRepo", ">>> [HTTP DISPATCH] $actionName (attempt $attempt/$MAX_RETRIES)")
                 val response = call()
+                Log.i("TelegramRepo", "<<< [HTTP RESPONSE] $actionName: HTTP ${response.code()} ${response.message()}, isSuccessful=${response.isSuccessful}")
+
                 if (response.isSuccessful) {
                     val body = response.body()
                     if (body != null && body.ok && body.result != null) {
+                        Log.i("TelegramRepo", "<<< [HTTP SUCCESS] $actionName: confirmed ok=true")
                         return Result.success(body.result)
                     } else {
                         val errorMsg = body?.description ?: "Telegram API returned ok=false or invalid response"
+                        Log.e("TelegramRepo", "<<< [HTTP LOGICAL ERROR] $actionName: ok=false, description='$errorMsg', code=${body?.errorCode}")
                         return Result.failure(TelegramApiException(errorMsg, body?.errorCode))
                     }
                 }
 
                 // Parse error body JSON from Telegram API
                 val errorBody = try { response.errorBody()?.string() } catch (_: Exception) { null }
+                Log.e("TelegramRepo", "<<< [HTTP ERROR BODY] $actionName: code=${response.code()}: $errorBody")
+
                 var telegramDescription: String? = null
                 var telegramErrorCode: Int? = null
                 var retryAfterSeconds: Int? = null
@@ -100,12 +119,15 @@ class TelegramRepository(
                         telegramDescription = parsed?.description
                         telegramErrorCode = parsed?.errorCode
                         retryAfterSeconds = parsed?.parameters?.retryAfter
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        Log.w("TelegramRepo", "Failed to parse error body JSON: ${e.message}")
+                    }
                 }
 
                 // Handle HTTP 429 (Rate Limit)
                 if (response.code() == 429) {
                     val waitSec = retryAfterSeconds ?: 5
+                    Log.w("TelegramRepo", "Rate limit (HTTP 429), waiting $waitSec seconds...")
                     if (attempt < MAX_RETRIES) {
                         delay((waitSec * 1000L).coerceAtLeast(1000L))
                         continue
@@ -116,6 +138,7 @@ class TelegramRepository(
 
                 // Handle server errors (500, 502, 503, 504) with exponential backoff
                 if (response.code() in 500..504) {
+                    Log.w("TelegramRepo", "Server error ${response.code()}, backoff $currentDelay ms...")
                     if (attempt < MAX_RETRIES) {
                         delay(currentDelay)
                         currentDelay *= 2
@@ -136,9 +159,31 @@ class TelegramRepository(
                     else -> "Telegram API error (${response.code()}): ${response.message()}"
                 }
 
+                Log.e("TelegramRepo", "Permanent client error (${response.code()}): '$finalError'")
                 return Result.failure(TelegramApiException(finalError, telegramErrorCode ?: response.code()))
 
+            } catch (e: SocketTimeoutException) {
+                Log.e("TelegramRepo", "[$actionName] Socket timeout after 60s (attempt $attempt/$MAX_RETRIES): ${e.message}", e)
+                if (attempt < MAX_RETRIES) {
+                    delay(currentDelay)
+                    currentDelay *= 2
+                } else {
+                    return Result.failure(
+                        Exception("Network request timed out after 60 seconds during $actionName. Please check your internet connection.")
+                    )
+                }
+            } catch (e: InterruptedIOException) {
+                Log.e("TelegramRepo", "[$actionName] Request timed out (attempt $attempt/$MAX_RETRIES): ${e.message}", e)
+                if (attempt < MAX_RETRIES) {
+                    delay(currentDelay)
+                    currentDelay *= 2
+                } else {
+                    return Result.failure(
+                        Exception("Network request timed out after 60 seconds during $actionName.")
+                    )
+                }
             } catch (e: IOException) {
+                Log.e("TelegramRepo", "[$actionName] Network failure (attempt $attempt/$MAX_RETRIES): ${e.message}", e)
                 if (attempt < MAX_RETRIES) {
                     delay(currentDelay)
                     currentDelay *= 2
@@ -148,6 +193,7 @@ class TelegramRepository(
                     )
                 }
             } catch (e: Exception) {
+                Log.e("TelegramRepo", "[$actionName] Unexpected exception: ${e.message}", e)
                 return Result.failure(e)
             }
         }
@@ -203,6 +249,10 @@ class TelegramRepository(
         chunkSha256: String,
         onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit
     ): Result<TelegramMessage> {
+        val targetUrl = botUrl(token, "sendDocument")
+        val chunkPartName = "${fileName}.chunk_${chunkIndex}_of_${totalChunks}.tpart"
+        Log.i("TelegramRepo", ">>> [uploadChunk START] Target URL: $targetUrl | File: $fileName | Chunk: ${chunkIndex + 1}/$totalChunks (${chunkBytes.size} bytes) | Part: $chunkPartName | ChatId: $chatId")
+
         val captionPayload = ChunkCaptionMeta(
             fileId = fileId,
             name = fileName,
@@ -212,7 +262,6 @@ class TelegramRepository(
         )
         val captionJson = CHUNK_CAPTION_PREFIX + captionMetaAdapter.toJson(captionPayload)
 
-        val chunkPartName = "${fileName}.chunk_${chunkIndex}_of_${totalChunks}.tpart"
         val rawRequestBody = chunkBytes.toRequestBody("application/octet-stream".toMediaTypeOrNull())
         val countingBody = CountingRequestBody(rawRequestBody, onProgress)
         val multipart = MultipartBody.Part.createFormData("document", chunkPartName, countingBody)
@@ -220,8 +269,9 @@ class TelegramRepository(
         val chatIdBody = chatId.toRequestBody("text/plain".toMediaTypeOrNull())
         val captionBody = captionJson.toRequestBody("text/plain".toMediaTypeOrNull())
 
+        Log.i("TelegramRepo", ">>> [uploadChunk DISPATCHING] Invoking api.sendDocument multipart POST to $targetUrl...")
         return executeWithRetry("Uploading chunk ${chunkIndex + 1}/$totalChunks") {
-            api.sendDocument(botUrl(token, "sendDocument"), chatIdBody, captionBody, multipart)
+            api.sendDocument(targetUrl, chatIdBody, captionBody, multipart)
         }
     }
 

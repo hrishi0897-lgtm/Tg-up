@@ -356,8 +356,8 @@ private fun TransferRowCard(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = when (transfer.status) {
-                            FileStatus.UPLOADING -> "Uploading…"
-                            FileStatus.DOWNLOADING -> "Downloading…"
+                            FileStatus.UPLOADING -> if (transfer.speedBytesPerSec > 0) "Uploading…" else "Connecting to Telegram…"
+                            FileStatus.DOWNLOADING -> if (transfer.speedBytesPerSec > 0) "Downloading…" else "Connecting to Telegram…"
                             FileStatus.PAUSED -> "Paused"
                             FileStatus.PENDING -> "Queued"
                             FileStatus.FAILED -> "Failed — tap to retry"
@@ -549,7 +549,7 @@ private fun TransferRowCard(
                         text = transfer.errorMessage,
                         fontSize = 11.sp,
                         color = StatusError,
-                        maxLines = 2,
+                        maxLines = 4,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
