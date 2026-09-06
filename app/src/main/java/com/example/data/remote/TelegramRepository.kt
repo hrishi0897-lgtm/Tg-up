@@ -55,13 +55,17 @@ class TelegramRepository(
             }
 
             return OkHttpClient.Builder()
-                .connectTimeout(60, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
+                .connectTimeout(15, TimeUnit.SECONDS)
                 .writeTimeout(60, TimeUnit.SECONDS)
-                .callTimeout(60, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .callTimeout(90, TimeUnit.SECONDS)
                 .addInterceptor(logging)
                 .retryOnConnectionFailure(true)
                 .build()
+        }
+
+        internal fun redactToken(url: String): String {
+            return url.replace(Regex("/bot[^/]+/"), "/bot<REDACTED>/")
         }
 
         internal fun botUrl(token: String, method: String): String {
@@ -163,23 +167,23 @@ class TelegramRepository(
                 return Result.failure(TelegramApiException(finalError, telegramErrorCode ?: response.code()))
 
             } catch (e: SocketTimeoutException) {
-                Log.e("TelegramRepo", "[$actionName] Socket timeout after 60s (attempt $attempt/$MAX_RETRIES): ${e.message}", e)
+                Log.e("TelegramRepo", "[$actionName] Socket timeout (attempt $attempt/$MAX_RETRIES): ${e.message}", e)
                 if (attempt < MAX_RETRIES) {
                     delay(currentDelay)
                     currentDelay *= 2
                 } else {
                     return Result.failure(
-                        Exception("Network request timed out after 60 seconds during $actionName. Please check your internet connection.")
+                        Exception("Network request timed out during $actionName (${e.message ?: "SocketTimeout"}). Please check your connection.")
                     )
                 }
             } catch (e: InterruptedIOException) {
-                Log.e("TelegramRepo", "[$actionName] Request timed out (attempt $attempt/$MAX_RETRIES): ${e.message}", e)
+                Log.e("TelegramRepo", "[$actionName] Request timed out or interrupted (attempt $attempt/$MAX_RETRIES): ${e.message}", e)
                 if (attempt < MAX_RETRIES) {
                     delay(currentDelay)
                     currentDelay *= 2
                 } else {
                     return Result.failure(
-                        Exception("Network request timed out after 60 seconds during $actionName.")
+                        Exception("Network request timed out during $actionName (${e.message ?: "Timeout"}).")
                     )
                 }
             } catch (e: IOException) {
@@ -189,7 +193,7 @@ class TelegramRepository(
                     currentDelay *= 2
                 } else {
                     return Result.failure(
-                        Exception("Network connection failed during $actionName. Please check your internet connection: ${e.localizedMessage}")
+                        Exception("Network connection failed during $actionName: ${e.localizedMessage ?: e.message}")
                     )
                 }
             } catch (e: Exception) {
@@ -250,8 +254,9 @@ class TelegramRepository(
         onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit
     ): Result<TelegramMessage> {
         val targetUrl = botUrl(token, "sendDocument")
+        val redactedUrl = redactToken(targetUrl)
         val chunkPartName = "${fileName}.chunk_${chunkIndex}_of_${totalChunks}.tpart"
-        Log.i("TelegramRepo", ">>> [uploadChunk START] Target URL: $targetUrl | File: $fileName | Chunk: ${chunkIndex + 1}/$totalChunks (${chunkBytes.size} bytes) | Part: $chunkPartName | ChatId: $chatId")
+        Log.i("TelegramRepo", ">>> [uploadChunk START] Target URL: $redactedUrl | File: $fileName | Chunk: ${chunkIndex + 1}/$totalChunks (${chunkBytes.size} bytes) | Part: $chunkPartName | ChatId: $chatId")
 
         val captionPayload = ChunkCaptionMeta(
             fileId = fileId,
@@ -269,9 +274,16 @@ class TelegramRepository(
         val chatIdBody = chatId.toRequestBody("text/plain".toMediaTypeOrNull())
         val captionBody = captionJson.toRequestBody("text/plain".toMediaTypeOrNull())
 
-        Log.i("TelegramRepo", ">>> [uploadChunk DISPATCHING] Invoking api.sendDocument multipart POST to $targetUrl...")
         return executeWithRetry("Uploading chunk ${chunkIndex + 1}/$totalChunks") {
-            api.sendDocument(targetUrl, chatIdBody, captionBody, multipart)
+            Log.i("TelegramRepo", ">>> [sendDocument NETWORK CALL] Requesting POST $redactedUrl with document part size ${chunkBytes.size} bytes...")
+            try {
+                val resp = api.sendDocument(targetUrl, chatIdBody, captionBody, multipart)
+                Log.i("TelegramRepo", "<<< [sendDocument NETWORK RESPONSE] HTTP ${resp.code()} ${resp.message()} isSuccessful=${resp.isSuccessful} for $redactedUrl")
+                resp
+            } catch (e: Exception) {
+                Log.e("TelegramRepo", "<<< [sendDocument NETWORK EXCEPTION] ${e::class.java.simpleName}: ${e.message} for $redactedUrl", e)
+                throw e
+            }
         }
     }
 

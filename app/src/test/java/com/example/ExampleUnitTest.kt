@@ -49,4 +49,20 @@ class ExampleUnitTest {
     assertEquals("api.telegram.org", uri.host)
     assertEquals("/bot8869367272:AAHxEkuNC8Z2JLQOkj3g34xZcE6VFg6-kUE/getMe", uri.path)
   }
+
+  @Test
+  fun telegramOkHttpClient_hasRequiredTimeouts() {
+    val client = TelegramRepository.createDefaultOkHttpClient()
+    assertEquals(15_000, client.connectTimeoutMillis)
+    assertEquals(60_000, client.writeTimeoutMillis)
+    assertEquals(60_000, client.readTimeoutMillis)
+    assertEquals(90_000, client.callTimeoutMillis)
+  }
+
+  @Test
+  fun redactToken_masksBotTokenCorrectly() {
+    val sampleUrl = "https://api.telegram.org/bot123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11/sendDocument"
+    val redacted = TelegramRepository.redactToken(sampleUrl)
+    assertEquals("https://api.telegram.org/bot<REDACTED>/sendDocument", redacted)
+  }
 }
