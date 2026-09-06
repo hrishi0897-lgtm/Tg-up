@@ -76,8 +76,8 @@ interface FileDao {
     @Query("UPDATE files SET manifestMessageId = :manifestMessageId WHERE id = :fileId")
     suspend fun updateManifestId(fileId: String, manifestMessageId: Long)
 
-    @Query("UPDATE files SET localPath = :localPath, status = 'COMPLETED' WHERE id = :fileId")
-    suspend fun markDownloaded(fileId: String, localPath: String)
+    @Query("UPDATE files SET localPath = :localPath, localUri = :localUri, status = 'COMPLETED' WHERE id = :fileId")
+    suspend fun markDownloaded(fileId: String, localPath: String, localUri: String? = localPath)
 
     @Query("DELETE FROM files")
     suspend fun clearAll()

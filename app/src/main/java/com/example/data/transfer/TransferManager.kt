@@ -16,6 +16,7 @@ import com.example.data.remote.ManifestChunk
 import com.example.data.remote.TelegramApiException
 import com.example.data.remote.TelegramRepository
 import com.example.domain.ChecksumUtil
+import com.example.domain.DownloadStorageManager
 import com.example.domain.RollingSpeedEstimator
 import com.example.domain.model.TransferProgress
 import kotlinx.coroutines.CancellationException
@@ -79,6 +80,9 @@ class TransferManager private constructor(
 
     private val _transferErrorEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
     val transferErrorEvents: SharedFlow<String> = _transferErrorEvents.asSharedFlow()
+
+    private val _transferNotificationEvents = MutableSharedFlow<String>(extraBufferCapacity = 10)
+    val transferNotificationEvents: SharedFlow<String> = _transferNotificationEvents.asSharedFlow()
 
     init {
         restorePersistedTransfers()
@@ -782,8 +786,7 @@ class TransferManager private constructor(
 
             val chunks = database.chunkDao().getChunksForFile(fileId)
             val downloadTempDir = File(context.cacheDir, "downloads_temp/$fileId").apply { mkdirs() }
-            val completedDownloadDir = File(context.filesDir, "vault_storage").apply { mkdirs() }
-            val finalTargetFile = File(completedDownloadDir, "${fileEntity.id}_${fileEntity.name}")
+            val tempReassembledFile = File(downloadTempDir, "assembled_${fileEntity.name}")
 
             var downloadedBytes = chunks.filter { it.isDownloaded }.sumOf { it.size }
             var completedChunks = chunks.count { it.isDownloaded }
@@ -981,8 +984,8 @@ class TransferManager private constructor(
                     }
                 }
 
-                // Concatenate all chunks sequentially into final destination file
-                FileOutputStream(finalTargetFile).use { output ->
+                // Concatenate all chunks sequentially into temporary reassembly file
+                FileOutputStream(tempReassembledFile).use { output ->
                     for (chunk in chunks) {
                         val chunkTempFile = File(downloadTempDir, "chunk_${chunk.chunkIndex}.part")
                         FileInputStream(chunkTempFile).use { input ->
@@ -992,15 +995,26 @@ class TransferManager private constructor(
                 }
 
                 // Final end-to-end verification of overall file SHA-256
-                val finalFileChecksum = ChecksumUtil.computeSha256(finalTargetFile)
+                val finalFileChecksum = ChecksumUtil.computeSha256(tempReassembledFile)
                 if (finalFileChecksum != fileEntity.checksum) {
-                    finalTargetFile.delete()
+                    tempReassembledFile.delete()
                     throw IllegalStateException("Overall file integrity verification failed! Reassembled checksum did not match manifest.")
                 }
 
-                // Success! Clean temp chunks and mark as completed
+                // Insert into dedicated Downloads/TGC folder via MediaStore Scoped Storage
+                val savedMediaUri = DownloadStorageManager.saveToDownloadsTgc(
+                    context = context,
+                    fileName = fileEntity.name,
+                    mimeType = fileEntity.mimeType,
+                    sourceFile = tempReassembledFile
+                )
+
+                // Success! Clean temp chunks and reassembly file
                 downloadTempDir.deleteRecursively()
-                database.fileDao().markDownloaded(fileId, finalTargetFile.absolutePath)
+
+                val uriString = savedMediaUri.toString()
+                database.fileDao().markDownloaded(fileId, uriString, uriString)
+                _transferNotificationEvents.tryEmit("Saved to Downloads/TGC")
 
                 val completedProgress = TransferProgress(
                     fileId = fileId,
@@ -1150,10 +1164,19 @@ class TransferManager private constructor(
                 }
             }
 
-            // 3. Delete local physical files
-            file?.localPath?.let { path ->
-                val f = File(path)
-                if (f.exists()) f.delete()
+            // 3. Delete local physical files / MediaStore entry
+            val targetUriString = file?.localUri ?: file?.localPath
+            if (targetUriString != null) {
+                if (targetUriString.startsWith("content://")) {
+                    try {
+                        context.contentResolver.delete(Uri.parse(targetUriString), null, null)
+                    } catch (delEx: Exception) {
+                        Log.w("TransferManager", "Could not delete MediaStore item: ${delEx.message}")
+                    }
+                } else {
+                    val f = File(targetUriString)
+                    if (f.exists()) f.delete()
+                }
             }
 
             // 4. Clean temp staging, discrete chunks, and download directories

@@ -35,5 +35,6 @@ data class FileEntity(
     val completedChunks: Int = 0,
     val manifestMessageId: Long? = null, // Telegram message ID of manifest
     val localPath: String? = null, // Local cached path if downloaded
+    val localUri: String? = null, // MediaStore or local content URI
     val errorMessage: String? = null
 )

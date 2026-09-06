@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
@@ -43,6 +45,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -86,7 +89,35 @@ fun FileDetailSheet(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    val isDownloadedLocally = file.localPath?.let { File(it).exists() } == true
+    val localTarget = file.localUri ?: file.localPath
+    val isDownloadedLocally = remember(localTarget) {
+        if (localTarget.isNullOrBlank()) false
+        else if (localTarget.startsWith("content://")) {
+            try {
+                context.contentResolver.openInputStream(Uri.parse(localTarget))?.use { true } ?: false
+            } catch (_: Exception) {
+                false
+            }
+        } else {
+            File(localTarget).exists()
+        }
+    }
+
+    val shareableUri: Uri? = remember(localTarget, isDownloadedLocally) {
+        if (!isDownloadedLocally || localTarget.isNullOrBlank()) null
+        else if (localTarget.startsWith("content://")) {
+            Uri.parse(localTarget)
+        } else {
+            val localFile = File(localTarget)
+            if (localFile.exists()) {
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    localFile
+                )
+            } else null
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -146,20 +177,18 @@ fun FileDetailSheet(
                     // Open / Share File
                     Button(
                         onClick = {
-                            val localFile = File(file.localPath!!)
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                localFile
-                            )
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                setDataAndType(uri, file.mimeType)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            try {
-                                context.startActivity(Intent.createChooser(intent, "Open file"))
-                            } catch (_: Exception) {
-                                Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
+                            if (shareableUri != null) {
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(shareableUri, file.mimeType)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                try {
+                                    context.startActivity(Intent.createChooser(intent, "Open file"))
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "File is not available on device", Toast.LENGTH_SHORT).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(
@@ -178,18 +207,16 @@ fun FileDetailSheet(
 
                     OutlinedButton(
                         onClick = {
-                            val localFile = File(file.localPath!!)
-                            val uri = FileProvider.getUriForFile(
-                                context,
-                                "${context.packageName}.fileprovider",
-                                localFile
-                            )
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = file.mimeType
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            if (shareableUri != null) {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = file.mimeType
+                                    putExtra(Intent.EXTRA_STREAM, shareableUri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share file"))
+                            } else {
+                                Toast.makeText(context, "File is not available on device", Toast.LENGTH_SHORT).show()
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share file"))
                         },
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
                         border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
@@ -219,6 +246,33 @@ fun FileDetailSheet(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Download & Reassemble", fontWeight = FontWeight.SemiBold)
                     }
+                }
+            }
+
+            if (isDownloadedLocally) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(StatusSuccess.copy(alpha = 0.12f))
+                        .border(1.dp, StatusSuccess.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Folder,
+                        contentDescription = null,
+                        tint = StatusSuccess,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Saved to Downloads/TGC",
+                        color = StatusSuccess,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
 

@@ -60,7 +60,8 @@ data class UiState(
     val folderToRename: FolderEntity? = null,
     val itemToMove: FileEntity? = null,
     val showInAppGuide: Boolean = false,
-    val transferErrorMessage: String? = null
+    val transferErrorMessage: String? = null,
+    val transferNotificationMessage: String? = null
 )
 
 class TeleVaultViewModel(application: Application) : AndroidViewModel(application) {
@@ -84,10 +85,19 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 _uiState.update { it.copy(transferErrorMessage = errorMsg) }
             }
         }
+        viewModelScope.launch {
+            transferManager.transferNotificationEvents.collect { notifMsg ->
+                _uiState.update { it.copy(transferNotificationMessage = notifMsg) }
+            }
+        }
     }
 
     fun dismissTransferError() {
         _uiState.update { it.copy(transferErrorMessage = null) }
+    }
+
+    fun dismissTransferNotification() {
+        _uiState.update { it.copy(transferNotificationMessage = null) }
     }
 
     // Storage summary reactive stats

@@ -115,6 +115,14 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         }
     }
 
+    LaunchedEffect(uiState.transferNotificationMessage) {
+        val notif = uiState.transferNotificationMessage
+        if (!notif.isNullOrBlank()) {
+            Toast.makeText(context, notif, Toast.LENGTH_SHORT).show()
+            viewModel.dismissTransferNotification()
+        }
+    }
+
     // Notification permission launcher for Android 13+
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()

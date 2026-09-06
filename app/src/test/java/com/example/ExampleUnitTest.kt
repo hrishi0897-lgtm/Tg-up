@@ -174,4 +174,29 @@ class ExampleUnitTest {
       tempDir.deleteRecursively()
     }
   }
+
+  @Test
+  fun downloadStorageManager_relativePathAndFolderMatchRequirements() {
+    assertEquals("TGC", com.example.domain.DownloadStorageManager.TGC_FOLDER_NAME)
+    assertEquals("Download/TGC", com.example.domain.DownloadStorageManager.RELATIVE_DOWNLOAD_PATH)
+  }
+
+  @Test
+  fun downloadStorageManager_getUniqueFile_appendsNumericSuffixForDuplicates() {
+    val tempDir = java.io.File(System.getProperty("java.io.tmpdir"), "tgc_test_${System.currentTimeMillis()}").apply { mkdirs() }
+    try {
+      val file1 = com.example.domain.DownloadStorageManager.getUniqueFile(tempDir, "document.pdf")
+      assertEquals("document.pdf", file1.name)
+      file1.createNewFile()
+
+      val file2 = com.example.domain.DownloadStorageManager.getUniqueFile(tempDir, "document.pdf")
+      assertEquals("document (1).pdf", file2.name)
+      file2.createNewFile()
+
+      val file3 = com.example.domain.DownloadStorageManager.getUniqueFile(tempDir, "document.pdf")
+      assertEquals("document (2).pdf", file3.name)
+    } finally {
+      tempDir.deleteRecursively()
+    }
+  }
 }
