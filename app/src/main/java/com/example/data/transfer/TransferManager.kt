@@ -188,9 +188,17 @@ class TransferManager private constructor(
                 val actualSize = stagingFile.length()
                 val overallChecksum = ChecksumUtil.computeSha256(stagingFile)
 
-                // 3. Compute chunk count based on user-configured safe chunk size
-                val chunkSize = credentialsManager.getChunkSizeMb() * 1024 * 1024L
-                val totalChunks = ((actualSize + chunkSize - 1) / chunkSize).toInt().coerceAtLeast(1)
+                // 3. Compute chunk count based on user-configured max chunk size (capped at 48MB)
+                // and compute balanced target chunk size (total file size divided by number of chunks)
+                val maxChunkSize = credentialsManager.getChunkSizeMb() * 1024 * 1024L
+                val totalChunks = ((actualSize + maxChunkSize - 1) / maxChunkSize).toInt().coerceAtLeast(1)
+                val targetChunkSize = ((actualSize + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
+
+                Log.i(
+                    "TransferManager",
+                    "Enqueueing upload for $fileName: actualSize=$actualSize bytes (${ChecksumUtil.formatBytes(actualSize)}), " +
+                    "totalChunks=$totalChunks, targetChunkSize=$targetChunkSize bytes (${ChecksumUtil.formatBytes(targetChunkSize)})"
+                )
 
                 // 4. Register file in Room database
                 val fileEntity = FileEntity(
@@ -223,13 +231,27 @@ class TransferManager private constructor(
                     )
                 )
 
-                // 5. Pre-generate chunk entities
+                // 5. Clean up any stale chunk files from a previous attempt before chunking
+                val chunksDir = File(context.cacheDir, "upload_chunks/$fileId")
+                if (chunksDir.exists()) {
+                    Log.d("TransferManager", "Cleaning up stale chunk directory for fileId=$fileId: ${chunksDir.absolutePath}")
+                    chunksDir.deleteRecursively()
+                }
+                chunksDir.mkdirs()
+
+                // Pre-generate chunk entities and write fresh, discrete chunk files on disk
                 val chunkEntities = mutableListOf<ChunkEntity>()
                 for (i in 0 until totalChunks) {
-                    val offset = i * chunkSize
-                    val chunkLength = minOf(chunkSize, actualSize - offset)
-                    // Compute individual chunk hash
-                    val chunkHash = computeChunkHash(stagingFile, offset, chunkLength)
+                    val offset = i * targetChunkSize
+                    val chunkLength = minOf(targetChunkSize, (actualSize - offset).coerceAtLeast(0L))
+                    val chunkFile = writeChunkFileOnDisk(stagingFile, chunksDir, i, offset, chunkLength)
+                    val chunkHash = ChecksumUtil.computeSha256(chunkFile)
+
+                    Log.i(
+                        "TransferManager",
+                        "Created chunk $i on disk: ${chunkFile.name} (${chunkFile.length()} bytes, target=$chunkLength, hash=$chunkHash)"
+                    )
+
                     chunkEntities.add(
                         ChunkEntity(
                             fileId = fileId,
@@ -330,7 +352,6 @@ class TransferManager private constructor(
             }
 
             val chunks = database.chunkDao().getChunksForFile(fileId)
-            val chunkSize = credentialsManager.getChunkSizeMb() * 1024 * 1024L
             var completedCount = chunks.count { it.isUploaded }
             var totalBytesSent = chunks.filter { it.isUploaded }.sumOf { it.size }
             val initialFraction = if (fileEntity.size > 0) (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f) else 0f
@@ -355,6 +376,8 @@ class TransferManager private constructor(
 
             val speedEstimator = RollingSpeedEstimator(windowDurationMs = 1800L)
             speedEstimator.addSample(System.currentTimeMillis(), totalBytesSent)
+
+            val chunksDir = File(context.cacheDir, "upload_chunks/$fileId").apply { mkdirs() }
 
             try {
                 // Upload incomplete chunks in sequential order
@@ -383,28 +406,52 @@ class TransferManager private constructor(
                     }
 
                     val chunkIndex = chunk.chunkIndex
-                    val offset = chunkIndex * chunkSize
+                    val totalChunks = fileEntity.totalChunks
+                    val offset = chunks.filter { it.chunkIndex < chunkIndex }.sumOf { it.size }
                     val chunkLength = chunk.size
 
-                    // Read chunk slice into memory buffer
-                    val chunkBytes = ByteArray(chunkLength.toInt())
-                    RandomAccessFile(stagingFile, "r").use { raf ->
-                        raf.seek(offset)
-                        raf.readFully(chunkBytes)
+                    val chunkFile = File(chunksDir, "chunk_$chunkIndex.tpart")
+
+                    // Check for stale/corrupted chunk files left over from a previous failed attempt
+                    if (!chunkFile.exists() || chunkFile.length() != chunkLength) {
+                        if (chunkFile.exists()) {
+                            Log.w(
+                                "TransferManager",
+                                "Stale chunk file found on disk (${chunkFile.length()} vs expected $chunkLength bytes). Deleting and regenerating..."
+                            )
+                            chunkFile.delete()
+                        }
+                        writeChunkFileOnDisk(stagingFile, chunksDir, chunkIndex, offset, chunkLength)
                     }
 
-                    // Verify chunk checksum before dispatching over network
-                    val localChunkSha256 = ChecksumUtil.computeSha256(chunkBytes)
-                    if (localChunkSha256 != chunk.checksum) {
-                        val errMsg = "Chunk ${chunkIndex + 1} corrupted before upload"
+                    // Log the actual file size in bytes of the chunk file on disk immediately before it is attached to the multipart request
+                    val actualFileSizeOnDisk = chunkFile.length()
+                    val expectedChunkSize = ((fileEntity.size + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
+                    val diffFromExpected = actualFileSizeOnDisk - expectedChunkSize
+
+                    Log.i(
+                        "TransferManager",
+                        ">>> [CHUNK DISK SIZE AUDIT BEFORE MULTIPART]\n" +
+                        "  File: ${fileEntity.name} (fileId=$fileId)\n" +
+                        "  Chunk: ${chunkIndex + 1} of $totalChunks\n" +
+                        "  Path: ${chunkFile.absolutePath}\n" +
+                        "  Actual on-disk file size: $actualFileSizeOnDisk bytes (${ChecksumUtil.formatBytes(actualFileSizeOnDisk)})\n" +
+                        "  Expected chunk size (total/count): $expectedChunkSize bytes (${ChecksumUtil.formatBytes(expectedChunkSize)})\n" +
+                        "  Difference from expected: $diffFromExpected bytes\n" +
+                        "  Target chunk length from entity: $chunkLength bytes\n" +
+                        "  Telegram 50MB Limit: ${if (actualFileSizeOnDisk <= 50 * 1024 * 1024L) "PASS (<= 50MB)" else "FAIL (EXCEEDS 50MB!)"}"
+                    )
+
+                    if (actualFileSizeOnDisk > 50 * 1024 * 1024L) {
+                        val errMsg = "Chunk ${chunkIndex + 1} size ($actualFileSizeOnDisk bytes) exceeds Telegram Bot 50MB limit!"
                         database.fileDao().updateStatus(fileId, FileStatus.FAILED, errMsg)
                         updateProgressState(
                             TransferProgress(
                                 fileId = fileId,
                                 fileName = fileEntity.name,
                                 isUpload = true,
-                                currentChunk = completedCount,
-                                totalChunks = fileEntity.totalChunks,
+                                currentChunk = chunkIndex + 1,
+                                totalChunks = totalChunks,
                                 progressFraction = (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
                                 bytesTransferred = totalBytesSent,
                                 totalBytes = fileEntity.size,
@@ -413,7 +460,37 @@ class TransferManager private constructor(
                                 errorMessage = errMsg
                             )
                         )
+                        _transferErrorEvents.tryEmit(errMsg)
                         return@launch
+                    }
+
+                    // Verify chunk checksum before dispatching over network
+                    var localChunkSha256 = ChecksumUtil.computeSha256(chunkFile)
+                    if (localChunkSha256 != chunk.checksum) {
+                        Log.w("TransferManager", "Chunk $chunkIndex hash mismatch on disk. Re-writing fresh chunk file...")
+                        chunkFile.delete()
+                        writeChunkFileOnDisk(stagingFile, chunksDir, chunkIndex, offset, chunkLength)
+                        localChunkSha256 = ChecksumUtil.computeSha256(chunkFile)
+                        if (localChunkSha256 != chunk.checksum) {
+                            val errMsg = "Chunk ${chunkIndex + 1} corrupted before upload (hash mismatch)"
+                            database.fileDao().updateStatus(fileId, FileStatus.FAILED, errMsg)
+                            updateProgressState(
+                                TransferProgress(
+                                    fileId = fileId,
+                                    fileName = fileEntity.name,
+                                    isUpload = true,
+                                    currentChunk = completedCount,
+                                    totalChunks = fileEntity.totalChunks,
+                                    progressFraction = (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                                    bytesTransferred = totalBytesSent,
+                                    totalBytes = fileEntity.size,
+                                    speedBytesPerSec = 0L,
+                                    status = FileStatus.FAILED,
+                                    errorMessage = errMsg
+                                )
+                            )
+                            return@launch
+                        }
                     }
 
                     // Upload chunk with retries (up to 3 attempts)
@@ -434,8 +511,9 @@ class TransferManager private constructor(
                             fileName = fileEntity.name,
                             chunkIndex = chunkIndex,
                             totalChunks = fileEntity.totalChunks,
-                            chunkBytes = chunkBytes,
-                            chunkSha256 = localChunkSha256
+                            chunkFile = chunkFile,
+                            chunkSha256 = localChunkSha256,
+                            expectedChunkSize = expectedChunkSize
                         ) { bytesWritten, chunkTotal ->
                             val now = System.currentTimeMillis()
                             val currentTotalSent = (totalBytesSent + bytesWritten).coerceAtMost(fileEntity.size)
@@ -524,6 +602,11 @@ class TransferManager private constructor(
                     completedCount++
                     totalBytesSent += chunkLength
                     database.fileDao().updateProgress(fileId, completedCount, FileStatus.UPLOADING)
+
+                    // Clean up uploaded chunk file to reclaim disk space
+                    if (chunkFile.exists()) {
+                        chunkFile.delete()
+                    }
 
                     // Pause check at chunk boundary after chunk completion
                     if (pauseRequestedFiles.contains(fileId)) {
@@ -619,8 +702,9 @@ class TransferManager private constructor(
                     (listOf(completedProgress) + current.filter { it.fileId != fileId }).take(5)
                 }
 
-                // Safe cleanup of temporary staging file
+                // Safe cleanup of temporary staging file and discrete chunks directory
                 stagingFile.delete()
+                File(context.cacheDir, "upload_chunks/$fileId").deleteRecursively()
 
             } catch (e: CancellationException) {
                 Log.i("TransferManager", "Upload paused for fileId=$fileId")
@@ -1048,8 +1132,9 @@ class TransferManager private constructor(
                 if (f.exists()) f.delete()
             }
 
-            // 4. Clean temp staging and download directories
+            // 4. Clean temp staging, discrete chunks, and download directories
             File(context.cacheDir, "upload_staging/$fileId.tmp").delete()
+            File(context.cacheDir, "upload_chunks/$fileId").deleteRecursively()
             File(context.cacheDir, "downloads_temp/$fileId").deleteRecursively()
 
             // 5. Delete Room metadata (cascades to chunks)
@@ -1168,5 +1253,50 @@ class TransferManager private constructor(
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * Writes a discrete chunk file on disk for the given chunk index.
+     * Strictly stops writing once target chunk length is reached, starts a fresh file,
+     * deletes any stale chunk files from previous failed attempts, and verifies size.
+     */
+    internal fun writeChunkFileOnDisk(
+        stagingFile: File,
+        chunksDir: File,
+        chunkIndex: Int,
+        offset: Long,
+        chunkLength: Long
+    ): File {
+        chunksDir.mkdirs()
+        val chunkFile = File(chunksDir, "chunk_$chunkIndex.tpart")
+        if (chunkFile.exists()) {
+            Log.d("TransferManager", "Deleting stale chunk file before re-writing: ${chunkFile.absolutePath}")
+            chunkFile.delete()
+        }
+
+        RandomAccessFile(stagingFile, "r").use { raf ->
+            raf.seek(offset)
+            FileOutputStream(chunkFile, false).use { output ->
+                var remaining = chunkLength
+                val buffer = ByteArray(minOf(64 * 1024, remaining.toInt().coerceAtLeast(1024)))
+                while (remaining > 0) {
+                    val bytesToRead = minOf(buffer.size.toLong(), remaining).toInt()
+                    val read = raf.read(buffer, 0, bytesToRead)
+                    if (read == -1) break
+                    output.write(buffer, 0, read)
+                    remaining -= read
+                }
+                output.flush()
+            }
+        }
+
+        val actualLengthOnDisk = chunkFile.length()
+        if (actualLengthOnDisk != chunkLength) {
+            chunkFile.delete()
+            throw IllegalStateException(
+                "Chunk $chunkIndex on-disk size mismatch! Target: $chunkLength bytes, Actual: $actualLengthOnDisk bytes"
+            )
+        }
+        return chunkFile
     }
 }

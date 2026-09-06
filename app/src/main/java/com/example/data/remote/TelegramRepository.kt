@@ -7,6 +7,7 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
@@ -18,6 +19,7 @@ import okio.buffer
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
+import java.io.File
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
@@ -240,7 +242,75 @@ class TelegramRepository(
     }
 
     /**
-     * Uploads a single binary chunk as a Telegram document with metadata caption.
+     * Uploads a single binary chunk from a file on disk as a Telegram document with metadata caption.
+     * Logs the actual file size in bytes of the chunk file on disk immediately before it is attached to the multipart request.
+     */
+    suspend fun uploadChunk(
+        token: String,
+        chatId: String,
+        fileId: String,
+        fileName: String,
+        chunkIndex: Int,
+        totalChunks: Int,
+        chunkFile: File,
+        chunkSha256: String,
+        expectedChunkSize: Long? = null,
+        onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit
+    ): Result<TelegramMessage> {
+        val targetUrl = botUrl(token, "sendDocument")
+        val redactedUrl = redactToken(targetUrl)
+        val chunkPartName = "${fileName}.chunk_${chunkIndex}_of_${totalChunks}.tpart"
+        val actualFileLength = chunkFile.length()
+
+        val expectedSizeMsg = if (expectedChunkSize != null) {
+            " | Expected chunk size (total/chunks): $expectedChunkSize bytes | Difference: ${actualFileLength - expectedChunkSize} bytes"
+        } else ""
+
+        Log.i(
+            "TelegramRepo",
+            ">>> [uploadChunk DISK AUDIT & ATTACH] Target URL: $redactedUrl | File: $fileName | " +
+            "Chunk: ${chunkIndex + 1}/$totalChunks | On-disk size: $actualFileLength bytes (${actualFileLength / (1024 * 1024.0)} MB)$expectedSizeMsg | " +
+            "Part: $chunkPartName | ChatId: $chatId"
+        )
+
+        // Safety verification: abort if chunk exceeds Telegram Bot limit (~50MB = 52,428,800 bytes)
+        if (actualFileLength > 50 * 1024 * 1024L) {
+            val errMsg = "Chunk ${chunkIndex + 1} size ($actualFileLength bytes) exceeds Telegram Bot 50MB per-file upload limit!"
+            Log.e("TelegramRepo", ">>> [uploadChunk ABORTED] $errMsg")
+            return Result.failure(IllegalArgumentException(errMsg))
+        }
+
+        val captionPayload = ChunkCaptionMeta(
+            fileId = fileId,
+            name = fileName,
+            chunkIndex = chunkIndex,
+            totalChunks = totalChunks,
+            sha256 = chunkSha256
+        )
+        val captionJson = CHUNK_CAPTION_PREFIX + captionMetaAdapter.toJson(captionPayload)
+
+        val rawRequestBody = chunkFile.asRequestBody("application/octet-stream".toMediaTypeOrNull())
+        val countingBody = CountingRequestBody(rawRequestBody, onProgress)
+        val multipart = MultipartBody.Part.createFormData("document", chunkPartName, countingBody)
+
+        val chatIdBody = chatId.toRequestBody("text/plain".toMediaTypeOrNull())
+        val captionBody = captionJson.toRequestBody("text/plain".toMediaTypeOrNull())
+
+        return executeWithRetry("Uploading chunk ${chunkIndex + 1}/$totalChunks") {
+            Log.i("TelegramRepo", ">>> [sendDocument NETWORK CALL] Requesting POST $redactedUrl with document part size $actualFileLength bytes ($chunkPartName)...")
+            try {
+                val resp = api.sendDocument(targetUrl, chatIdBody, captionBody, multipart)
+                Log.i("TelegramRepo", "<<< [sendDocument NETWORK RESPONSE] HTTP ${resp.code()} ${resp.message()} isSuccessful=${resp.isSuccessful} for $redactedUrl")
+                resp
+            } catch (e: Exception) {
+                Log.e("TelegramRepo", "<<< [sendDocument NETWORK EXCEPTION] ${e::class.java.simpleName}: ${e.message} for $redactedUrl", e)
+                throw e
+            }
+        }
+    }
+
+    /**
+     * Uploads a single binary chunk from an in-memory byte array as a Telegram document with metadata caption.
      */
     suspend fun uploadChunk(
         token: String,

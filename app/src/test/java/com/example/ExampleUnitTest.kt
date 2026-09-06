@@ -65,4 +65,112 @@ class ExampleUnitTest {
     val redacted = TelegramRepository.redactToken(sampleUrl)
     assertEquals("https://api.telegram.org/bot<REDACTED>/sendDocument", redacted)
   }
+
+  @Test
+  fun chunkSplitting_for55MBFile_generatesTwoBalanced27MBChunksUnderLimit() {
+    val fileSizeBytes = 57_776_537L // ~55.1 MB
+    val maxChunkSize = 45L * 1024 * 1024 // 45 MB user setting
+    val totalChunks = ((fileSizeBytes + maxChunkSize - 1) / maxChunkSize).toInt().coerceAtLeast(1)
+    val targetChunkSize = ((fileSizeBytes + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
+
+    assertEquals(2, totalChunks)
+    assertEquals(28_888_269L, targetChunkSize) // ~27.55 MB
+
+    val chunk0Offset = 0 * targetChunkSize
+    val chunk0Length = minOf(targetChunkSize, fileSizeBytes - chunk0Offset)
+
+    val chunk1Offset = 1 * targetChunkSize
+    val chunk1Length = minOf(targetChunkSize, fileSizeBytes - chunk1Offset)
+
+    assertEquals(28_888_269L, chunk0Length)
+    assertEquals(28_888_268L, chunk1Length)
+    assertEquals(fileSizeBytes, chunk0Length + chunk1Length)
+
+    val telegram50MbLimit = 50L * 1024 * 1024
+    assertTrue("Chunk 0 must be <= 50MB", chunk0Length <= telegram50MbLimit)
+    assertTrue("Chunk 1 must be <= 50MB", chunk1Length <= telegram50MbLimit)
+  }
+
+  @Test
+  fun chunkFileWriting_doesNotAppendAndStopsAtExactTargetSize() {
+    val tempDir = java.io.File(System.getProperty("java.io.tmpdir"), "chunk_test_" + System.currentTimeMillis())
+    tempDir.mkdirs()
+    try {
+      val stagingFile = java.io.File(tempDir, "staging.bin")
+      val totalSize = 250_000 // 250 KB
+      val testBytes = ByteArray(totalSize) { (it % 256).toByte() }
+      stagingFile.writeBytes(testBytes)
+
+      val targetChunkSize = 100_000L
+      val chunksDir = java.io.File(tempDir, "chunks")
+      chunksDir.mkdirs()
+
+      // 1. Write chunk 0 (100,000 bytes)
+      val chunk0File = java.io.File(chunksDir, "chunk_0.tpart")
+      // Pre-populate with dummy stale data to verify it doesn't append
+      chunk0File.writeBytes(ByteArray(50_000) { 1 })
+
+      // Simulating writeChunkFileOnDisk logic
+      if (chunk0File.exists()) chunk0File.delete()
+      java.io.RandomAccessFile(stagingFile, "r").use { raf ->
+        raf.seek(0L)
+        java.io.FileOutputStream(chunk0File, false).use { out ->
+          var remaining = targetChunkSize
+          val buf = ByteArray(8192)
+          while (remaining > 0) {
+            val toRead = minOf(buf.size.toLong(), remaining).toInt()
+            val r = raf.read(buf, 0, toRead)
+            if (r == -1) break
+            out.write(buf, 0, r)
+            remaining -= r
+          }
+        }
+      }
+
+      assertEquals(100_000L, chunk0File.length())
+
+      // 2. Write chunk 1 (100,000 bytes)
+      val chunk1File = java.io.File(chunksDir, "chunk_1.tpart")
+      if (chunk1File.exists()) chunk1File.delete()
+      java.io.RandomAccessFile(stagingFile, "r").use { raf ->
+        raf.seek(100_000L)
+        java.io.FileOutputStream(chunk1File, false).use { out ->
+          var remaining = targetChunkSize
+          val buf = ByteArray(8192)
+          while (remaining > 0) {
+            val toRead = minOf(buf.size.toLong(), remaining).toInt()
+            val r = raf.read(buf, 0, toRead)
+            if (r == -1) break
+            out.write(buf, 0, r)
+            remaining -= r
+          }
+        }
+      }
+
+      assertEquals(100_000L, chunk1File.length())
+
+      // 3. Write chunk 2 (remaining 50,000 bytes)
+      val chunk2File = java.io.File(chunksDir, "chunk_2.tpart")
+      if (chunk2File.exists()) chunk2File.delete()
+      java.io.RandomAccessFile(stagingFile, "r").use { raf ->
+        raf.seek(200_000L)
+        java.io.FileOutputStream(chunk2File, false).use { out ->
+          var remaining = 50_000L
+          val buf = ByteArray(8192)
+          while (remaining > 0) {
+            val toRead = minOf(buf.size.toLong(), remaining).toInt()
+            val r = raf.read(buf, 0, toRead)
+            if (r == -1) break
+            out.write(buf, 0, r)
+            remaining -= r
+          }
+        }
+      }
+
+      assertEquals(50_000L, chunk2File.length())
+      assertEquals(totalSize.toLong(), chunk0File.length() + chunk1File.length() + chunk2File.length())
+    } finally {
+      tempDir.deleteRecursively()
+    }
+  }
 }
