@@ -1,13 +1,13 @@
 package com.example.ui.screens
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,33 +23,39 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
@@ -58,6 +64,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
@@ -79,15 +87,21 @@ import java.io.File
 @Composable
 fun FileDetailSheet(
     file: FileEntity,
-    chunks: List<ChunkEntity>,
+    chunks: List<ChunkEntity> = emptyList(),
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
+    onShare: () -> Unit,
+    onRename: () -> Unit,
     onMove: () -> Unit,
     onDelete: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+
+    // Hidden debug mode unlocked by tapping the top-bar title/icon 7 times
+    var debugTapCount by remember { mutableIntStateOf(0) }
+    val isDebugMode = debugTapCount >= 7
 
     val localTarget = file.localUri ?: file.localPath
     val isDownloadedLocally = remember(localTarget) {
@@ -119,6 +133,10 @@ fun FileDetailSheet(
         }
     }
 
+    val isMedia = remember(file.mimeType) {
+        file.mimeType.startsWith("image/") || file.mimeType.startsWith("video/")
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
@@ -141,132 +159,178 @@ fun FileDetailSheet(
                 .verticalScroll(scrollState)
                 .padding(bottom = 36.dp)
         ) {
-            // Header: File Icon + Name
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            // Header: Preview / Thumbnail / Icon + File details
+            Card(
+                colors = CardDefaults.cardColors(containerColor = OledCard),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                FileIcon(mimeType = file.mimeType, size = 32.dp)
-                Spacer(modifier = Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Preview or Icon: If it's an image/video with local content, render real thumbnail
+                    if (isMedia && localTarget != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(OledSurface)
+                                .border(1.dp, OledBorder, RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(shareableUri ?: localTarget)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = file.name,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.matchParentSize()
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    debugTapCount++
+                                    if (debugTapCount == 7) {
+                                        Toast.makeText(context, "Debug inspector enabled", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                        ) {
+                            FileIcon(mimeType = file.mimeType, size = 48.dp)
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                    }
+
+                    // File Name
                     Text(
                         text = file.name,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = TextPrimary,
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                debugTapCount++
+                                if (debugTapCount == 7) {
+                                    Toast.makeText(context, "Debug inspector enabled", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "${ChecksumUtil.formatFileSize(file.size)} · ${file.mimeType}",
-                        fontSize = 12.sp,
-                        color = TextSecondary
-                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Meta Row: Size and Upload Date (strictly NO chunk count or message IDs)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = ChecksumUtil.formatFileSize(file.size),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextSecondary
+                        )
+                        Text(
+                            text = " · ",
+                            fontSize = 13.sp,
+                            color = TextTertiary
+                        )
+                        Text(
+                            text = ChecksumUtil.formatDate(file.uploadDate),
+                            fontSize = 13.sp,
+                            color = TextSecondary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Verification Status: Clean badge with "Verified" checkmark when checksum passed
+                    if (file.checksum.isNotBlank() && file.status == FileStatus.COMPLETED) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(StatusSuccess.copy(alpha = 0.12f))
+                                .border(1.dp, StatusSuccess.copy(alpha = 0.35f), CircleShape)
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Verified",
+                                tint = StatusSuccess,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Verified",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = StatusSuccess
+                            )
+                        }
+                    } else if (file.status == FileStatus.COMPLETED) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(TelegramBlue.copy(alpha = 0.12f))
+                                .border(1.dp, TelegramBlue.copy(alpha = 0.35f), CircleShape)
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.VerifiedUser,
+                                contentDescription = "Archived",
+                                tint = TelegramBlue,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Archived in Vault",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TelegramBlue
+                            )
+                        }
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
-
-            // Primary Action Buttons
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (isDownloadedLocally) {
-                    // Open / Share File
-                    Button(
-                        onClick = {
-                            if (shareableUri != null) {
-                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    setDataAndType(shareableUri, file.mimeType)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                try {
-                                    context.startActivity(Intent.createChooser(intent, "Open file"))
-                                } catch (_: Exception) {
-                                    Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
-                                }
-                            } else {
-                                Toast.makeText(context, "File is not available on device", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = TelegramBlue,
-                            contentColor = OledBlack
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(46.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Open File", fontWeight = FontWeight.SemiBold)
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            if (shareableUri != null) {
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = file.mimeType
-                                    putExtra(Intent.EXTRA_STREAM, shareableUri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share file"))
-                            } else {
-                                Toast.makeText(context, "File is not available on device", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.height(46.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                    }
-                } else {
-                    // Download and Reassemble from Telegram
-                    Button(
-                        onClick = {
-                            onDownload()
-                            onDismiss()
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = TelegramBlue,
-                            contentColor = OledBlack
-                        ),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(46.dp)
-                            .testTag("download_reassemble_button")
-                    ) {
-                        Icon(imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Download & Reassemble", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-
+            // Failure Banner (if failed)
             if (file.status == FileStatus.FAILED && !file.errorMessage.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(10.dp))
                         .background(StatusError.copy(alpha = 0.12f))
-                        .border(1.dp, StatusError.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .border(1.dp, StatusError.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.Warning,
                         contentDescription = null,
                         tint = StatusError,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = file.errorMessage,
                         color = StatusError,
@@ -276,15 +340,16 @@ fun FileDetailSheet(
                 }
             }
 
+            // Local Availability Badge (if on device)
             if (isDownloadedLocally) {
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(10.dp))
                         .background(StatusSuccess.copy(alpha = 0.12f))
-                        .border(1.dp, StatusSuccess.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .border(1.dp, StatusSuccess.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -295,7 +360,7 @@ fun FileDetailSheet(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Saved to Downloads/TGC",
+                        text = "Downloaded & ready on this device",
                         color = StatusSuccess,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -303,150 +368,204 @@ fun FileDetailSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
-            // Integrity Card (SHA-256)
+            // Actions: Download, Share, Rename, Move to folder, Delete
+            Text(
+                text = "Actions",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextSecondary,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+            )
+
             Card(
                 colors = CardDefaults.cardColors(containerColor = OledCard),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                tint = StatusSuccess,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "VERIFIED SHA-256 CHECKSUM",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = StatusSuccess,
-                                letterSpacing = 0.5.sp
-                            )
-                        }
-
-                        IconButton(
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Action 1: Download / Open File
+                    if (isDownloadedLocally) {
+                        ActionItem(
+                            icon = Icons.Default.OpenInNew,
+                            label = "Open File",
+                            iconTint = TelegramBlue,
                             onClick = {
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                clipboard.setPrimaryClip(ClipData.newPlainText("SHA-256", file.checksum))
-                                Toast.makeText(context, "Checksum copied", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = "Copy Checksum",
-                                tint = TextSecondary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
+                                if (shareableUri != null) {
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(shareableUri, file.mimeType)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    try {
+                                        context.startActivity(Intent.createChooser(intent, "Open file"))
+                                    } catch (_: Exception) {
+                                        Toast.makeText(context, "No app found to open this file", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    Toast.makeText(context, "File is not available on device", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                    } else {
+                        ActionItem(
+                            icon = Icons.Default.Download,
+                            label = "Download",
+                            iconTint = TelegramBlue,
+                            onClick = {
+                                onDownload()
+                                onDismiss()
+                            }
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    HorizontalDivider(color = OledBorder, thickness = 0.5.dp)
 
-                    Text(
-                        text = file.checksum,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        color = TextSecondary,
-                        lineHeight = 16.sp
+                    // Action 2: Share
+                    ActionItem(
+                        icon = Icons.Default.Share,
+                        label = "Share",
+                        iconTint = TelegramBlue,
+                        onClick = {
+                            onShare()
+                        }
+                    )
+
+                    HorizontalDivider(color = OledBorder, thickness = 0.5.dp)
+
+                    // Action 3: Rename
+                    ActionItem(
+                        icon = Icons.Default.Edit,
+                        label = "Rename",
+                        iconTint = TextPrimary,
+                        onClick = {
+                            onDismiss()
+                            onRename()
+                        }
+                    )
+
+                    HorizontalDivider(color = OledBorder, thickness = 0.5.dp)
+
+                    // Action 4: Move to folder
+                    ActionItem(
+                        icon = Icons.Default.DriveFileMove,
+                        label = "Move to folder",
+                        iconTint = TextPrimary,
+                        onClick = {
+                            onDismiss()
+                            onMove()
+                        }
+                    )
+
+                    HorizontalDivider(color = OledBorder, thickness = 0.5.dp)
+
+                    // Action 5: Delete
+                    ActionItem(
+                        icon = Icons.Default.Delete,
+                        label = "Delete",
+                        iconTint = StatusError,
+                        labelColor = StatusError,
+                        onClick = {
+                            onDismiss()
+                            onDelete()
+                        }
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Chunk Architecture Inspection Card
-            Card(
-                colors = CardDefaults.cardColors(containerColor = OledCard),
-                shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+            // Gated Developer / Debug Mode (Only shown if unlocked by tapping file icon/name 7 times)
+            AnimatedVisibility(visible = isDebugMode) {
+                Column(modifier = Modifier.padding(top = 18.dp)) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = OledCardElevated),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, TelegramBlue.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = "TELEGRAM CHUNK ARCHIVE (${chunks.size} PARTS)",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TelegramBlue,
-                            letterSpacing = 0.5.sp
-                        )
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.BugReport,
+                                        contentDescription = null,
+                                        tint = TelegramBlue,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "DEBUG: INTERNAL CHUNKS (${chunks.size})",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TelegramBlue,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                }
 
-                        Text(
-                            text = if (file.manifestMessageId != null) "Manifest Msg #${file.manifestMessageId}" else "Manifest Pending",
-                            fontSize = 10.sp,
-                            color = TextTertiary
-                        )
-                    }
+                                Text(
+                                    text = if (file.manifestMessageId != null) "Manifest Msg #${file.manifestMessageId}" else "Manifest Pending",
+                                    fontSize = 10.sp,
+                                    color = TextTertiary
+                                )
+                            }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                    if (chunks.isEmpty()) {
-                        Text(
-                            text = "Single chunk or manifest pending.",
-                            fontSize = 12.sp,
-                            color = TextTertiary
-                        )
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            chunks.forEach { chunk ->
-                                ChunkRow(chunk = chunk)
+                            Text(
+                                text = "Checksum: ${file.checksum}",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                color = TextSecondary,
+                                lineHeight = 14.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            if (chunks.isEmpty()) {
+                                Text(
+                                    text = "No chunk records stored in local database.",
+                                    fontSize = 11.sp,
+                                    color = TextTertiary
+                                )
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    chunks.take(8).forEach { chunk ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(OledSurface)
+                                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Part ${chunk.chunkIndex + 1} · Msg #${chunk.telegramMessageId ?: "-"}",
+                                                fontSize = 11.sp,
+                                                color = TextPrimary
+                                            )
+                                            Text(
+                                                text = ChecksumUtil.formatFileSize(chunk.size),
+                                                fontSize = 11.sp,
+                                                color = TextTertiary
+                                            )
+                                        }
+                                    }
+                                    if (chunks.size > 8) {
+                                        Text(
+                                            text = "...and ${chunks.size - 8} more chunks",
+                                            fontSize = 10.sp,
+                                            color = TextTertiary
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // Secondary Actions (Move, Delete)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                OutlinedButton(
-                    onClick = {
-                        onDismiss()
-                        onMove()
-                    },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(imageVector = Icons.Default.DriveFileMove, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Move", fontSize = 13.sp)
-                }
-
-                OutlinedButton(
-                    onClick = {
-                        onDismiss()
-                        onDelete()
-                    },
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusError),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, StatusError.copy(alpha = 0.4f)),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(imageVector = Icons.Default.Delete, contentDescription = null, tint = StatusError, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Delete", fontSize = 13.sp, color = StatusError)
                 }
             }
         }
@@ -454,57 +573,33 @@ fun FileDetailSheet(
 }
 
 @Composable
-private fun ChunkRow(chunk: ChunkEntity) {
+private fun ActionItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    iconTint: Color,
+    labelColor: Color = TextPrimary,
+    onClick: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(OledSurface)
-            .border(1.dp, OledBorder, RoundedCornerShape(8.dp))
-            .padding(10.dp),
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(TelegramBlue.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "${chunk.chunkIndex + 1}",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = TelegramBlue
-            )
-        }
-
-        Spacer(modifier = Modifier.width(10.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Msg ID: ${chunk.telegramMessageId ?: "Pending"}",
-                    fontSize = 11.sp,
-                    color = TextPrimary,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = ChecksumUtil.formatFileSize(chunk.size),
-                    fontSize = 11.sp,
-                    color = TextSecondary
-                )
-            }
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "SHA: ${chunk.checksum.take(16)}...",
-                fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
-                color = TextTertiary
-            )
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            color = labelColor,
+            modifier = Modifier.weight(1f)
+        )
     }
 }

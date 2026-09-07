@@ -1174,17 +1174,6 @@ private fun FileListItem(
                     color = TextTertiary
                 )
                 Text(
-                    text = if (file.totalChunks > 1) "${file.totalChunks} chunks" else "1 chunk",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Normal,
-                    color = TextTertiary
-                )
-                Text(
-                    text = " · ",
-                    fontSize = 11.sp,
-                    color = TextTertiary
-                )
-                Text(
                     text = ChecksumUtil.formatDate(file.uploadDate),
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Normal,
@@ -1244,13 +1233,6 @@ private fun FileGridCard(
                         fontWeight = FontWeight.SemiBold,
                         color = TextSecondary
                     )
-                    if (file.totalChunks > 1) {
-                        Text(
-                            text = " · ${file.totalChunks}c",
-                            fontSize = 10.sp,
-                            color = TextTertiary
-                        )
-                    }
                 }
             }
         }

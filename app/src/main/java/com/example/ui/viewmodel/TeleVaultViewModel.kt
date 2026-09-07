@@ -67,6 +67,7 @@ data class UiState(
     val showSettingsSheet: Boolean = false,
     val showCreateFolderDialog: Boolean = false,
     val folderToRename: FolderEntity? = null,
+    val fileToRename: FileEntity? = null,
     val itemToMove: FileEntity? = null,
     val showInAppGuide: Boolean = false,
     val pendingUploadWarning: PendingUploadWarning? = null,
@@ -357,6 +358,19 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun renameFile(fileId: String, newName: String) {
+        if (newName.isBlank()) return
+        viewModelScope.launch {
+            db.fileDao().renameFile(fileId, newName.trim())
+            _uiState.update { current ->
+                val updatedFile = current.selectedFileForDetail?.let {
+                    if (it.id == fileId) it.copy(name = newName.trim()) else it
+                }
+                current.copy(fileToRename = null, selectedFileForDetail = updatedFile)
+            }
+        }
+    }
+
     fun deleteFolder(folder: FolderEntity) {
         viewModelScope.launch {
             // Delete sub-files in folder
@@ -573,6 +587,10 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setFolderToRename(folder: FolderEntity?) {
         _uiState.update { it.copy(folderToRename = folder) }
+    }
+
+    fun setFileToRename(file: FileEntity?) {
+        _uiState.update { it.copy(fileToRename = file) }
     }
 
     fun setItemToMove(file: FileEntity?) {

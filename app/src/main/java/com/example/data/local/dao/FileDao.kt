@@ -64,6 +64,9 @@ interface FileDao {
     @Query("SELECT COUNT(*) FROM files WHERE status = 'COMPLETED'")
     suspend fun getCompletedFileCount(): Int
 
+    @Query("UPDATE files SET name = :newName WHERE id = :fileId")
+    suspend fun renameFile(fileId: String, newName: String)
+
     @Query("UPDATE files SET folderId = :newFolderId WHERE id = :fileId")
     suspend fun moveFile(fileId: String, newFolderId: String?)
 

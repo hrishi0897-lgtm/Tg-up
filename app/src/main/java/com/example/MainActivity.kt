@@ -39,8 +39,11 @@ import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LargeFileConfirmationDialog
 import com.example.ui.screens.MoveFileDialog
 import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.RenameFileDialog
 import com.example.ui.screens.RenameFolderDialog
 import com.example.ui.screens.SettingsScreen
+import androidx.core.content.FileProvider
+import java.io.File
 import com.example.ui.screens.TransfersScreen
 import com.example.ui.screens.TransfersSheet
 import com.example.ui.theme.TeleVaultTheme
@@ -220,15 +223,44 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                 }
             }
 
-            // File Detail & Chunk Inspector Sheet
+            // File Detail & Clean File View Sheet
             if (uiState.selectedFileForDetail != null) {
+                val currentDetailFile = uiState.selectedFileForDetail!!
                 FileDetailSheet(
-                    file = uiState.selectedFileForDetail!!,
+                    file = currentDetailFile,
                     chunks = uiState.selectedFileChunks,
                     onDismiss = { viewModel.dismissFileDetail() },
-                    onDownload = { viewModel.downloadFile(uiState.selectedFileForDetail!!.id) },
-                    onMove = { viewModel.setItemToMove(uiState.selectedFileForDetail) },
-                    onDelete = { viewModel.deleteFile(uiState.selectedFileForDetail!!.id) }
+                    onDownload = { viewModel.downloadFile(currentDetailFile.id) },
+                    onShare = {
+                        val localTarget = currentDetailFile.localUri ?: currentDetailFile.localPath
+                        if (!localTarget.isNullOrBlank()) {
+                            val shareUri: android.net.Uri? = if (localTarget.startsWith("content://")) {
+                                android.net.Uri.parse(localTarget)
+                            } else {
+                                val localF = File(localTarget)
+                                if (localF.exists()) {
+                                    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", localF)
+                                } else null
+                            }
+                            if (shareUri != null) {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = currentDetailFile.mimeType
+                                    putExtra(Intent.EXTRA_STREAM, shareUri)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share file"))
+                            } else {
+                                Toast.makeText(context, "Please download the file first to share", Toast.LENGTH_SHORT).show()
+                            }
+                        } else {
+                            Toast.makeText(context, "Please download the file first to share", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onRename = {
+                        viewModel.setFileToRename(currentDetailFile)
+                    },
+                    onMove = { viewModel.setItemToMove(currentDetailFile) },
+                    onDelete = { viewModel.deleteFile(currentDetailFile.id) }
                 )
             }
 
@@ -275,6 +307,16 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     currentName = folder.name,
                     onDismiss = { viewModel.setFolderToRename(null) },
                     onConfirm = { newName -> viewModel.renameFolder(folder.id, newName) }
+                )
+            }
+
+            // Rename File Dialog
+            if (uiState.fileToRename != null) {
+                val file = uiState.fileToRename!!
+                RenameFileDialog(
+                    currentName = file.name,
+                    onDismiss = { viewModel.setFileToRename(null) },
+                    onConfirm = { newName -> viewModel.renameFile(file.id, newName) }
                 )
             }
 

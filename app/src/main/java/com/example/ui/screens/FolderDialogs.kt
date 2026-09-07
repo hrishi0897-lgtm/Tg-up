@@ -362,3 +362,71 @@ fun LargeFileConfirmationDialog(
         }
     )
 }
+
+@Composable
+fun RenameFileDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (newName: String) -> Unit
+) {
+    var fileName by remember { mutableStateOf(currentName) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = OledCard,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Edit,
+                contentDescription = null,
+                tint = TelegramBlue,
+                modifier = Modifier.size(28.dp)
+            )
+        },
+        title = {
+            Text(
+                text = "Rename File",
+                color = TextPrimary,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = fileName,
+                    onValueChange = { fileName = it },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TelegramBlue,
+                        unfocusedBorderColor = OledBorder,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = TelegramBlue,
+                        focusedContainerColor = OledBlack,
+                        unfocusedContainerColor = OledBlack
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(fileName) },
+                enabled = fileName.isNotBlank(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TelegramBlue,
+                    contentColor = OledBlack
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Save", fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TextSecondary)
+            }
+        }
+    )
+}
