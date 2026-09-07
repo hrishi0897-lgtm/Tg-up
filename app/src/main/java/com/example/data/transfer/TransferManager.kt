@@ -20,6 +20,8 @@ import com.example.domain.DownloadStorageManager
 import com.example.domain.RollingSpeedEstimator
 import com.example.domain.StorageUtil
 import com.example.domain.model.TransferProgress
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -72,6 +74,9 @@ class TransferManager private constructor(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeJobs = ConcurrentHashMap<String, Job>()
     private val pauseRequestedFiles = ConcurrentHashMap.newKeySet<String>()
+
+    private val moshi: Moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
+    private val manifestAdapter = moshi.adapter(FileManifest::class.java)
 
     private val _transfers = MutableStateFlow<Map<String, TransferProgress>>(emptyMap())
     val transfers: StateFlow<Map<String, TransferProgress>> = _transfers.asStateFlow()
@@ -716,9 +721,22 @@ class TransferManager private constructor(
                     chunks = manifestChunks
                 )
 
-                val manifestResult = repository.uploadManifest(token, chatId, manifest)
+                // Write manifest JSON to a small local file for upload via sendDocument
+                val manifestDir = File(context.cacheDir, "upload_manifests").apply { mkdirs() }
+                val manifestFile = File(manifestDir, "$fileId.manifest.json")
+                val manifestJson = manifestAdapter.toJson(manifest)
+                manifestFile.writeText(manifestJson)
+
+                Log.i(
+                    "TransferManager",
+                    "Uploading manifest document for $fileId (${fileEntity.name}): " +
+                    "${manifestChunks.size} chunks, manifest file size: ${manifestFile.length()} bytes"
+                )
+
+                val manifestResult = repository.uploadManifest(token, chatId, manifest, manifestFile)
                 if (manifestResult.isFailure) {
                     val err = manifestResult.exceptionOrNull()?.message ?: "Manifest upload failed"
+                    manifestFile.delete()
                     database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
                     updateProgressState(
                         TransferProgress(
@@ -739,6 +757,9 @@ class TransferManager private constructor(
                     notifyService("Manifest upload failed: ${fileEntity.name}")
                     return@launch
                 }
+
+                // Clean up temporary manifest file on disk
+                manifestFile.delete()
 
                 val manifestMessage = manifestResult.getOrThrow()
                 database.fileDao().updateManifestId(fileId, manifestMessage.messageId)
@@ -1277,9 +1298,10 @@ class TransferManager private constructor(
                 }
             }
 
-            // 4. Clean temp staging, discrete chunks, and download directories
+            // 4. Clean temp staging, discrete chunks, manifest files, and download directories
             File(context.cacheDir, "upload_staging/$fileId.tmp").delete()
             File(context.cacheDir, "upload_chunks/$fileId").deleteRecursively()
+            File(context.cacheDir, "upload_manifests/$fileId.manifest.json").delete()
             File(context.cacheDir, "downloads_temp/$fileId").deleteRecursively()
 
             // 5. Delete Room metadata (cascades to chunks)

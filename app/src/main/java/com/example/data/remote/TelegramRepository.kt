@@ -45,6 +45,7 @@ class TelegramRepository(
     companion object {
         const val BASE_API_URL = "https://api.telegram.org"
         const val MANIFEST_PREFIX = "TELEVAULT_MANIFEST_V1:"
+        const val MANIFEST_CAPTION_PREFIX = "MANIFEST|"
         const val CHUNK_CAPTION_PREFIX = "TELEVAULT_CHUNK:"
         private const val MAX_RETRIES = 3
         private const val BASE_BACKOFF_MS = 1000L
@@ -357,16 +358,60 @@ class TelegramRepository(
     }
 
     /**
-     * Uploads the final reassembly Manifest message to the Telegram chat.
+     * Uploads the final reassembly Manifest as a document attachment (sendDocument)
+     * rather than a plain text message. This eliminates Telegram's 4096-character text limit.
      */
     suspend fun uploadManifest(
         token: String,
         chatId: String,
-        manifest: FileManifest
+        manifest: FileManifest,
+        manifestFile: File
     ): Result<TelegramMessage> {
-        val manifestJson = MANIFEST_PREFIX + manifestAdapter.toJson(manifest)
-        return executeWithRetry("Uploading file manifest") {
-            api.sendMessage(botUrl(token, "sendMessage"), chatId, manifestJson)
+        val targetUrl = botUrl(token, "sendDocument")
+        val captionText = "$MANIFEST_CAPTION_PREFIX${manifest.fileId}"
+        val partName = "${manifest.fileId}.manifest.json"
+
+        Log.i(
+            "TelegramRepo",
+            ">>> [uploadManifest DOCUMENT ATTACH] Target URL: ${redactToken(targetUrl)} | " +
+            "Manifest file: $partName | Size: ${manifestFile.length()} bytes | Caption: $captionText"
+        )
+
+        val requestBody = manifestFile.asRequestBody("application/json".toMediaTypeOrNull())
+        val multipart = MultipartBody.Part.createFormData("document", partName, requestBody)
+        val chatIdBody = chatId.toRequestBody("text/plain".toMediaTypeOrNull())
+        val captionBody = captionText.toRequestBody("text/plain".toMediaTypeOrNull())
+
+        return executeWithRetry("Uploading file manifest document ($partName)") {
+            api.sendDocument(targetUrl, chatIdBody, captionBody, multipart)
+        }
+    }
+
+    /**
+     * Downloads and parses a FileManifest from a Telegram remote document file_id.
+     */
+    suspend fun downloadManifestDocument(token: String, fileId: String): Result<FileManifest> {
+        return try {
+            val fileInfoResult = getFileInfo(token, fileId)
+            if (fileInfoResult.isFailure) {
+                return Result.failure(fileInfoResult.exceptionOrNull() ?: Exception("Failed to get manifest file info"))
+            }
+            val filePath = fileInfoResult.getOrThrow().filePath
+                ?: return Result.failure(Exception("Manifest getFile returned empty file_path"))
+
+            val streamResult = downloadFileStream(token, filePath)
+            if (streamResult.isFailure) {
+                return Result.failure(streamResult.exceptionOrNull() ?: Exception("Failed to download manifest stream"))
+            }
+
+            val body = streamResult.getOrThrow()
+            val jsonString = body.string()
+            val manifest = manifestAdapter.fromJson(jsonString)
+                ?: return Result.failure(Exception("Failed to deserialize manifest JSON from downloaded document"))
+            Result.success(manifest)
+        } catch (e: Exception) {
+            Log.e("TelegramRepo", "downloadManifestDocument error: ${e.message}", e)
+            Result.failure(e)
         }
     }
 
@@ -429,7 +474,7 @@ class TelegramRepository(
     }
 
     /**
-     * Resyncs by querying updates or checking messages in chat for Manifest JSONs.
+     * Resyncs by querying updates or checking messages in chat for Manifest documents or legacy messages.
      */
     suspend fun fetchManifestsFromChat(token: String): Result<List<FileManifest>> {
         return try {
@@ -438,7 +483,21 @@ class TelegramRepository(
                 val updates = response.body()?.result ?: emptyList()
                 val manifests = mutableListOf<FileManifest>()
                 for (update in updates) {
-                    val text = update.message?.text ?: update.channelPost?.text
+                    val msg = update.message ?: update.channelPost ?: continue
+
+                    // 1. Check for document attachment with MANIFEST caption
+                    val caption = msg.caption
+                    val doc = msg.document
+                    if (doc != null && caption != null && caption.startsWith(MANIFEST_CAPTION_PREFIX)) {
+                        val docResult = downloadManifestDocument(token, doc.fileId)
+                        if (docResult.isSuccess) {
+                            manifests.add(docResult.getOrThrow())
+                            continue
+                        }
+                    }
+
+                    // 2. Legacy fallback: check for text message starting with MANIFEST_PREFIX
+                    val text = msg.text
                     if (text != null && text.startsWith(MANIFEST_PREFIX)) {
                         val json = text.removePrefix(MANIFEST_PREFIX).trim()
                         try {

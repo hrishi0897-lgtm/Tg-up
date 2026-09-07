@@ -249,6 +249,33 @@ fun FileDetailSheet(
                 }
             }
 
+            if (file.status == FileStatus.FAILED && !file.errorMessage.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(StatusError.copy(alpha = 0.12f))
+                        .border(1.dp, StatusError.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = StatusError,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = file.errorMessage,
+                        color = StatusError,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
             if (isDownloadedLocally) {
                 Spacer(modifier = Modifier.height(10.dp))
                 Row(
