@@ -17,12 +17,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -33,6 +35,8 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -58,7 +62,9 @@ fun SettingsScreen(
     botTokenMasked: String,
     chatId: String,
     chunkSizeMb: Int,
+    isWifiOnly: Boolean,
     onChunkSizeChange: (Int) -> Unit,
+    onWifiOnlyChange: (Boolean) -> Unit,
     onResyncClick: () -> Unit,
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit
@@ -224,7 +230,129 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 3. Resync Vault Index Card
+            // 3. Network & Power Policy Card
+            Card(
+                colors = CardDefaults.cardColors(containerColor = OledCard),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Wifi,
+                            contentDescription = null,
+                            tint = TelegramBlue,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "NETWORK & POWER POLICY",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TelegramBlue,
+                            letterSpacing = 0.5.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Transfer only on Wi-Fi",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Restricts large multi-chunk uploads & downloads to Wi-Fi to preserve mobile data.",
+                                fontSize = 11.sp,
+                                color = TextSecondary,
+                                lineHeight = 15.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Switch(
+                            checked = isWifiOnly,
+                            onCheckedChange = onWifiOnlyChange,
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = OledBlack,
+                                checkedTrackColor = TelegramBlue,
+                                uncheckedThumbColor = TextTertiary,
+                                uncheckedTrackColor = OledBorder
+                            )
+                        )
+                    }
+
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    if (!com.example.domain.StorageUtil.isIgnoringBatteryOptimizations(context)) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(TelegramBlue.copy(alpha = 0.1f))
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.BatteryChargingFull,
+                                contentDescription = null,
+                                tint = TelegramBlue,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Background Execution",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = "Allow TeleVault to ignore battery optimizations for uninterrupted multi-GB transfers.",
+                                    fontSize = 11.sp,
+                                    color = TextSecondary,
+                                    lineHeight = 14.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    val intent = com.example.domain.StorageUtil.createBatteryOptimizationIntent(context)
+                                    try {
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("SettingsScreen", "Failed to start battery optimization intent, falling back", e)
+                                        try {
+                                            context.startActivity(com.example.domain.StorageUtil.createBatterySettingsFallbackIntent())
+                                        } catch (e2: Exception) {
+                                            android.util.Log.e("SettingsScreen", "Failed fallback battery intent", e2)
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = TelegramBlue,
+                                    contentColor = OledBlack
+                                ),
+                                shape = RoundedCornerShape(6.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text("Optimize", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 4. Resync Vault Index Card
             Card(
                 colors = CardDefaults.cardColors(containerColor = OledCard),
                 shape = RoundedCornerShape(12.dp),

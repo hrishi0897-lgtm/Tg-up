@@ -10,12 +10,15 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.domain.ChecksumUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -23,8 +26,10 @@ class TransferService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
     private lateinit var notificationManager: NotificationManager
+    private var wakeLock: PowerManager.WakeLock? = null
 
     companion object {
+        private const val TAG = "TransferService"
         const val CHANNEL_ID = "televault_transfers"
         const val CHANNEL_NAME = "TeleVault Transfers"
         const val NOTIFICATION_ID = 1001
@@ -41,7 +46,7 @@ class TransferService : Service() {
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
 
-        val initialNotification = buildNotification("TeleVault Transfer Engine Active", 0, 0, "")
+        val initialNotification = buildNotification("TeleVault Transfer Engine Active", 0, 0, "Transfer service running…")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
@@ -59,6 +64,35 @@ class TransferService : Service() {
         observeTransfers()
     }
 
+    private fun acquireWakeLock() {
+        if (wakeLock == null || wakeLock?.isHeld == false) {
+            try {
+                val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = powerManager.newWakeLock(
+                    PowerManager.PARTIAL_WAKE_LOCK,
+                    "TeleVault::TransferWakeLock"
+                ).apply {
+                    setReferenceCounted(false)
+                    acquire(24 * 60 * 60 * 1000L) // 24-hour safe acquisition
+                }
+                Log.d(TAG, "Acquired WakeLock for long-running transfer")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to acquire WakeLock: ${e.message}")
+            }
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+                Log.d(TAG, "Released WakeLock (no active transfers)")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error releasing WakeLock: ${e.message}")
+        }
+    }
+
     private fun observeTransfers() {
         val transferManager = TransferManager.getInstance(applicationContext)
         serviceScope.launch {
@@ -69,9 +103,10 @@ class TransferService : Service() {
                 }
 
                 if (activeList.isNotEmpty()) {
+                    acquireWakeLock()
                     val active = activeList.first()
                     val percent = (active.progressFraction * 100).toInt()
-                    val speed = ChecksumUtil.formatSpeed(active.speedBytesPerSec)
+                    val speed = if (active.speedBytesPerSec > 0) ChecksumUtil.formatSpeed(active.speedBytesPerSec) else "Calculating…"
                     val actionLabel = if (active.isUpload) "Uploading" else "Downloading"
 
                     val totalTransfers = transfersMap.size
@@ -82,7 +117,7 @@ class TransferService : Service() {
                         "$actionLabel ${active.fileName} — $percent%"
                     }
 
-                    val content = "${active.fileName} (Chunk ${active.currentChunk}/${active.totalChunks}) · $speed"
+                    val content = "Chunk ${active.currentChunk} of ${active.totalChunks} · $speed"
 
                     val updatedNotification = buildNotification(
                         title = title,
@@ -92,11 +127,31 @@ class TransferService : Service() {
                     )
                     notificationManager.notify(NOTIFICATION_ID, updatedNotification)
                 } else {
-                    // No active transfers running, check if anything is paused or failed
-                    stopForeground(STOP_FOREGROUND_DETACH)
+                    // Check if anything is paused
+                    val hasPaused = transfersMap.values.any { it.status == com.example.data.local.entity.FileStatus.PAUSED }
+                    releaseWakeLock()
+                    if (hasPaused) {
+                        val pausedNotification = buildNotification(
+                            title = "Transfers Paused",
+                            progress = 0,
+                            maxProgress = 0,
+                            content = "Tap to view and resume pending transfers"
+                        )
+                        notificationManager.notify(NOTIFICATION_ID, pausedNotification)
+                    } else {
+                        // Truly idle: detach foreground and stop service cleanly
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                    }
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        releaseWakeLock()
+        serviceScope.cancel()
+        super.onDestroy()
     }
 
     private fun buildNotification(

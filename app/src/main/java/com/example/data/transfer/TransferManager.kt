@@ -18,6 +18,7 @@ import com.example.data.remote.TelegramRepository
 import com.example.domain.ChecksumUtil
 import com.example.domain.DownloadStorageManager
 import com.example.domain.RollingSpeedEstimator
+import com.example.domain.StorageUtil
 import com.example.domain.model.TransferProgress
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -190,6 +191,17 @@ class TransferManager private constructor(
                 val (fileName, fileSize) = resolveUriMetadata(uri)
                 val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
 
+                // Check device storage before copying and splitting
+                if (fileSize > 0) {
+                    val initialStorageCheck = StorageUtil.checkStorageForUpload(context, fileSize, stagingFileExists = false)
+                    if (!initialStorageCheck.isSufficient) {
+                        val errMsg = initialStorageCheck.errorMessage ?: "Insufficient device storage for upload"
+                        Log.e("TransferManager", "Storage check failed before copying: $errMsg")
+                        _transferErrorEvents.tryEmit(errMsg)
+                        throw IllegalStateException(errMsg)
+                    }
+                }
+
                 // 2. Cache Uri stream into a local staging file for safe random-access chunking
                 val stagingDir = File(context.cacheDir, "upload_staging").apply { mkdirs() }
                 val stagingFile = File(stagingDir, "$fileId.tmp")
@@ -200,6 +212,17 @@ class TransferManager private constructor(
                 } ?: throw IllegalStateException("Unable to read selected file stream")
 
                 val actualSize = stagingFile.length()
+
+                // Re-verify storage capacity with actual size on disk
+                val actualStorageCheck = StorageUtil.checkStorageForUpload(context, actualSize, stagingFileExists = true)
+                if (!actualStorageCheck.isSufficient) {
+                    stagingFile.delete()
+                    val errMsg = actualStorageCheck.errorMessage ?: "Insufficient storage for chunking"
+                    Log.e("TransferManager", "Storage check failed after caching staging file: $errMsg")
+                    _transferErrorEvents.tryEmit(errMsg)
+                    throw IllegalStateException(errMsg)
+                }
+
                 val overallChecksum = ChecksumUtil.computeSha256(stagingFile)
 
                 // 3. Compute chunk count based on global safe chunk size CHUNK_SIZE_BYTES (18MB)
@@ -342,6 +365,31 @@ class TransferManager private constructor(
             }
 
             if (fileEntity == null) return@launch
+
+            // Check Wi-Fi only restriction if enabled in settings
+            if (credentialsManager.isWifiOnly() && !StorageUtil.isConnectedToWifi(context)) {
+                val wifiError = "Upload paused: waiting for Wi-Fi network (Wi-Fi only enabled in settings)"
+                Log.w("TransferManager", "Upload stopped for $fileId: not connected to Wi-Fi")
+                database.fileDao().updateStatus(fileId, FileStatus.PAUSED, wifiError)
+                updateProgressState(
+                    TransferProgress(
+                        fileId = fileId,
+                        fileName = fileEntity.name,
+                        isUpload = true,
+                        currentChunk = fileEntity.completedChunks,
+                        totalChunks = fileEntity.totalChunks,
+                        progressFraction = if (fileEntity.size > 0) (fileEntity.completedChunks.toFloat() / fileEntity.totalChunks.toFloat()) else 0f,
+                        bytesTransferred = 0L,
+                        totalBytes = fileEntity.size,
+                        speedBytesPerSec = 0L,
+                        status = FileStatus.PAUSED,
+                        errorMessage = wifiError
+                    )
+                )
+                _transferErrorEvents.tryEmit(wifiError)
+                return@launch
+            }
+
             val stagingFile = fileEntity.localPath?.let { File(it) }
             if (stagingFile == null || !stagingFile.exists()) {
                 val errorMsg = "Source staging file missing"
@@ -781,6 +829,56 @@ class TransferManager private constructor(
             }
 
             val fileEntity = database.fileDao().getById(fileId) ?: return@launch
+
+            // Check Wi-Fi only restriction if enabled in settings
+            if (credentialsManager.isWifiOnly() && !StorageUtil.isConnectedToWifi(context)) {
+                val wifiError = "Download paused: waiting for Wi-Fi network (Wi-Fi only enabled in settings)"
+                Log.w("TransferManager", "Download stopped for $fileId: not connected to Wi-Fi")
+                database.fileDao().updateStatus(fileId, FileStatus.PAUSED, wifiError)
+                updateProgressState(
+                    TransferProgress(
+                        fileId = fileId,
+                        fileName = fileEntity.name,
+                        isUpload = false,
+                        currentChunk = fileEntity.completedChunks,
+                        totalChunks = fileEntity.totalChunks,
+                        progressFraction = if (fileEntity.totalChunks > 0) (fileEntity.completedChunks.toFloat() / fileEntity.totalChunks.toFloat()) else 0f,
+                        bytesTransferred = 0L,
+                        totalBytes = fileEntity.size,
+                        speedBytesPerSec = 0L,
+                        status = FileStatus.PAUSED,
+                        errorMessage = wifiError
+                    )
+                )
+                _transferErrorEvents.tryEmit(wifiError)
+                return@launch
+            }
+
+            // Check available storage space for download (chunks + assembled file + safety buffer)
+            val downloadStorageCheck = StorageUtil.checkStorageForDownload(context, fileEntity.size)
+            if (!downloadStorageCheck.isSufficient) {
+                val storageError = downloadStorageCheck.errorMessage ?: "Insufficient device storage for download"
+                Log.e("TransferManager", "Download failed: $storageError")
+                database.fileDao().updateStatus(fileId, FileStatus.FAILED, storageError)
+                updateProgressState(
+                    TransferProgress(
+                        fileId = fileId,
+                        fileName = fileEntity.name,
+                        isUpload = false,
+                        currentChunk = 0,
+                        totalChunks = fileEntity.totalChunks,
+                        progressFraction = 0f,
+                        bytesTransferred = 0L,
+                        totalBytes = fileEntity.size,
+                        speedBytesPerSec = 0L,
+                        status = FileStatus.FAILED,
+                        errorMessage = storageError
+                    )
+                )
+                _transferErrorEvents.tryEmit(storageError)
+                return@launch
+            }
+
             database.fileDao().updateStatus(fileId, FileStatus.DOWNLOADING)
             notifyService("Downloading ${fileEntity.name}")
 

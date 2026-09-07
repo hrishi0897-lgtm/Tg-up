@@ -31,6 +31,7 @@ import com.example.data.transfer.TransferWorker
 import com.example.ui.screens.CreateFolderDialog
 import com.example.ui.screens.FileDetailSheet
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.LargeFileConfirmationDialog
 import com.example.ui.screens.MoveFileDialog
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.RenameFolderDialog
@@ -236,7 +237,9 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     botTokenMasked = token,
                     chatId = chatId,
                     chunkSizeMb = uiState.chunkSizeMb,
+                    isWifiOnly = uiState.isWifiOnly,
                     onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
+                    onWifiOnlyChange = { viewModel.setWifiOnly(it) },
                     onResyncClick = { viewModel.resyncFromTelegram() },
                     onDisconnect = { viewModel.disconnect() },
                     onDismiss = { viewModel.setShowSettingsSheet(false) }
@@ -269,6 +272,18 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     allFolders = allFolders,
                     onDismiss = { viewModel.setItemToMove(null) },
                     onSelectFolder = { targetFolderId -> viewModel.moveFile(file.id, targetFolderId) }
+                )
+            }
+
+            // Large File Confirmation Dialog
+            if (uiState.pendingUploadWarning != null) {
+                val warning = uiState.pendingUploadWarning!!
+                LargeFileConfirmationDialog(
+                    fileName = warning.fileName,
+                    fileSize = warning.fileSize,
+                    estimatedChunks = warning.estimatedChunks,
+                    onConfirm = { viewModel.confirmUploadFile(warning.uri) },
+                    onDismiss = { viewModel.dismissUploadWarning() }
                 )
             }
         }

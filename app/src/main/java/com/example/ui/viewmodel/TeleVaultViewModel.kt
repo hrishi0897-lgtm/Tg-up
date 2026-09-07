@@ -2,6 +2,7 @@ package com.example.ui.viewmodel
 
 import android.app.Application
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
@@ -37,6 +38,13 @@ enum class AppScreen {
     TRANSFERS
 }
 
+data class PendingUploadWarning(
+    val uri: Uri,
+    val fileName: String,
+    val fileSize: Long,
+    val estimatedChunks: Int
+)
+
 data class UiState(
     val isAuthenticated: Boolean = false,
     val currentScreen: AppScreen = AppScreen.VAULT,
@@ -54,12 +62,14 @@ data class UiState(
     val isResyncing: Boolean = false,
     val resyncMessage: String? = null,
     val chunkSizeMb: Int = 18,
+    val isWifiOnly: Boolean = false,
     val showTransfersSheet: Boolean = false,
     val showSettingsSheet: Boolean = false,
     val showCreateFolderDialog: Boolean = false,
     val folderToRename: FolderEntity? = null,
     val itemToMove: FileEntity? = null,
     val showInAppGuide: Boolean = false,
+    val pendingUploadWarning: PendingUploadWarning? = null,
     val transferErrorMessage: String? = null,
     val transferNotificationMessage: String? = null
 )
@@ -74,7 +84,8 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     private val _uiState = MutableStateFlow(
         UiState(
             isAuthenticated = creds.hasCredentials(),
-            chunkSizeMb = creds.getChunkSizeMb()
+            chunkSizeMb = creds.getChunkSizeMb(),
+            isWifiOnly = creds.isWifiOnly()
         )
     )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -366,9 +377,54 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Transfer Actions
     fun uploadFile(uri: Uri) {
+        val (fileName, fileSize) = resolveUriMetadata(uri)
+        val chunkSizeMb = creds.getChunkSizeMb().coerceAtMost(18)
+        val chunkSizeBytes = chunkSizeMb * 1024 * 1024L
+        val estimatedChunks = ((fileSize + chunkSizeBytes - 1) / chunkSizeBytes).toInt().coerceAtLeast(1)
+
+        // Threshold for warning: files >= 100MB (multi-chunk transfers)
+        if (fileSize >= 100 * 1024 * 1024L || estimatedChunks >= 6) {
+            _uiState.update {
+                it.copy(
+                    pendingUploadWarning = PendingUploadWarning(
+                        uri = uri,
+                        fileName = fileName,
+                        fileSize = fileSize,
+                        estimatedChunks = estimatedChunks
+                    )
+                )
+            }
+        } else {
+            confirmUploadFile(uri)
+        }
+    }
+
+    fun confirmUploadFile(uri: Uri) {
         val folderId = _uiState.value.currentFolderId
         transferManager.enqueueUpload(uri, folderId)
-        _uiState.update { it.copy(showTransfersSheet = true) }
+        _uiState.update { it.copy(showTransfersSheet = true, pendingUploadWarning = null) }
+    }
+
+    fun dismissUploadWarning() {
+        _uiState.update { it.copy(pendingUploadWarning = null) }
+    }
+
+    private fun resolveUriMetadata(uri: Uri): Pair<String, Long> {
+        var name = "file_${System.currentTimeMillis()}"
+        var size = 0L
+        getApplication<Application>().contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (nameIdx != -1) {
+                    name = cursor.getString(nameIdx) ?: name
+                }
+                if (sizeIdx != -1) {
+                    size = cursor.getLong(sizeIdx)
+                }
+            }
+        }
+        return Pair(name, size)
     }
 
     fun downloadFile(fileId: String) {
@@ -495,6 +551,11 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     fun setChunkSizeMb(sizeMb: Int) {
         creds.setChunkSizeMb(sizeMb)
         _uiState.update { it.copy(chunkSizeMb = creds.getChunkSizeMb()) }
+    }
+
+    fun setWifiOnly(enabled: Boolean) {
+        creds.setWifiOnly(enabled)
+        _uiState.update { it.copy(isWifiOnly = creds.isWifiOnly()) }
     }
 
     // Dialog state toggles

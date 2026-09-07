@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -266,6 +267,94 @@ fun MoveFileDialog(
             }
         },
         confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = TextSecondary)
+            }
+        }
+    )
+}
+
+@Composable
+fun LargeFileConfirmationDialog(
+    fileName: String,
+    fileSize: Long,
+    estimatedChunks: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val formattedSize = com.example.domain.ChecksumUtil.formatBytes(fileSize)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = OledCard,
+        icon = {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = androidx.compose.ui.graphics.Color(0xFFFFB300),
+                modifier = Modifier.size(28.dp)
+            )
+        },
+        title = {
+            Text(
+                "Large Transfer Warning",
+                color = TextPrimary,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "You are about to upload a large file:",
+                    color = TextSecondary,
+                    fontSize = 13.sp
+                )
+                Text(
+                    text = fileName,
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(OledSurface)
+                        .border(1.dp, OledBorder, RoundedCornerShape(8.dp))
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text("Total Size", fontSize = 11.sp, color = TextSecondary)
+                        Text(formattedSize, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TelegramBlue)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("Telegram Chunks", fontSize = 11.sp, color = TextSecondary)
+                        Text("~$estimatedChunks chunks", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                    }
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = "This file will be split into $estimatedChunks 18MB chunks and uploaded sequentially. Keep the app active or let the background service complete the transfer.",
+                    color = TextTertiary,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TelegramBlue,
+                    contentColor = OledBlack
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Start Upload", fontWeight = FontWeight.Bold)
+            }
+        },
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel", color = TextSecondary)
