@@ -13,6 +13,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -152,58 +157,67 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         color = OledBlack
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            if (!uiState.isAuthenticated) {
-                OnboardingScreen(
-                    isValidating = uiState.isValidating,
-                    validationError = uiState.validationError,
-                    onConnect = { token, chatId ->
-                        viewModel.validateAndSaveCredentials(token, chatId)
-                    }
-                )
-            } else if (uiState.currentScreen == AppScreen.TRANSFERS) {
-                TransfersScreen(
-                    transfers = activeTransfers,
-                    recentlyCompleted = recentlyCompleted,
-                    onBack = { viewModel.navigateToVaultScreen() },
-                    onPause = { viewModel.pauseTransfer(it) },
-                    onResume = { id, isUpload -> viewModel.resumeTransfer(id, isUpload) },
-                    onCancel = { viewModel.cancelTransfer(it) },
-                    onRetry = { viewModel.retryTransfer(it) },
-                    onPauseAll = { viewModel.pauseAllTransfers() },
-                    onResumeAll = { viewModel.resumeAllTransfers() },
-                    onClearCompleted = { viewModel.clearRecentlyCompleted() },
-                    onNavigateToVault = { viewModel.navigateToVaultScreen() }
-                )
-            } else {
-                HomeScreen(
-                    storageStats = storageStats,
-                    folders = folders,
-                    files = files,
-                    breadcrumbs = uiState.breadcrumbs,
-                    searchQuery = uiState.searchQuery,
-                    sortBy = uiState.sortBy,
-                    sortAscending = uiState.sortAscending,
-                    isGridView = uiState.isGridView,
-                    activeTransfers = activeTransfers,
-                    isResyncing = uiState.isResyncing,
-                    resyncMessage = uiState.resyncMessage,
-                    onSearchChange = { viewModel.setSearchQuery(it) },
-                    onSortChange = { viewModel.setSortBy(it) },
-                    onToggleViewMode = { viewModel.toggleViewMode() },
-                    onFolderClick = { viewModel.openFolder(it) },
-                    onBreadcrumbClick = { viewModel.navigateToBreadcrumb(it) },
-                    onFileClick = { viewModel.inspectFile(it) },
-                    onRenameFolder = { viewModel.setFolderToRename(it) },
-                    onDeleteFolder = { viewModel.deleteFolder(it) },
-                    onCreateFolderClick = { viewModel.setShowCreateFolderDialog(true) },
-                    onUploadFileClick = { filePickerLauncher.launch("*/*") },
-                    onOpenTransfers = { viewModel.navigateToTransfersScreen() },
-                    onOpenSettings = { viewModel.setShowSettingsSheet(true) },
-                    onResync = { viewModel.resyncFromTelegram() },
-                    onDismissResyncMsg = { viewModel.clearResyncMessage() },
-                    transferErrorMessage = uiState.transferErrorMessage,
-                    onDismissTransferError = { viewModel.dismissTransferError() }
-                )
+            AnimatedContent(
+                targetState = Pair(uiState.isAuthenticated, uiState.currentScreen),
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(220)) togetherWith
+                        fadeOut(animationSpec = tween(180))
+                },
+                label = "screen_crossfade"
+            ) { (isAuthenticated, currentScreen) ->
+                if (!isAuthenticated) {
+                    OnboardingScreen(
+                        isValidating = uiState.isValidating,
+                        validationError = uiState.validationError,
+                        onConnect = { token, chatId ->
+                            viewModel.validateAndSaveCredentials(token, chatId)
+                        }
+                    )
+                } else if (currentScreen == AppScreen.TRANSFERS) {
+                    TransfersScreen(
+                        transfers = activeTransfers,
+                        recentlyCompleted = recentlyCompleted,
+                        onBack = { viewModel.navigateToVaultScreen() },
+                        onPause = { viewModel.pauseTransfer(it) },
+                        onResume = { id, isUpload -> viewModel.resumeTransfer(id, isUpload) },
+                        onCancel = { viewModel.cancelTransfer(it) },
+                        onRetry = { viewModel.retryTransfer(it) },
+                        onPauseAll = { viewModel.pauseAllTransfers() },
+                        onResumeAll = { viewModel.resumeAllTransfers() },
+                        onClearCompleted = { viewModel.clearRecentlyCompleted() },
+                        onNavigateToVault = { viewModel.navigateToVaultScreen() }
+                    )
+                } else {
+                    HomeScreen(
+                        storageStats = storageStats,
+                        folders = folders,
+                        files = files,
+                        breadcrumbs = uiState.breadcrumbs,
+                        searchQuery = uiState.searchQuery,
+                        sortBy = uiState.sortBy,
+                        sortAscending = uiState.sortAscending,
+                        isGridView = uiState.isGridView,
+                        activeTransfers = activeTransfers,
+                        isResyncing = uiState.isResyncing,
+                        resyncMessage = uiState.resyncMessage,
+                        onSearchChange = { viewModel.setSearchQuery(it) },
+                        onSortChange = { viewModel.setSortBy(it) },
+                        onToggleViewMode = { viewModel.toggleViewMode() },
+                        onFolderClick = { viewModel.openFolder(it) },
+                        onBreadcrumbClick = { viewModel.navigateToBreadcrumb(it) },
+                        onFileClick = { viewModel.inspectFile(it) },
+                        onRenameFolder = { viewModel.setFolderToRename(it) },
+                        onDeleteFolder = { viewModel.deleteFolder(it) },
+                        onCreateFolderClick = { viewModel.setShowCreateFolderDialog(true) },
+                        onUploadFileClick = { filePickerLauncher.launch("*/*") },
+                        onOpenTransfers = { viewModel.navigateToTransfersScreen() },
+                        onOpenSettings = { viewModel.setShowSettingsSheet(true) },
+                        onResync = { viewModel.resyncFromTelegram() },
+                        onDismissResyncMsg = { viewModel.clearResyncMessage() },
+                        transferErrorMessage = uiState.transferErrorMessage,
+                        onDismissTransferError = { viewModel.dismissTransferError() }
+                    )
+                }
             }
 
             // File Detail & Chunk Inspector Sheet
