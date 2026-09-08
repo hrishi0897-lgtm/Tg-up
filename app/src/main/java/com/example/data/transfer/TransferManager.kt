@@ -188,7 +188,7 @@ class TransferManager private constructor(
     /**
      * Prepares and starts a chunked upload from a content Uri.
      */
-    fun enqueueUpload(uri: Uri, folderId: String?): String {
+    fun enqueueUpload(uri: Uri, folderId: String?, customChunkSizeBytes: Long? = null): String {
         val fileId = UUID.randomUUID().toString()
         scope.launch {
             try {
@@ -230,9 +230,9 @@ class TransferManager private constructor(
 
                 val overallChecksum = ChecksumUtil.computeSha256(stagingFile)
 
-                // 3. Compute chunk count based on global safe chunk size CHUNK_SIZE_BYTES (18MB)
+                // 3. Compute chunk count based on global safe chunk size CHUNK_SIZE_BYTES (18MB) or custom override
                 // and compute balanced target chunk size (total file size divided by number of chunks)
-                val maxChunkSize = minOf(credentialsManager.getChunkSizeMb() * 1024 * 1024L, CHUNK_SIZE_BYTES)
+                val maxChunkSize = customChunkSizeBytes ?: minOf(credentialsManager.getChunkSizeMb() * 1024 * 1024L, CHUNK_SIZE_BYTES)
                 val totalChunks = ((actualSize + maxChunkSize - 1) / maxChunkSize).toInt().coerceAtLeast(1)
                 val targetChunkSize = ((actualSize + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
 

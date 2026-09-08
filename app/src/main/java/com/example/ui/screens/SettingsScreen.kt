@@ -67,7 +67,8 @@ fun SettingsScreen(
     onWifiOnlyChange: (Boolean) -> Unit,
     onResyncClick: () -> Unit,
     onDisconnect: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onStartTestTransfer: (() -> Unit)? = null
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scrollState = rememberScrollState()
@@ -401,6 +402,65 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Resync Manifests from Telegram Chat", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            if (onStartTestTransfer != null) {
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // 5. Verification & Test Mode Card
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = OledCard),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = TelegramBlue,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "TRANSFER VERIFICATION TEST",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TelegramBlue,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Starts a synthetic 5-chunk multi-part test transfer to verify pause/resume chunk integrity and ensure completed chunks are never re-uploaded.",
+                            fontSize = 12.sp,
+                            color = TextSecondary,
+                            lineHeight = 16.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onStartTestTransfer()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = TelegramBlue.copy(alpha = 0.15f),
+                                contentColor = TelegramBlue
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("btn_start_test_transfer")
+                        ) {
+                            Text("Start 5-Chunk Test Transfer", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             }

@@ -288,7 +288,8 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     onWifiOnlyChange = { viewModel.setWifiOnly(it) },
                     onResyncClick = { viewModel.resyncFromTelegram() },
                     onDisconnect = { viewModel.disconnect() },
-                    onDismiss = { viewModel.setShowSettingsSheet(false) }
+                    onDismiss = { viewModel.setShowSettingsSheet(false) },
+                    onStartTestTransfer = { viewModel.startSyntheticTestTransfer() }
                 )
             }
 

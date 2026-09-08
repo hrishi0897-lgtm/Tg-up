@@ -600,4 +600,30 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     fun getCredentials(): Pair<String, String> {
         return Pair(creds.getBotToken() ?: "", creds.getChatId() ?: "")
     }
+
+    // Creates a multi-chunk file to test pause/resume chunk integrity
+    fun startSyntheticTestTransfer() {
+        viewModelScope.launch {
+            try {
+                val testFile = java.io.File(getApplication<Application>().cacheDir, "test_resume_5chunks.bin")
+                // Create exactly 500KB file (5 chunks of 100KB each)
+                val chunkBytes = 100 * 1024
+                val totalBytes = 5 * chunkBytes
+                val buffer = ByteArray(chunkBytes) { (it % 128).toByte() }
+                testFile.outputStream().use { fos ->
+                    repeat(5) {
+                        fos.write(buffer)
+                    }
+                }
+                transferManager.enqueueUpload(
+                    uri = Uri.fromFile(testFile),
+                    folderId = _uiState.value.currentFolderId,
+                    customChunkSizeBytes = chunkBytes.toLong()
+                )
+                _uiState.update { it.copy(currentScreen = AppScreen.TRANSFERS) }
+            } catch (e: Exception) {
+                android.util.Log.e("TeleVaultViewModel", "Failed to start test transfer", e)
+            }
+        }
+    }
 }
