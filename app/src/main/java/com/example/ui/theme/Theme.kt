@@ -4,39 +4,40 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
-private val OledColorScheme = darkColorScheme(
-  primary = TelegramBlue,
-  onPrimary = OledBlack,
-  primaryContainer = TelegramBlueContainer,
-  onPrimaryContainer = OnTelegramBlueContainer,
-  secondary = TelegramBlue,
-  onSecondary = OledBlack,
-  secondaryContainer = OledSurfaceVariant,
-  onSecondaryContainer = TextPrimary,
-  tertiary = StatusSuccess,
-  onTertiary = OledBlack,
-  background = OledBlack,
-  onBackground = TextPrimary,
-  surface = OledBlack,
-  onSurface = TextPrimary,
-  surfaceVariant = OledSurfaceVariant,
-  onSurfaceVariant = TextSecondary,
-  outline = OledBorder,
-  outlineVariant = OledSurfaceVariant,
-  error = StatusError,
-  onError = OledBlack,
-  errorContainer = StatusErrorContainer,
-  onErrorContainer = TextPrimary
+private val TeleVaultColorScheme = darkColorScheme(
+    primary = AccentViolet,
+    onPrimary = AppBackgroundOuter,
+    primaryContainer = TelegramBlueContainer,
+    onPrimaryContainer = TextPrimary,
+    secondary = AccentTeal,
+    onSecondary = AppBackgroundOuter,
+    secondaryContainer = SurfaceCardElevated,
+    onSecondaryContainer = TextPrimary,
+    tertiary = StatusMint,
+    onTertiary = AppBackgroundOuter,
+    background = AppSurface,
+    onBackground = TextPrimary,
+    surface = SurfaceCard,
+    onSurface = TextPrimary,
+    surfaceVariant = SurfaceCardElevated,
+    onSurfaceVariant = TextDimmed,
+    outline = BorderDivider,
+    outlineVariant = BorderSubtle,
+    error = StatusError,
+    onError = AppBackgroundOuter,
+    errorContainer = StatusErrorBg,
+    onErrorContainer = TextPrimary
 )
 
 @Composable
 fun TeleVaultTheme(
-  content: @Composable () -> Unit
+    content: @Composable () -> Unit
 ) {
-  MaterialTheme(
-    colorScheme = OledColorScheme,
-    typography = Typography,
-    content = content
-  )
+    MaterialTheme(
+        colorScheme = TeleVaultColorScheme,
+        typography = Typography,
+        content = content
+    )
 }
+
 
