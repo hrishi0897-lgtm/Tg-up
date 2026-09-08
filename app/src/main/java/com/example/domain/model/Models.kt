@@ -49,5 +49,7 @@ data class TransferProgress(
     val speedBytesPerSec: Long = 0L,
     val status: FileStatus,
     val errorMessage: String? = null,
-    val etaSeconds: Long? = null
+    val etaSeconds: Long? = null,
+    val activeConcurrentChunks: Int = 0,
+    val completedChunksCount: Int = 0
 )

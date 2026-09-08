@@ -204,7 +204,13 @@ private fun TransferItemCard(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = when (transfer.status) {
-                            FileStatus.UPLOADING -> "Uploading chunk ${transfer.currentChunk}/${transfer.totalChunks} · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
+                            FileStatus.UPLOADING -> {
+                                if (transfer.activeConcurrentChunks > 0) {
+                                    "${transfer.activeConcurrentChunks} of ${transfer.totalChunks} chunks uploading, ${transfer.completedChunksCount} complete · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
+                                } else {
+                                    "Uploading chunk ${transfer.currentChunk}/${transfer.totalChunks} · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
+                                }
+                            }
                             FileStatus.DOWNLOADING -> "Downloading chunk ${transfer.currentChunk}/${transfer.totalChunks} · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
                             FileStatus.PAUSED -> "Paused (Chunk ${transfer.currentChunk}/${transfer.totalChunks})"
                             FileStatus.FAILED -> "Failed: ${transfer.errorMessage ?: "Transfer error"}"

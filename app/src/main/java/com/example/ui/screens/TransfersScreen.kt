@@ -523,8 +523,18 @@ private fun TransferRowCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val chunkProgressLabel = when {
+                    transfer.isUpload && transfer.status == FileStatus.UPLOADING && transfer.activeConcurrentChunks > 0 -> {
+                        "${transfer.activeConcurrentChunks} of ${transfer.totalChunks} chunks uploading, ${transfer.completedChunksCount} complete · $percent%"
+                    }
+                    transfer.isUpload && transfer.completedChunksCount > 0 -> {
+                        "Chunk ${transfer.completedChunksCount} of ${transfer.totalChunks} complete · $percent%"
+                    }
+                    else -> "Chunk ${transfer.currentChunk} of ${transfer.totalChunks} · $percent%"
+                }
+
                 Text(
-                    text = "Chunk ${transfer.currentChunk} of ${transfer.totalChunks} · $percent%",
+                    text = chunkProgressLabel,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = TextPrimary
