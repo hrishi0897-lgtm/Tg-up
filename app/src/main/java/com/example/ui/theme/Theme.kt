@@ -4,6 +4,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 
+import androidx.compose.runtime.CompositionLocalProvider
+
 private val TeleVaultColorScheme = darkColorScheme(
     primary = AccentViolet,
     onPrimary = AppBackgroundOuter,
@@ -33,11 +35,14 @@ private val TeleVaultColorScheme = darkColorScheme(
 fun TeleVaultTheme(
     content: @Composable () -> Unit
 ) {
-    MaterialTheme(
-        colorScheme = TeleVaultColorScheme,
-        typography = Typography,
-        content = content
-    )
+    val reduceMotion = rememberReduceMotion()
+    CompositionLocalProvider(LocalReduceMotion provides reduceMotion) {
+        MaterialTheme(
+            colorScheme = TeleVaultColorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }
 
 

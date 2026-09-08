@@ -47,6 +47,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import com.example.ui.theme.pressScale
 import com.example.ui.theme.OledBlack
 import com.example.ui.theme.OledBorder
 import com.example.ui.theme.OledCard
@@ -56,7 +63,6 @@ import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextTertiary
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     botTokenMasked: String,
@@ -70,39 +76,59 @@ fun SettingsScreen(
     onDismiss: () -> Unit,
     onStartTestTransfer: (() -> Unit)? = null
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scrollState = rememberScrollState()
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
+    Scaffold(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(OledBlack),
         containerColor = OledBlack,
-        dragHandle = {
-            Box(
+        topBar = {
+            Surface(
+                color = OledBlack,
                 modifier = Modifier
-                    .padding(vertical = 10.dp)
-                    .width(36.dp)
-                    .height(4.dp)
-                    .clip(CircleShape)
-                    .background(OledBorder)
-            )
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .pressScale(0.88f)
+                            .testTag("btn_back_to_vault")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back to Vault",
+                            tint = TextPrimary
+                        )
+                    }
+
+                    Text(
+                        text = "Vault Settings",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextPrimary,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
+            }
         }
-    ) {
+    ) { innerPadding ->
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize()
+                .padding(innerPadding)
                 .padding(horizontal = 20.dp)
                 .verticalScroll(scrollState)
                 .padding(bottom = 36.dp)
         ) {
-            Text(
-                text = "Vault Settings",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
 
             // 1. Account Credentials Card
             Card(
@@ -156,6 +182,7 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .pressScale(0.92f)
                             .testTag("disconnect_button")
                     ) {
                         Icon(imageVector = Icons.Default.PowerSettingsNew, contentDescription = null, tint = StatusError, modifier = Modifier.size(16.dp))
@@ -342,6 +369,7 @@ fun SettingsScreen(
                                     contentColor = OledBlack
                                 ),
                                 shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.pressScale(0.90f),
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
                                 Text("Optimize", fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -399,7 +427,9 @@ fun SettingsScreen(
                             contentColor = TelegramBlue
                         ),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pressScale(0.92f)
                     ) {
                         Text("Resync Manifests from Telegram Chat", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
@@ -457,6 +487,7 @@ fun SettingsScreen(
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .pressScale(0.92f)
                                 .testTag("btn_start_test_transfer")
                         ) {
                             Text("Start 5-Chunk Test Transfer", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)

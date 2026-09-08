@@ -35,7 +35,8 @@ enum class SortBy {
 
 enum class AppScreen {
     VAULT,
-    TRANSFERS
+    TRANSFERS,
+    SETTINGS
 }
 
 data class PendingUploadWarning(
@@ -68,6 +69,8 @@ data class UiState(
     val showCreateFolderDialog: Boolean = false,
     val folderToRename: FolderEntity? = null,
     val fileToRename: FileEntity? = null,
+    val folderToDelete: FolderEntity? = null,
+    val fileToDelete: FileEntity? = null,
     val itemToMove: FileEntity? = null,
     val showInAppGuide: Boolean = false,
     val pendingUploadWarning: PendingUploadWarning? = null,
@@ -480,6 +483,30 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun navigateToVaultScreen() {
         _uiState.update { it.copy(currentScreen = AppScreen.VAULT) }
+    }
+
+    fun navigateToSettingsScreen() {
+        _uiState.update { it.copy(currentScreen = AppScreen.SETTINGS) }
+    }
+
+    fun setFolderToDelete(folder: FolderEntity?) {
+        _uiState.update { it.copy(folderToDelete = folder) }
+    }
+
+    fun setFileToDelete(file: FileEntity?) {
+        _uiState.update { it.copy(fileToDelete = file) }
+    }
+
+    fun confirmDeleteFolder() {
+        val folder = _uiState.value.folderToDelete ?: return
+        _uiState.update { it.copy(folderToDelete = null) }
+        deleteFolder(folder)
+    }
+
+    fun confirmDeleteFile() {
+        val file = _uiState.value.fileToDelete ?: return
+        _uiState.update { it.copy(fileToDelete = null, selectedFileForDetail = null) }
+        deleteFile(file.id)
     }
 
     fun retryTransfer(fileId: String) {

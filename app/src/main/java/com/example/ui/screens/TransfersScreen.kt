@@ -65,6 +65,11 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.FileStatus
 import com.example.domain.ChecksumUtil
 import com.example.domain.model.TransferProgress
+import androidx.compose.animation.core.snap
+import com.example.ui.components.TeleVaultBottomNav
+import com.example.ui.theme.LocalReduceMotion
+import com.example.ui.theme.pressScale
+import com.example.ui.viewmodel.AppScreen
 import com.example.ui.theme.OledBlack
 import com.example.ui.theme.OledBorder
 import com.example.ui.theme.OledCard
@@ -114,9 +119,11 @@ fun TransfersScreen(
             )
         },
         bottomBar = {
-            TransfersBottomNav(
+            TeleVaultBottomNav(
+                currentScreen = AppScreen.TRANSFERS,
                 activeTransferCount = transfers.size,
-                onVaultSelected = onNavigateToVault
+                onVaultSelected = onNavigateToVault,
+                onTransfersSelected = { /* Already on Transfers */ }
             )
         }
     ) { innerPadding ->
@@ -127,81 +134,91 @@ fun TransfersScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            item {
+            item(key = "header_spacer") {
                 Spacer(modifier = Modifier.height(4.dp))
             }
 
             if (transfers.isEmpty() && recentlyCompleted.isEmpty()) {
-                item {
-                    EmptyTransfersView()
+                item(key = "empty_transfers") {
+                    Box(modifier = Modifier.animateItem()) {
+                        EmptyTransfersView()
+                    }
                 }
             } else {
                 if (transfers.isNotEmpty()) {
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "ACTIVE TRANSFERS (${transfers.size})",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextTertiary,
-                                letterSpacing = 1.sp
-                            )
+                    item(key = "active_header") {
+                        Box(modifier = Modifier.animateItem()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "ACTIVE TRANSFERS (${transfers.size})",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextTertiary,
+                                    letterSpacing = 1.sp
+                                )
+                            }
                         }
                     }
 
                     items(transfers, key = { it.fileId }) { transfer ->
-                        TransferRowCard(
-                            transfer = transfer,
-                            onPause = { onPause(transfer.fileId) },
-                            onResume = { onResume(transfer.fileId, transfer.isUpload) },
-                            onCancel = { onCancel(transfer.fileId) },
-                            onRetry = { onRetry(transfer.fileId) }
-                        )
+                        Box(modifier = Modifier.animateItem()) {
+                            TransferRowCard(
+                                transfer = transfer,
+                                onPause = { onPause(transfer.fileId) },
+                                onResume = { onResume(transfer.fileId, transfer.isUpload) },
+                                onCancel = { onCancel(transfer.fileId) },
+                                onRetry = { onRetry(transfer.fileId) }
+                            )
+                        }
                     }
                 }
 
                 if (recentlyCompleted.isNotEmpty()) {
-                    item {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "RECENTLY COMPLETED",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TextTertiary,
-                                letterSpacing = 1.sp
-                            )
-                            Text(
-                                text = "Clear",
-                                fontSize = 12.sp,
-                                color = TelegramBlue,
-                                fontWeight = FontWeight.Medium,
+                    item(key = "completed_header") {
+                        Box(modifier = Modifier.animateItem()) {
+                            Row(
                                 modifier = Modifier
-                                    .clickable(onClick = onClearCompleted)
-                                    .padding(4.dp)
-                                    .testTag("btn_clear_completed")
-                            )
+                                    .fillMaxWidth()
+                                    .padding(top = 16.dp, bottom = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "RECENTLY COMPLETED",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextTertiary,
+                                    letterSpacing = 1.sp
+                                )
+                                Text(
+                                    text = "Clear",
+                                    fontSize = 12.sp,
+                                    color = TelegramBlue,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier
+                                        .pressScale(0.90f)
+                                        .clickable(onClick = onClearCompleted)
+                                        .padding(4.dp)
+                                        .testTag("btn_clear_completed")
+                                )
+                            }
                         }
                     }
 
                     items(recentlyCompleted, key = { "completed_${it.fileId}" }) { item ->
-                        CompletedTransferCard(item = item)
+                        Box(modifier = Modifier.animateItem()) {
+                            CompletedTransferCard(item = item)
+                        }
                     }
                 }
 
-                item {
+                item(key = "footer_spacer") {
                     Spacer(modifier = Modifier.height(24.dp))
                 }
             }
@@ -273,6 +290,7 @@ private fun TransfersTopBar(
                     onClick = onPauseAll,
                     modifier = Modifier
                         .size(48.dp)
+                        .pressScale(0.88f)
                         .testTag("btn_pause_all")
                 ) {
                     Icon(
@@ -286,6 +304,7 @@ private fun TransfersTopBar(
                     onClick = onResumeAll,
                     modifier = Modifier
                         .size(48.dp)
+                        .pressScale(0.88f)
                         .testTag("btn_resume_all")
                 ) {
                     Icon(
@@ -307,12 +326,13 @@ private fun TransferRowCard(
     onCancel: () -> Unit,
     onRetry: () -> Unit
 ) {
+    val reduceMotion = LocalReduceMotion.current
     val isFailed = transfer.status == FileStatus.FAILED
     val percent = (transfer.progressFraction * 100).toInt().coerceIn(0, 100)
 
     val animatedProgress by animateFloatAsState(
         targetValue = transfer.progressFraction.coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = 200, easing = LinearOutSlowInEasing),
+        animationSpec = if (reduceMotion) snap() else tween(durationMillis = 400, easing = LinearOutSlowInEasing),
         label = "transfer_progress_${transfer.fileId}"
     )
 
@@ -325,6 +345,7 @@ private fun TransferRowCard(
         ),
         modifier = Modifier
             .fillMaxWidth()
+            .pressScale(0.98f)
             .clickable(enabled = isFailed, onClick = onRetry)
             .testTag("transfer_item_${transfer.fileId}")
     ) {
@@ -391,6 +412,7 @@ private fun TransferRowCard(
                             onClick = onPause,
                             modifier = Modifier
                                 .size(48.dp)
+                                .pressScale(0.88f)
                                 .testTag("btn_pause_${transfer.fileId}")
                         ) {
                             Icon(
@@ -404,6 +426,7 @@ private fun TransferRowCard(
                             onClick = onCancel,
                             modifier = Modifier
                                 .size(48.dp)
+                                .pressScale(0.88f)
                                 .testTag("btn_cancel_${transfer.fileId}")
                         ) {
                             Icon(
@@ -419,6 +442,7 @@ private fun TransferRowCard(
                             onClick = onResume,
                             modifier = Modifier
                                 .size(48.dp)
+                                .pressScale(0.88f)
                                 .testTag("btn_resume_${transfer.fileId}")
                         ) {
                             Icon(
@@ -432,6 +456,7 @@ private fun TransferRowCard(
                             onClick = onCancel,
                             modifier = Modifier
                                 .size(48.dp)
+                                .pressScale(0.88f)
                                 .testTag("btn_cancel_${transfer.fileId}")
                         ) {
                             Icon(
@@ -447,6 +472,7 @@ private fun TransferRowCard(
                             onClick = onRetry,
                             modifier = Modifier
                                 .size(48.dp)
+                                .pressScale(0.88f)
                                 .testTag("btn_retry_${transfer.fileId}")
                         ) {
                             Icon(
@@ -460,6 +486,7 @@ private fun TransferRowCard(
                             onClick = onCancel,
                             modifier = Modifier
                                 .size(48.dp)
+                                .pressScale(0.88f)
                                 .testTag("btn_cancel_${transfer.fileId}")
                         ) {
                             Icon(

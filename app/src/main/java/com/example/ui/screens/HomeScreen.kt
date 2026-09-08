@@ -1,15 +1,28 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import com.example.ui.components.TeleVaultBottomNav
+import com.example.ui.theme.LocalReduceMotion
+import com.example.ui.theme.MotionSpecs
+import com.example.ui.theme.pressScale
+import com.example.ui.viewmodel.AppScreen
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -318,8 +331,10 @@ fun HomeScreen(
             }
         },
         bottomBar = {
-            VaultBottomNav(
+            TeleVaultBottomNav(
+                currentScreen = AppScreen.VAULT,
                 activeTransferCount = activeCount,
+                onVaultSelected = { /* Already in Vault */ },
                 onTransfersSelected = onOpenTransfers
             )
         }
@@ -530,6 +545,7 @@ fun HomeScreen(
                                 .clip(RoundedCornerShape(14.dp))
                                 .background(SurfaceCard)
                                 .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
+                                .pressScale(0.88f)
                                 .clickable { showSortMenu = true },
                             contentAlignment = Alignment.Center
                         ) {
@@ -573,12 +589,18 @@ fun HomeScreen(
                     }
 
                     // View Toggle Square Button
+                    val viewToggleRot by animateFloatAsState(
+                        targetValue = if (isGridView) 180f else 0f,
+                        animationSpec = spring(dampingRatio = 0.7f, stiffness = 350f),
+                        label = "view_toggle_rot"
+                    )
                     Box(
                         modifier = Modifier
                             .size(44.dp)
                             .clip(RoundedCornerShape(14.dp))
                             .background(SurfaceCard)
                             .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
+                            .pressScale(0.88f)
                             .clickable(onClick = onToggleViewMode),
                         contentAlignment = Alignment.Center
                     ) {
@@ -586,7 +608,9 @@ fun HomeScreen(
                             imageVector = if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
                             contentDescription = "Toggle view",
                             tint = TextDimmed,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier
+                                .size(16.dp)
+                                .rotate(viewToggleRot)
                         )
                     }
                 }
@@ -606,68 +630,78 @@ fun HomeScreen(
 
             // 5. Folders Section (if any and not searching)
             if (folders.isNotEmpty() && searchQuery.isBlank()) {
-                item {
-                    Text(
-                        text = "Folders",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = BodySansFont,
-                        color = TextDimmed
-                    )
+                item(key = "folders_header") {
+                    Box(modifier = Modifier.animateItem()) {
+                        Column {
+                            Text(
+                                text = "Folders",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                fontFamily = BodySansFont,
+                                color = TextDimmed
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                    }
+                }
+
+                items(folders, key = { "folder_${it.id}" }) { folder ->
+                    Box(modifier = Modifier.animateItem()) {
+                        FolderItemRow(
+                            folder = folder,
+                            onClick = { onFolderClick(folder) },
+                            onRename = { onRenameFolder(folder) },
+                            onDelete = { onDeleteFolder(folder) }
+                        )
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        folders.forEach { folder ->
-                            FolderItemRow(
-                                folder = folder,
-                                onClick = { onFolderClick(folder) },
-                                onRename = { onRenameFolder(folder) },
-                                onDelete = { onDeleteFolder(folder) }
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
+                item(key = "folders_spacer") {
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
 
             // 6. Section Head: "Vault files" + Item Count in Numeric Monospace Font
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 10.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (searchQuery.isNotBlank()) "Search results" else "Vault files",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = BodySansFont,
-                        color = TextPrimary
-                    )
-                    Text(
-                        text = "${files.size} items",
-                        fontSize = 12.5.sp,
-                        fontFamily = NumericMonoFont,
-                        color = TextFaint
-                    )
+            item(key = "vault_files_header") {
+                Box(modifier = Modifier.animateItem()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (searchQuery.isNotBlank()) "Search results" else "Vault files",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = BodySansFont,
+                            color = TextPrimary
+                        )
+                        Text(
+                            text = "${files.size} items",
+                            fontSize = 12.5.sp,
+                            fontFamily = NumericMonoFont,
+                            color = TextFaint
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
             // 7. Content: Empty State or File List/Grid
             if (files.isEmpty() && folders.isEmpty()) {
-                item {
-                    EmptyFolderState(
-                        isSearch = searchQuery.isNotBlank(),
-                        onUploadClick = onUploadFileClick
-                    )
+                item(key = "empty_state") {
+                    Box(modifier = Modifier.animateItem()) {
+                        EmptyFolderState(
+                            isSearch = searchQuery.isNotBlank(),
+                            onUploadClick = onUploadFileClick
+                        )
+                    }
                 }
             } else if (isGridView) {
-                item {
+                item(key = "grid_view_container") {
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
                         modifier = Modifier.height((((files.size + 1) / 2) * 144).dp),
@@ -675,14 +709,18 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         userScrollEnabled = false
                     ) {
-                        items(files, key = { it.id }) { file ->
-                            FileGridCard(file = file, onClick = { onFileClick(file) })
+                        items(files, key = { "grid_${it.id}" }) { file ->
+                            Box(modifier = Modifier.animateItem()) {
+                                FileGridCard(file = file, onClick = { onFileClick(file) })
+                            }
                         }
                     }
                 }
             } else {
-                items(files, key = { it.id }) { file ->
-                    FileListItem(file = file, onClick = { onFileClick(file) })
+                items(files, key = { "file_${it.id}" }) { file ->
+                    Box(modifier = Modifier.animateItem()) {
+                        FileListItem(file = file, onClick = { onFileClick(file) })
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
@@ -788,6 +826,17 @@ private fun HomeTopBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val infiniteTransition = rememberInfiniteTransition(label = "resync_infinite")
+            val spinAngle by infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(850, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "resync_angle"
+            )
+
             // Resync icon button
             Box(
                 modifier = Modifier
@@ -795,21 +844,17 @@ private fun HomeTopBar(
                     .clip(RoundedCornerShape(12.dp))
                     .background(SurfaceCard)
                     .border(1.dp, BorderDivider, RoundedCornerShape(12.dp))
+                    .pressScale(0.88f)
                     .clickable(enabled = !isResyncing, onClick = onResync),
                 contentAlignment = Alignment.Center
             ) {
-                val rotation by animateFloatAsState(
-                    targetValue = if (isResyncing) 360f else 0f,
-                    animationSpec = if (isResyncing) infiniteRepeatable(tween(900)) else tween(0),
-                    label = "resync_spin"
-                )
                 Icon(
                     imageVector = Icons.Default.Refresh,
                     contentDescription = "Sync",
                     tint = if (isResyncing) AccentViolet else TextDimmed,
                     modifier = Modifier
                         .size(17.dp)
-                        .rotate(rotation)
+                        .rotate(if (isResyncing) spinAngle else 0f)
                 )
             }
 
@@ -820,6 +865,7 @@ private fun HomeTopBar(
                     .clip(RoundedCornerShape(12.dp))
                     .background(SurfaceCard)
                     .border(1.dp, BorderDivider, RoundedCornerShape(12.dp))
+                    .pressScale(0.88f)
                     .clickable(onClick = onOpenSettings),
                 contentAlignment = Alignment.Center
             ) {
@@ -844,6 +890,7 @@ private fun StorageMeterCard(
     onOpenTransfers: () -> Unit,
     activeTransfersCount: Int
 ) {
+    val reduceMotion = LocalReduceMotion.current
     val (storageValue, storageUnit) = remember(stats.totalBytesStored) {
         splitStorageValueAndUnit(stats.totalBytesStored)
     }
@@ -863,12 +910,15 @@ private fun StorageMeterCard(
     }
 
     val animatedAngle by animateFloatAsState(
-        targetValue = if (ringAnimationStarted) targetAngle else 0f,
-        animationSpec = tween(
-            durationMillis = 1400,
-            delayMillis = 200,
-            easing = CubicBezierEasing(0.3f, 0.9f, 0.3f, 1f)
-        ),
+        targetValue = if (reduceMotion) targetAngle else if (ringAnimationStarted) targetAngle else 0f,
+        animationSpec = if (reduceMotion) {
+            snap()
+        } else {
+            spring(
+                dampingRatio = 0.8f,
+                stiffness = 220f
+            )
+        },
         label = "ring_fill_anim"
     )
 
@@ -977,11 +1027,19 @@ private fun StorageMeterCard(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Text(
-                            text = storageValue,
-                            style = MonoStatValueLarge,
-                            textAlign = TextAlign.Center
-                        )
+                        AnimatedContent(
+                            targetState = storageValue,
+                            transitionSpec = {
+                                fadeIn(tween(220)) togetherWith fadeOut(tween(180))
+                            },
+                            label = "storage_val_crossfade"
+                        ) { valText ->
+                            Text(
+                                text = valText,
+                                style = MonoStatValueLarge,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = storageUnit,
@@ -1010,10 +1068,18 @@ private fun StorageMeterCard(
                             fontFamily = BodySansFont,
                             color = TextDimmed
                         )
-                        Text(
-                            text = "${stats.fileCount}",
-                            style = MonoStatValueMedium
-                        )
+                        AnimatedContent(
+                            targetState = stats.fileCount,
+                            transitionSpec = {
+                                fadeIn(tween(220)) togetherWith fadeOut(tween(180))
+                            },
+                            label = "files_count_crossfade"
+                        ) { count ->
+                            Text(
+                                text = "$count",
+                                style = MonoStatValueMedium
+                            )
+                        }
                     }
 
                     // Folders
@@ -1189,6 +1255,7 @@ private fun EmptyFolderState(
                     }
                     .clip(RoundedCornerShape(14.dp))
                     .background(VioletButtonGradient)
+                    .pressScale(0.94f)
                     .clickable(onClick = onUploadClick)
                     .padding(horizontal = 22.dp, vertical = 13.dp)
                     .testTag("empty_upload_button"),
@@ -1387,6 +1454,7 @@ private fun FolderItemRow(
             .clip(RoundedCornerShape(14.dp))
             .background(SurfaceCard)
             .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
+            .pressScale(0.98f)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1478,6 +1546,7 @@ private fun FileListItem(
             .clip(RoundedCornerShape(14.dp))
             .background(SurfaceCard)
             .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
+            .pressScale(0.98f)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1533,6 +1602,7 @@ private fun FileGridCard(
             .clip(RoundedCornerShape(14.dp))
             .background(SurfaceCard)
             .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
+            .pressScale(0.98f)
             .clickable(onClick = onClick)
             .padding(14.dp)
     ) {

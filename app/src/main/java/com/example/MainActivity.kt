@@ -14,11 +14,16 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import com.example.ui.theme.LocalReduceMotion
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
@@ -148,10 +153,17 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         viewModel.navigateToVaultScreen()
     }
 
+    // Handle back button for settings screen
+    BackHandler(enabled = uiState.currentScreen == AppScreen.SETTINGS) {
+        viewModel.navigateToVaultScreen()
+    }
+
     // Handle back button for folder hierarchy navigation
     BackHandler(enabled = uiState.currentScreen == AppScreen.VAULT && uiState.breadcrumbs.size > 1) {
         viewModel.navigateUp()
     }
+
+    val reduceMotion = LocalReduceMotion.current
 
     Surface(
         modifier = Modifier
@@ -163,10 +175,47 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
             AnimatedContent(
                 targetState = Pair(uiState.isAuthenticated, uiState.currentScreen),
                 transitionSpec = {
-                    fadeIn(animationSpec = tween(220)) togetherWith
-                        fadeOut(animationSpec = tween(180))
+                    if (reduceMotion) {
+                        fadeIn(animationSpec = snap()) togetherWith fadeOut(animationSpec = snap())
+                    } else {
+                        val (initialAuth, initialScreen) = initialState
+                        val (targetAuth, targetScreen) = targetState
+                        if (initialAuth != targetAuth) {
+                            fadeIn(animationSpec = tween(260)) togetherWith fadeOut(animationSpec = tween(200))
+                        } else {
+                            val initialOrder = when (initialScreen) {
+                                AppScreen.VAULT -> 0
+                                AppScreen.TRANSFERS -> 1
+                                AppScreen.SETTINGS -> 2
+                            }
+                            val targetOrder = when (targetScreen) {
+                                AppScreen.VAULT -> 0
+                                AppScreen.TRANSFERS -> 1
+                                AppScreen.SETTINGS -> 2
+                            }
+                            if (targetOrder >= initialOrder) {
+                                (slideInHorizontally(
+                                    initialOffsetX = { (it * 0.12f).toInt() },
+                                    animationSpec = tween(300, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                                ) + fadeIn(animationSpec = tween(240))) togetherWith
+                                (slideOutHorizontally(
+                                    targetOffsetX = { -(it * 0.12f).toInt() },
+                                    animationSpec = tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                                ) + fadeOut(animationSpec = tween(180)))
+                            } else {
+                                (slideInHorizontally(
+                                    initialOffsetX = { -(it * 0.12f).toInt() },
+                                    animationSpec = tween(300, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                                ) + fadeIn(animationSpec = tween(240))) togetherWith
+                                (slideOutHorizontally(
+                                    targetOffsetX = { (it * 0.12f).toInt() },
+                                    animationSpec = tween(260, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+                                ) + fadeOut(animationSpec = tween(180)))
+                            }
+                        }
+                    }
                 },
-                label = "screen_crossfade"
+                label = "screen_shared_axis_transition"
             ) { (isAuthenticated, currentScreen) ->
                 if (!isAuthenticated) {
                     OnboardingScreen(
@@ -189,6 +238,20 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         onResumeAll = { viewModel.resumeAllTransfers() },
                         onClearCompleted = { viewModel.clearRecentlyCompleted() },
                         onNavigateToVault = { viewModel.navigateToVaultScreen() }
+                    )
+                } else if (currentScreen == AppScreen.SETTINGS) {
+                    val (token, chatId) = viewModel.getCredentials()
+                    SettingsScreen(
+                        botTokenMasked = token,
+                        chatId = chatId,
+                        chunkSizeMb = uiState.chunkSizeMb,
+                        isWifiOnly = uiState.isWifiOnly,
+                        onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
+                        onWifiOnlyChange = { viewModel.setWifiOnly(it) },
+                        onResyncClick = { viewModel.resyncFromTelegram() },
+                        onDisconnect = { viewModel.disconnect() },
+                        onDismiss = { viewModel.navigateToVaultScreen() },
+                        onStartTestTransfer = { viewModel.startSyntheticTestTransfer() }
                     )
                 } else {
                     HomeScreen(
@@ -214,7 +277,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         onCreateFolderClick = { viewModel.setShowCreateFolderDialog(true) },
                         onUploadFileClick = { filePickerLauncher.launch("*/*") },
                         onOpenTransfers = { viewModel.navigateToTransfersScreen() },
-                        onOpenSettings = { viewModel.setShowSettingsSheet(true) },
+                        onOpenSettings = { viewModel.navigateToSettingsScreen() },
                         onResync = { viewModel.resyncFromTelegram() },
                         onDismissResyncMsg = { viewModel.clearResyncMessage() },
                         transferErrorMessage = uiState.transferErrorMessage,
@@ -326,9 +389,10 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                 val file = uiState.itemToMove!!
                 MoveFileDialog(
                     fileName = file.name,
-                    allFolders = allFolders,
+                    folders = allFolders,
+                    currentFolderId = file.folderId,
                     onDismiss = { viewModel.setItemToMove(null) },
-                    onSelectFolder = { targetFolderId -> viewModel.moveFile(file.id, targetFolderId) }
+                    onSelectDestination = { targetFolderId -> viewModel.moveFile(file.id, targetFolderId) }
                 )
             }
 
