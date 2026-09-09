@@ -498,23 +498,44 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun resumeTransfer(fileId: String, isUpload: Boolean) {
-        if (isUpload) {
-            transferManager.startUpload(fileId)
-        } else {
-            transferManager.startDownload(fileId)
+        viewModelScope.launch {
+            try {
+                if (isUpload) {
+                    transferManager.startUpload(fileId)
+                } else {
+                    transferManager.startDownload(fileId)
+                }
+            } catch (e: Throwable) {
+                Log.e("TeleVaultViewModel", "Error in resumeTransfer for fileId=$fileId", e)
+                _uiState.update {
+                    it.copy(transferErrorMessage = "Resume failed: ${e.message ?: e::class.java.simpleName}")
+                }
+            }
         }
     }
 
     fun cancelTransfer(fileId: String) {
-        transferManager.cancelTransfer(fileId)
+        try {
+            transferManager.cancelTransfer(fileId)
+        } catch (e: Throwable) {
+            Log.e("TeleVaultViewModel", "Error in cancelTransfer for fileId=$fileId", e)
+        }
     }
 
     fun pauseAllTransfers() {
-        transferManager.pauseAll()
+        try {
+            transferManager.pauseAll()
+        } catch (e: Throwable) {
+            Log.e("TeleVaultViewModel", "Error in pauseAllTransfers", e)
+        }
     }
 
     fun resumeAllTransfers() {
-        transferManager.resumeAll()
+        try {
+            transferManager.resumeAll()
+        } catch (e: Throwable) {
+            Log.e("TeleVaultViewModel", "Error in resumeAllTransfers", e)
+        }
     }
 
     fun clearRecentlyCompleted() {

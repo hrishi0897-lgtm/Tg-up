@@ -27,6 +27,8 @@ class TransferService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
     private lateinit var notificationManager: NotificationManager
     private var wakeLock: PowerManager.WakeLock? = null
+    private var lastNotificationTimeMs = 0L
+    private var lastNotifiedStatus: com.example.data.local.entity.FileStatus? = null
 
     companion object {
         private const val TAG = "TransferService"
@@ -117,7 +119,11 @@ class TransferService : Service() {
                         "$actionLabel ${active.fileName} — $percent%"
                     }
 
-                    val content = "Chunk ${active.currentChunk} of ${active.totalChunks} · $speed"
+                    val content = if (active.activeConcurrentChunks > 1) {
+                        "${active.activeConcurrentChunks} chunks uploading (${active.completedChunksCount}/${active.totalChunks} done) · $speed"
+                    } else {
+                        "Chunk ${active.currentChunk} of ${active.totalChunks} · $speed"
+                    }
 
                     val updatedNotification = buildNotification(
                         title = title,
@@ -126,7 +132,13 @@ class TransferService : Service() {
                         content = content,
                         isOngoing = true
                     )
-                    notificationManager.notify(NOTIFICATION_ID, updatedNotification)
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    val isStatusChange = (percent == 100) || (active.status != lastNotifiedStatus)
+                    if (isStatusChange || (now - lastNotificationTimeMs >= 500L)) {
+                        lastNotificationTimeMs = now
+                        lastNotifiedStatus = active.status
+                        notificationManager.notify(NOTIFICATION_ID, updatedNotification)
+                    }
                 } else {
                     val failedTransfer = transfersMap.values.firstOrNull { it.status == com.example.data.local.entity.FileStatus.FAILED }
                     val hasPaused = transfersMap.values.any { it.status == com.example.data.local.entity.FileStatus.PAUSED }

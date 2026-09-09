@@ -31,13 +31,17 @@ interface ChunkDao {
     @Query("SELECT COUNT(*) FROM chunks WHERE fileId = :fileId AND isDownloaded = 1")
     suspend fun getDownloadedChunkCount(fileId: String): Int
 
-    @Query("UPDATE chunks SET telegramMessageId = :messageId, telegramFileId = :fileIdRemote, isUploaded = 1 WHERE fileId = :fileId AND chunkIndex = :chunkIndex")
+    @Query("UPDATE chunks SET telegramMessageId = :messageId, telegramFileId = :fileIdRemote, checksum = :checksum, isUploaded = 1 WHERE fileId = :fileId AND chunkIndex = :chunkIndex")
     suspend fun markChunkUploaded(
         fileId: String,
         chunkIndex: Int,
         messageId: Long,
-        fileIdRemote: String
+        fileIdRemote: String,
+        checksum: String
     )
+
+    @Query("UPDATE chunks SET checksum = :checksum WHERE fileId = :fileId AND chunkIndex = :chunkIndex")
+    suspend fun updateChecksum(fileId: String, chunkIndex: Int, checksum: String)
 
     @Query("UPDATE chunks SET isDownloaded = 1 WHERE fileId = :fileId AND chunkIndex = :chunkIndex")
     suspend fun markChunkDownloaded(fileId: String, chunkIndex: Int)

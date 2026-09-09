@@ -17,8 +17,8 @@ object ChecksumUtil {
      */
     fun computeSha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().buffered().use { input ->
-            val buffer = ByteArray(8192)
+        file.inputStream().buffered(64 * 1024).use { input ->
+            val buffer = ByteArray(64 * 1024)
             var bytesRead: Int
             while (input.read(buffer).also { bytesRead = it } != -1) {
                 digest.update(buffer, 0, bytesRead)
@@ -62,7 +62,7 @@ object ChecksumUtil {
      */
     fun computeSha256(input: InputStream, length: Long): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        val buffer = ByteArray(8192)
+        val buffer = ByteArray(64 * 1024)
         var remaining = length
         while (remaining > 0) {
             val toRead = minOf(buffer.size.toLong(), remaining).toInt()

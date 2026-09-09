@@ -24,6 +24,7 @@ import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
+import android.os.SystemClock
 import android.util.Log
 
 class TelegramRepository(
@@ -700,17 +701,27 @@ class CountingRequestBody(
     override fun writeTo(sink: BufferedSink) {
         val total = contentLength()
         var bytesWritten = 0L
+        var lastReportedTime = 0L
 
         val countingSink = object : ForwardingSink(sink) {
             override fun write(source: Buffer, byteCount: Long) {
                 super.write(source, byteCount)
                 bytesWritten += byteCount
-                onProgress(bytesWritten, total)
+                val now = SystemClock.elapsedRealtime()
+                // Throttle progress updates to roughly 8-10 per second per chunk (~100ms interval) or completion
+                if (now - lastReportedTime >= 100L || bytesWritten >= total) {
+                    lastReportedTime = now
+                    onProgress(bytesWritten, total)
+                }
             }
         }
 
         val bufferedSink = countingSink.buffer()
         delegate.writeTo(bufferedSink)
         bufferedSink.flush()
+        // Ensure completion callback is always delivered
+        if (bytesWritten >= total && lastReportedTime != 0L) {
+            onProgress(bytesWritten, total)
+        }
     }
 }
