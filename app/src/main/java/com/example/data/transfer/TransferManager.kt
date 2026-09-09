@@ -194,6 +194,7 @@ class TransferManager private constructor(
         fun getInstance(context: Context): TransferManager {
             return INSTANCE ?: synchronized(this) {
                 val appCtx = context.applicationContext
+                com.example.data.network.NetworkMonitor.register(appCtx)
                 val db = AppDatabase.getInstance(appCtx)
                 val repo = TelegramRepository()
                 val creds = EncryptedCredentialsManager(appCtx)
@@ -614,6 +615,9 @@ class TransferManager private constructor(
                                             lastError = exception?.message ?: "Network error"
                                             val isTransient = isTransientNetworkError(exception)
                                             Log.w("TransferManager", "Chunk upload attempt $attempt/$maxRetries for chunk ${chunkIndex + 1}/$totalChunks failed (isTransient=$isTransient): $lastError", exception)
+
+                                            // Evict connection pool so retries use a clean, verified TCP socket
+                                            repository.evictConnectionPool("Chunk ${chunkIndex + 1} upload attempt $attempt failed")
 
                                             if (!isTransient) {
                                                 Log.e("TransferManager", "Permanent non-retryable error on chunk ${chunkIndex + 1}: '$lastError'. Aborting retries.")
@@ -1090,6 +1094,9 @@ class TransferManager private constructor(
                             lastError = e.localizedMessage ?: "Download error"
                             val isTransient = isTransientNetworkError(e)
                             Log.w("TransferManager", "Download attempt $attempt/$maxRetries for chunk ${chunk.chunkIndex + 1}/${fileEntity.totalChunks} failed (isTransient=$isTransient): $lastError", e)
+
+                            // Evict connection pool so retries use a fresh connection
+                            repository.evictConnectionPool("Download chunk ${chunk.chunkIndex + 1} attempt $attempt failed")
 
                             // Permanent errors abort retries immediately
                             if (!isTransient) {

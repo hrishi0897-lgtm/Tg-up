@@ -3,9 +3,14 @@ package com.example.data.remote
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.delay
+import okhttp3.Call
+import okhttp3.Connection
+import okhttp3.ConnectionPool
+import okhttp3.EventListener
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -22,6 +27,8 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 import java.io.File
 import java.io.IOException
 import java.io.InterruptedIOException
+import java.net.InetSocketAddress
+import java.net.Proxy
 import java.net.SocketTimeoutException
 import java.util.concurrent.TimeUnit
 import android.os.SystemClock
@@ -44,6 +51,10 @@ class TelegramRepository(
     private val captionMetaAdapter = moshi.adapter(ChunkCaptionMeta::class.java)
     private val errorAdapter = moshi.adapter(TelegramErrorResponse::class.java)
 
+    fun evictConnectionPool(reason: String = "Manual eviction") {
+        Companion.evictSharedConnectionPool(reason)
+    }
+
     companion object {
         const val BASE_API_URL = "https://api.telegram.org"
         const val MANIFEST_PREFIX = "TELEVAULT_MANIFEST_V1:"
@@ -52,6 +63,20 @@ class TelegramRepository(
         const val VAULT_INDEX_CAPTION = "VAULT_INDEX"
         private const val MAX_RETRIES = 3
         private const val BASE_BACKOFF_MS = 1000L
+
+        /**
+         * Shared connection pool with 5 idle connections max and 30-second keep-alive.
+         * Shorter keep-alive prevents silently dead TCP sockets from lingering on mobile networks.
+         */
+        val sharedConnectionPool = ConnectionPool(5, 30, TimeUnit.SECONDS)
+
+        fun evictSharedConnectionPool(reason: String = "Manual eviction") {
+            val idle = sharedConnectionPool.idleConnectionCount()
+            val total = sharedConnectionPool.connectionCount()
+            Log.i("TelegramRepo", ">>> [CONNECTION POOL EVICTION] Evicting connection pool ($reason). Before: total=$total, idle=$idle")
+            sharedConnectionPool.evictAll()
+            Log.i("TelegramRepo", "<<< [CONNECTION POOL EVICTION] Completed. After: total=${sharedConnectionPool.connectionCount()}")
+        }
 
         fun createDefaultOkHttpClient(): OkHttpClient {
             val logging = HttpLoggingInterceptor { message ->
@@ -65,8 +90,11 @@ class TelegramRepository(
                 .writeTimeout(60, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
                 .callTimeout(90, TimeUnit.SECONDS)
-                .addInterceptor(logging)
+                .connectionPool(sharedConnectionPool)
                 .retryOnConnectionFailure(true)
+                .pingInterval(20, TimeUnit.SECONDS)
+                .eventListenerFactory { TelegramHttpEventListener() }
+                .addInterceptor(logging)
                 .build()
         }
 
@@ -172,7 +200,8 @@ class TelegramRepository(
                 return Result.failure(TelegramApiException(finalError, telegramErrorCode ?: response.code(), errorBody))
 
             } catch (e: SocketTimeoutException) {
-                Log.e("TelegramRepo", "[$actionName] Socket timeout (attempt $attempt/$MAX_RETRIES): ${e.message}", e)
+                Log.e("TelegramRepo", "[$actionName] Socket timeout (attempt $attempt/$MAX_RETRIES): ${e.message}. Proactively evicting connection pool to discard dead socket.", e)
+                evictConnectionPool("SocketTimeout in $actionName")
                 if (attempt < MAX_RETRIES) {
                     delay(currentDelay)
                     currentDelay *= 2
@@ -182,7 +211,9 @@ class TelegramRepository(
                     )
                 }
             } catch (e: InterruptedIOException) {
-                Log.e("TelegramRepo", "[$actionName] Request timed out or interrupted (attempt $attempt/$MAX_RETRIES): ${e.message}", e)
+                val isCallTimeout = e.message?.contains("timeout", ignoreCase = true) == true
+                Log.e("TelegramRepo", "[$actionName] Request timed out or interrupted (attempt $attempt/$MAX_RETRIES, isCallTimeout=$isCallTimeout): ${e.message}. Proactively evicting connection pool.", e)
+                evictConnectionPool("InterruptedIOException (isCallTimeout=$isCallTimeout) in $actionName")
                 if (attempt < MAX_RETRIES) {
                     delay(currentDelay)
                     currentDelay *= 2
@@ -192,7 +223,8 @@ class TelegramRepository(
                     )
                 }
             } catch (e: IOException) {
-                Log.e("TelegramRepo", "[$actionName] Network failure (attempt $attempt/$MAX_RETRIES): ${e.message}", e)
+                Log.e("TelegramRepo", "[$actionName] Network failure (attempt $attempt/$MAX_RETRIES): ${e.message}. Proactively evicting connection pool.", e)
+                evictConnectionPool("IOException in $actionName: ${e.message}")
                 if (attempt < MAX_RETRIES) {
                     delay(currentDelay)
                     currentDelay *= 2
@@ -456,6 +488,8 @@ class TelegramRepository(
                 val errorMsg = rawError ?: "HTTP ${response.code()}: ${response.message()}"
                 return Result.failure(TelegramApiException(errorMsg, response.code(), rawError))
             } catch (e: Exception) {
+                Log.e("TelegramRepo", "[Download fileStream] Exception on attempt $attempt/$MAX_RETRIES: ${e.message}. Evicting connection pool.", e)
+                evictConnectionPool("downloadFileStream attempt $attempt: ${e.message}")
                 if (attempt < MAX_RETRIES) {
                     delay(currentDelay)
                     currentDelay *= 2
@@ -725,3 +759,88 @@ class CountingRequestBody(
         }
     }
 }
+
+/**
+ * Diagnostics EventListener for OkHttp that logs network connection lifecycle,
+ * connection pool acquisitions, timeouts, and request/response durations.
+ */
+class TelegramHttpEventListener : EventListener() {
+    private var callStartTime: Long = 0L
+    private var callUrl: String = ""
+
+    override fun callStart(call: Call) {
+        callStartTime = SystemClock.elapsedRealtime()
+        callUrl = TelegramRepository.redactToken(call.request().url.toString())
+        val callTimeoutMs = call.timeout().timeoutNanos() / 1_000_000
+        Log.i(
+            "TelegramHttpEvent",
+            ">>> [CALL START] ${call.request().method} $callUrl | callTimeout=${callTimeoutMs}ms"
+        )
+    }
+
+    override fun connectionAcquired(call: Call, connection: Connection) {
+        val socket = try { connection.socket().remoteSocketAddress?.toString() } catch (_: Exception) { "unknown" }
+        Log.i(
+            "TelegramHttpEvent",
+            ">>> [CONN ACQUIRED] socket=$socket protocol=${connection.protocol()} for $callUrl"
+        )
+    }
+
+    override fun connectionReleased(call: Call, connection: Connection) {
+        Log.d("TelegramHttpEvent", "<<< [CONN RELEASED] protocol=${connection.protocol()} for $callUrl")
+    }
+
+    override fun connectStart(call: Call, inetSocketAddress: InetSocketAddress, proxy: Proxy) {
+        Log.i("TelegramHttpEvent", ">>> [CONNECT START] $inetSocketAddress")
+    }
+
+    override fun connectEnd(call: Call, inetSocketAddress: InetSocketAddress, proxy: Proxy, protocol: Protocol?) {
+        Log.i("TelegramHttpEvent", "<<< [CONNECT END] $inetSocketAddress protocol=$protocol")
+    }
+
+    override fun connectFailed(call: Call, inetSocketAddress: InetSocketAddress, proxy: Proxy, protocol: Protocol?, ioe: IOException) {
+        Log.w(
+            "TelegramHttpEvent",
+            "!!! [CONNECT FAILED] $inetSocketAddress: ${ioe::class.java.simpleName} - ${ioe.message}"
+        )
+    }
+
+    override fun requestHeadersStart(call: Call) {
+        Log.d("TelegramHttpEvent", ">>> [REQUEST HEADERS START] $callUrl")
+    }
+
+    override fun requestBodyStart(call: Call) {
+        Log.i("TelegramHttpEvent", ">>> [REQUEST BODY START] $callUrl")
+    }
+
+    override fun requestBodyEnd(call: Call, byteCount: Long) {
+        val elapsed = SystemClock.elapsedRealtime() - callStartTime
+        Log.i("TelegramHttpEvent", "<<< [REQUEST BODY END] byteCount=$byteCount in ${elapsed}ms for $callUrl")
+    }
+
+    override fun responseHeadersStart(call: Call) {
+        val elapsed = SystemClock.elapsedRealtime() - callStartTime
+        Log.i("TelegramHttpEvent", "<<< [RESPONSE HEADERS START] in ${elapsed}ms for $callUrl")
+    }
+
+    override fun callEnd(call: Call) {
+        val elapsed = SystemClock.elapsedRealtime() - callStartTime
+        Log.i("TelegramHttpEvent", "<<< [CALL SUCCESS] totalDuration=${elapsed}ms for $callUrl")
+    }
+
+    override fun callFailed(call: Call, ioe: IOException) {
+        val elapsed = SystemClock.elapsedRealtime() - callStartTime
+        val isTimeout = ioe is SocketTimeoutException ||
+                ioe is InterruptedIOException ||
+                ioe.message?.contains("timeout", ignoreCase = true) == true ||
+                ioe.message?.contains("Canceled", ignoreCase = true) == true
+
+        Log.e(
+            "TelegramHttpEvent",
+            "!!! [CALL FAILED / TIMEOUT] elapsed=${elapsed}ms | isTimeout=$isTimeout | " +
+            "exception=${ioe::class.java.name}: ${ioe.message} for $callUrl",
+            ioe
+        )
+    }
+}
+
