@@ -77,6 +77,8 @@ class VaultSyncManager private constructor(private val context: Context) {
             val localFolders = database.folderDao().getAll()
             val localFiles = database.fileDao().getAll().filter { it.status == FileStatus.COMPLETED }
 
+            Log.i(TAG, "Publishing Vault Index: ${localFiles.size} files, ${localFolders.size} folders to chat $chatId...")
+
             val indexFolders = localFolders.map { folder ->
                 VaultIndexFolder(
                     id = folder.id,
@@ -139,7 +141,7 @@ class VaultSyncManager private constructor(private val context: Context) {
             credentialsManager.setLastSyncedTime(now)
             _lastSyncedTime.value = now
 
-            Log.i(TAG, "publishVaultIndex succeeded: msgId=${newMsg.messageId}, ${indexFolders.size} folders, ${indexFiles.size} files")
+            Log.i(TAG, "publishVaultIndex succeeded: messageId=${newMsg.messageId}, ${indexFolders.size} folders, ${indexFiles.size} files, pinned in chat")
             Result.success(vaultIndex)
         } catch (e: Exception) {
             Log.e(TAG, "publishVaultIndex exception: ${e.message}", e)
@@ -149,26 +151,33 @@ class VaultSyncManager private constructor(private val context: Context) {
 
     /**
      * Synchronizes the vault from Telegram:
-     * 1. Finds the most recent VAULT_INDEX document in the chat.
-     * 2. Rebuilds local Room database (folders, file-to-folder mapping, chunk manifests).
-     * 3. Handles fast metadata-only sync: files appear in vault ready for on-demand download.
-     * 4. Edge-case safety: never silently purges remote Telegram messages during index reconciliation.
+     * Step 1: Sync started (validating credentials, preparing states).
+     * Step 2: Searching for VAULT_INDEX message in Telegram chat.
+     * Step 3: Parsing index from remote document.
+     * Step 4: Rebuilding local database (folders, files, chunk mappings).
+     * Step 5: Sync complete with exact summary or specific error at failure point.
      */
     suspend fun syncVault(): Result<SyncResult> = syncMutex.withLock {
         val token = credentialsManager.getBotToken()
         val chatId = credentialsManager.getChatId()
         if (token.isNullOrBlank() || chatId.isNullOrBlank()) {
-            return Result.failure(IllegalStateException("Telegram credentials are not configured"))
+            val err = "Telegram credentials are not configured. Please set Bot Token and Chat ID in Settings."
+            Log.e(TAG, "Sync failed: $err")
+            return Result.failure(IllegalStateException(err))
         }
 
         _isSyncing.value = true
         try {
-            Log.i(TAG, "Starting vault synchronization from Telegram chat...")
-            val remoteIndexResult = repository.fetchLatestVaultIndex(token)
+            val localFilesPre = database.fileDao().getAll().filter { it.status == FileStatus.COMPLETED }
+            val localFoldersPre = database.folderDao().getAll()
+            Log.i(TAG, "Sync started: Device ${credentialsManager.getDeviceId()}, Chat $chatId, localFiles=${localFilesPre.size}, localFolders=${localFoldersPre.size}")
+
+            Log.i(TAG, "Searching for VAULT_INDEX message in Telegram chat $chatId...")
+            val remoteIndexResult = repository.fetchLatestVaultIndex(token, chatId)
 
             if (remoteIndexResult.isFailure) {
-                val err = remoteIndexResult.exceptionOrNull() ?: Exception("Failed to check chat for vault index")
-                Log.e(TAG, "Sync error fetching vault index: ${err.message}", err)
+                val err = remoteIndexResult.exceptionOrNull() ?: Exception("Network error while searching chat for vault index")
+                Log.e(TAG, "Searching for VAULT_INDEX message failed: ${err.message}", err)
                 return Result.failure(err)
             }
 
@@ -176,7 +185,11 @@ class VaultSyncManager private constructor(private val context: Context) {
 
             if (remoteIndexPair != null) {
                 val (remoteIndex, remoteMsgId) = remoteIndexPair
-                Log.i(TAG, "Discovered remote VAULT_INDEX: msgId=$remoteMsgId, folders=${remoteIndex.folders.size}, files=${remoteIndex.files.size}, ts=${remoteIndex.timestamp}")
+                Log.i(TAG, "VAULT_INDEX found (messageId=$remoteMsgId, timestamp=${remoteIndex.timestamp}, deviceId=${remoteIndex.deviceId})")
+
+                Log.i(TAG, "Parsing index: ${remoteIndex.files.size} file(s), ${remoteIndex.folders.size} folder(s)")
+
+                Log.i(TAG, "Rebuilding local database...")
 
                 // 1. Reconcile Folders
                 val remoteFolderIds = remoteIndex.folders.map { it.id }.toSet()
@@ -194,7 +207,7 @@ class VaultSyncManager private constructor(private val context: Context) {
                 val localFolders = database.folderDao().getAll()
                 for (lf in localFolders) {
                     if (!remoteFolderIds.contains(lf.id)) {
-                        Log.i(TAG, "Removing local folder removed on another device: ${lf.name} (${lf.id})")
+                        Log.i(TAG, "Rebuilding local database: Removing local folder removed on another device: ${lf.name} (${lf.id})")
                         database.folderDao().deleteById(lf.id)
                     }
                 }
@@ -219,7 +232,7 @@ class VaultSyncManager private constructor(private val context: Context) {
                             totalChunks = remoteFile.totalChunks,
                             completedChunks = remoteFile.totalChunks,
                             manifestMessageId = remoteFile.manifestMessageId,
-                            localPath = null, // Not yet downloaded locally
+                            localPath = null, // Download on-demand
                             localUri = null
                         )
                         database.fileDao().insert(newEntity)
@@ -244,7 +257,7 @@ class VaultSyncManager private constructor(private val context: Context) {
                     } else {
                         // File already exists locally: update name & folderId if changed remotely
                         if (existing.name != remoteFile.name || existing.folderId != remoteFile.folderId) {
-                            Log.i(TAG, "Updating existing file organization: ${existing.name} -> ${remoteFile.name} (folder: ${remoteFile.folderId})")
+                            Log.i(TAG, "Rebuilding local database: Updating file placement: ${existing.name} -> ${remoteFile.name} (folder: ${remoteFile.folderId})")
                             database.fileDao().update(
                                 existing.copy(
                                     name = remoteFile.name,
@@ -277,7 +290,7 @@ class VaultSyncManager private constructor(private val context: Context) {
                 val allLocalFiles = database.fileDao().getAll()
                 for (localFile in allLocalFiles) {
                     if (localFile.status == FileStatus.COMPLETED && !remoteFileIds.contains(localFile.id)) {
-                        Log.i(TAG, "Removing local reference for file deleted remotely: ${localFile.name} (${localFile.id})")
+                        Log.i(TAG, "Rebuilding local database: Removing local reference for remotely deleted file: ${localFile.name} (${localFile.id})")
                         database.fileDao().deleteById(localFile.id)
                     }
                 }
@@ -288,11 +301,12 @@ class VaultSyncManager private constructor(private val context: Context) {
                 _lastSyncedTime.value = now
 
                 val summary = if (newDiscoveredFiles > 0) {
-                    "Synced: discovered $newDiscoveredFiles new file(s), ${remoteIndex.folders.size} folders."
+                    "Sync complete: discovered $newDiscoveredFiles new file(s), ${remoteIndex.folders.size} folders from Telegram."
                 } else {
-                    "Vault is in sync (${remoteIndex.files.size} files, ${remoteIndex.folders.size} folders)."
+                    "Sync complete: Vault is up to date (${remoteIndex.files.size} files, ${remoteIndex.folders.size} folders)."
                 }
 
+                Log.i(TAG, summary)
                 Result.success(
                     SyncResult(
                         foldersCount = remoteIndex.folders.size,
@@ -302,73 +316,38 @@ class VaultSyncManager private constructor(private val context: Context) {
                     )
                 )
             } else {
-                // No VAULT_INDEX message in chat yet: check for legacy individual file manifests
-                Log.i(TAG, "No VAULT_INDEX found in chat. Checking for legacy manifests...")
-                val legacyManifestsResult = repository.fetchManifestsFromChat(token)
-                var importedCount = 0
-                if (legacyManifestsResult.isSuccess) {
-                    val manifests = legacyManifestsResult.getOrThrow()
-                    for (manifest in manifests) {
-                        val existing = database.fileDao().getById(manifest.fileId)
-                        if (existing == null) {
-                            val fileEntity = FileEntity(
-                                id = manifest.fileId,
-                                name = manifest.name,
-                                folderId = manifest.folderId,
-                                size = manifest.size,
-                                mimeType = manifest.mimeType,
-                                uploadDate = manifest.uploadDate,
-                                status = FileStatus.COMPLETED,
-                                checksum = manifest.overallSha256,
-                                totalChunks = manifest.chunks.size,
-                                completedChunks = manifest.chunks.size
-                            )
-                            database.fileDao().insert(fileEntity)
+                // VAULT_INDEX not found in chat
+                Log.w(TAG, "VAULT_INDEX not found in chat $chatId")
 
-                            val chunkEntities = manifest.chunks.map { mc ->
-                                ChunkEntity(
-                                    fileId = manifest.fileId,
-                                    chunkIndex = mc.index,
-                                    telegramMessageId = mc.messageId,
-                                    telegramFileId = mc.telegramFileId,
-                                    checksum = mc.sha256,
-                                    size = mc.size,
-                                    isUploaded = true,
-                                    isDownloaded = false
-                                )
-                            }
-                            database.chunkDao().insertAll(chunkEntities)
-                            importedCount++
-                        }
-                    }
-                }
-
-                // Publish initial VAULT_INDEX if files or folders exist locally
                 val currentFolders = database.folderDao().getAll()
                 val currentFiles = database.fileDao().getAll().filter { it.status == FileStatus.COMPLETED }
+
                 if (currentFolders.isNotEmpty() || currentFiles.isNotEmpty()) {
-                    Log.i(TAG, "Publishing initial VAULT_INDEX for newly discovered vault content...")
-                    publishVaultIndex()
-                }
-
-                val now = System.currentTimeMillis()
-                credentialsManager.setLastSyncedTime(now)
-                _lastSyncedTime.value = now
-
-                val summary = if (importedCount > 0) {
-                    "Discovered $importedCount legacy files and created initial Vault Index."
+                    // This device has local files/folders (e.g. Device 1). Publish them to Telegram now!
+                    Log.i(TAG, "Local device has ${currentFiles.size} files and ${currentFolders.size} folders. Publishing initial VAULT_INDEX to Telegram...")
+                    val pubResult = publishVaultIndex()
+                    if (pubResult.isSuccess) {
+                        val summary = "Published Vault Index (${currentFiles.size} files, ${currentFolders.size} folders) to Telegram chat."
+                        Log.i(TAG, "Sync complete: $summary")
+                        Result.success(
+                            SyncResult(
+                                foldersCount = currentFolders.size,
+                                filesCount = currentFiles.size,
+                                newFilesCount = 0,
+                                summary = summary
+                            )
+                        )
+                    } else {
+                        val pubErr = pubResult.exceptionOrNull()?.localizedMessage ?: "Failed to upload index document"
+                        Log.e(TAG, "Sync failed: Could not publish Vault Index to Telegram: $pubErr")
+                        Result.failure(Exception("Failed to upload Vault Index to Telegram: $pubErr"))
+                    }
                 } else {
-                    "Vault connected and ready. Storage is initialized."
+                    // This device has 0 local files and 0 local folders, and no VAULT_INDEX exists in chat
+                    val errMsg = "No Vault Index found in Telegram chat. Please open TeleVault on your other device (where your files were uploaded) and tap 'Sync Now' in Settings to publish the vault to Telegram."
+                    Log.e(TAG, "Sync failed: $errMsg")
+                    Result.failure(Exception(errMsg))
                 }
-
-                Result.success(
-                    SyncResult(
-                        foldersCount = currentFolders.size,
-                        filesCount = currentFiles.size,
-                        newFilesCount = importedCount,
-                        summary = summary
-                    )
-                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "Sync exception: ${e.message}", e)

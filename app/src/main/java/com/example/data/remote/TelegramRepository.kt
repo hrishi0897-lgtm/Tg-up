@@ -517,8 +517,18 @@ class TelegramRepository(
     }
 
     /**
+     * Pins a Telegram message in the chat.
+     */
+    suspend fun pinChatMessage(token: String, chatId: String, messageId: Long): Result<Boolean> {
+        return executeWithRetry("Pinning message in chat") {
+            api.pinChatMessage(botUrl(token, "pinChatMessage"), chatId, messageId, disableNotification = true)
+        }
+    }
+
+    /**
      * Uploads the full vault structure index as a JSON document to Telegram chat tagged with VAULT_INDEX caption.
      * Overwrites previous index reference by deleting previousIndexMessageId so copies don't accumulate.
+     * Automatically pins the new index message in the chat so any other connected device discovers it instantly.
      */
     suspend fun uploadVaultIndex(
         token: String,
@@ -536,18 +546,31 @@ class TelegramRepository(
         val chatIdBody = chatId.toRequestBody("text/plain".toMediaTypeOrNull())
         val captionBody = captionText.toRequestBody("text/plain".toMediaTypeOrNull())
 
-        Log.i("TelegramRepo", ">>> [uploadVaultIndex] Uploading index doc: ${vaultIndex.folders.size} folders, ${vaultIndex.files.size} files, ts=${vaultIndex.timestamp}")
+        Log.i("TelegramRepo", ">>> [uploadVaultIndex] Uploading index doc to chat $chatId: ${vaultIndex.folders.size} folders, ${vaultIndex.files.size} files, ts=${vaultIndex.timestamp}")
 
         val uploadResult = executeWithRetry("Uploading vault index document") {
             api.sendDocument(targetUrl, chatIdBody, captionBody, multipart)
         }
 
-        if (uploadResult.isSuccess && previousIndexMessageId != null && previousIndexMessageId > 0) {
+        if (uploadResult.isSuccess) {
+            val newMsg = uploadResult.getOrThrow()
+            // Pin the new index message in the chat so all devices can discover it via getChat
             try {
-                Log.i("TelegramRepo", ">>> [uploadVaultIndex] Deleting previous index message: $previousIndexMessageId")
-                deleteMessage(token, chatId, previousIndexMessageId)
-            } catch (delEx: Exception) {
-                Log.w("TelegramRepo", "Non-critical: Failed to delete previous index message $previousIndexMessageId: ${delEx.message}")
+                Log.i("TelegramRepo", ">>> [uploadVaultIndex] Pinning index message ${newMsg.messageId} in chat $chatId...")
+                pinChatMessage(token, chatId, newMsg.messageId)
+                Log.i("TelegramRepo", ">>> [uploadVaultIndex] Pinned index message ${newMsg.messageId} successfully.")
+            } catch (pinEx: Exception) {
+                Log.w("TelegramRepo", "Non-critical: Failed to pin vault index: ${pinEx.message}")
+            }
+
+            // Clean up previous index message
+            if (previousIndexMessageId != null && previousIndexMessageId > 0 && previousIndexMessageId != newMsg.messageId) {
+                try {
+                    Log.i("TelegramRepo", ">>> [uploadVaultIndex] Deleting previous index message: $previousIndexMessageId")
+                    deleteMessage(token, chatId, previousIndexMessageId)
+                } catch (delEx: Exception) {
+                    Log.w("TelegramRepo", "Non-critical: Failed to delete previous index message $previousIndexMessageId: ${delEx.message}")
+                }
             }
         }
 
@@ -582,10 +605,43 @@ class TelegramRepository(
     }
 
     /**
-     * Finds the latest VAULT_INDEX message in the chat, downloads and returns the parsed VaultIndex along with its message ID.
+     * Finds the latest VAULT_INDEX message in the chat:
+     * 1. Primary: checks chat's pinned_message via getChat(chatId) which contains the pinned VAULT_INDEX.
+     * 2. Secondary fallback: checks getUpdates for any VAULT_INDEX messages.
+     * Downloads and returns the parsed VaultIndex along with its message ID.
      */
-    suspend fun fetchLatestVaultIndex(token: String): Result<Pair<VaultIndex, Long>?> {
+    suspend fun fetchLatestVaultIndex(token: String, chatId: String): Result<Pair<VaultIndex, Long>?> {
         return try {
+            // 1. Primary check: check pinned message in chat
+            Log.i("TelegramRepo", ">>> [fetchLatestVaultIndex] Step 1: Checking getChat pinned_message for chat $chatId...")
+            val chatResponse = api.getChat(botUrl(token, "getChat"), chatId)
+            if (chatResponse.isSuccessful && chatResponse.body()?.ok == true) {
+                val chat = chatResponse.body()?.result
+                val pinnedMsg = chat?.pinnedMessage
+                if (pinnedMsg != null) {
+                    val caption = pinnedMsg.caption?.trim()
+                    val doc = pinnedMsg.document
+                    val fileName = doc?.fileName
+                    Log.i("TelegramRepo", ">>> [fetchLatestVaultIndex] Chat has pinned message msgId=${pinnedMsg.messageId}, caption='$caption', docFileName='$fileName'")
+                    if (doc != null && (caption == VAULT_INDEX_CAPTION || caption?.startsWith(VAULT_INDEX_CAPTION) == true || fileName == "vault_index.json")) {
+                        Log.i("TelegramRepo", ">>> [fetchLatestVaultIndex] Found VAULT_INDEX in pinned message! Downloading document fileId=${doc.fileId}...")
+                        val downloadResult = downloadVaultIndexDocument(token, doc.fileId)
+                        if (downloadResult.isSuccess) {
+                            return Result.success(Pair(downloadResult.getOrThrow(), pinnedMsg.messageId))
+                        } else {
+                            Log.e("TelegramRepo", "Failed to download pinned vault index: ${downloadResult.exceptionOrNull()?.message}")
+                        }
+                    }
+                } else {
+                    Log.i("TelegramRepo", ">>> [fetchLatestVaultIndex] No pinned message in chat $chatId.")
+                }
+            } else {
+                val err = chatResponse.errorBody()?.string()
+                Log.w("TelegramRepo", ">>> [fetchLatestVaultIndex] getChat for $chatId returned HTTP ${chatResponse.code()}: $err")
+            }
+
+            // 2. Secondary fallback: check getUpdates in case index was forwarded or not yet pinned
+            Log.i("TelegramRepo", ">>> [fetchLatestVaultIndex] Step 2: Checking getUpdates fallback...")
             val response = api.getUpdates(botUrl(token, "getUpdates"), offset = null, limit = 100)
             if (response.isSuccessful && response.body()?.ok == true) {
                 val updates = response.body()?.result ?: emptyList()
@@ -594,39 +650,32 @@ class TelegramRepository(
                     val msg = update.message ?: update.channelPost ?: continue
                     val caption = msg.caption?.trim()
                     val doc = msg.document
-                    if (doc != null && caption != null && (caption == VAULT_INDEX_CAPTION || caption.startsWith(VAULT_INDEX_CAPTION))) {
+                    if (doc != null && (caption == VAULT_INDEX_CAPTION || caption?.startsWith(VAULT_INDEX_CAPTION) == true || doc.fileName == "vault_index.json")) {
                         indexMessages.add(msg)
                     }
                 }
 
-                if (indexMessages.isEmpty()) {
-                    return Result.success(null)
-                }
-
-                val latestMsg = indexMessages.maxByOrNull { it.messageId } ?: indexMessages.last()
-                val doc = latestMsg.document ?: return Result.success(null)
-
-                val downloadResult = downloadVaultIndexDocument(token, doc.fileId)
-                if (downloadResult.isFailure) {
-                    return Result.failure(downloadResult.exceptionOrNull() ?: Exception("Failed to download vault index document"))
-                }
-
-                // Clean up older VAULT_INDEX messages if multiple exist in chat updates to prevent clutter
-                val olderMessages = indexMessages.filter { it.messageId != latestMsg.messageId }
-                for (oldMsg in olderMessages) {
-                    val chatId = oldMsg.chat?.id?.toString()
-                    if (chatId != null) {
-                        try {
-                            deleteMessage(token, chatId, oldMsg.messageId)
-                        } catch (_: Exception) {}
+                if (indexMessages.isNotEmpty()) {
+                    val latestMsg = indexMessages.maxByOrNull { it.messageId } ?: indexMessages.last()
+                    val doc = latestMsg.document
+                    if (doc != null) {
+                        Log.i("TelegramRepo", ">>> [fetchLatestVaultIndex] Found VAULT_INDEX in getUpdates! msgId=${latestMsg.messageId}, fileId=${doc.fileId}")
+                        val downloadResult = downloadVaultIndexDocument(token, doc.fileId)
+                        if (downloadResult.isSuccess) {
+                            // Automatically pin it now so future syncs find it via getChat
+                            try {
+                                pinChatMessage(token, chatId, latestMsg.messageId)
+                            } catch (_: Exception) {}
+                            return Result.success(Pair(downloadResult.getOrThrow(), latestMsg.messageId))
+                        }
                     }
                 }
-
-                Result.success(Pair(downloadResult.getOrThrow(), latestMsg.messageId))
-            } else {
-                Result.success(null)
             }
+
+            Log.i("TelegramRepo", ">>> [fetchLatestVaultIndex] No VAULT_INDEX found in chat $chatId.")
+            Result.success(null)
         } catch (e: Exception) {
+            Log.e("TelegramRepo", "fetchLatestVaultIndex error: ${e.message}", e)
             Result.failure(e)
         }
     }

@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -76,9 +79,12 @@ fun SettingsScreen(
     isWifiOnly: Boolean,
     lastSyncedTime: Long = 0L,
     isSyncing: Boolean = false,
+    resyncMessage: String? = null,
     onChunkSizeChange: (Int) -> Unit,
     onWifiOnlyChange: (Boolean) -> Unit,
     onResyncClick: () -> Unit,
+    onPublishClick: (() -> Unit)? = null,
+    onDismissResyncMessage: (() -> Unit)? = null,
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit,
     onStartTestTransfer: (() -> Unit)? = null
@@ -506,22 +512,132 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .pressScale(0.92f)
+                            .testTag("sync_now_button")
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Sync,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
+                            if (isSyncing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(15.dp),
+                                    strokeWidth = 2.dp,
+                                    color = TelegramBlue
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = if (isSyncing) "Syncing with Telegram..." else "Sync Now",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
+                        }
+                    }
+
+                    if (onPublishClick != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedButton(
+                            onClick = onPublishClick,
+                            enabled = !isSyncing,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .pressScale(0.92f)
+                                .testTag("publish_index_button"),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = TextPrimary,
+                                disabledContentColor = TextFaint
+                            )
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudSync,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(15.dp),
+                                    tint = TextSecondary
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Publish Vault to Telegram",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    }
+
+                    // Explicit Error / Status banner if sync returned a result or error
+                    if (!resyncMessage.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        val isError = resyncMessage.contains("error", ignoreCase = true) ||
+                                resyncMessage.contains("failed", ignoreCase = true) ||
+                                resyncMessage.contains("No Vault Index", ignoreCase = true)
+
+                        val bannerBg = if (isError) StatusError.copy(alpha = 0.12f) else StatusMint.copy(alpha = 0.12f)
+                        val bannerBorder = if (isError) StatusError.copy(alpha = 0.35f) else StatusMint.copy(alpha = 0.35f)
+                        val bannerIcon = if (isError) Icons.Default.Warning else Icons.Default.Check
+                        val bannerTint = if (isError) StatusError else StatusMint
+                        val bannerTitle = if (isError) "Sync Error" else "Sync Status"
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = bannerBg),
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, bannerBorder),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("sync_result_banner")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.Top,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = bannerIcon,
+                                    contentDescription = bannerTitle,
+                                    tint = bannerTint,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = bannerTitle,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = bannerTint
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = resyncMessage,
+                                        fontSize = 11.sp,
+                                        color = TextPrimary,
+                                        lineHeight = 15.sp
+                                    )
+                                }
+                                if (onDismissResyncMessage != null) {
+                                    IconButton(
+                                        onClick = onDismissResyncMessage,
+                                        modifier = Modifier.size(20.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Dismiss",
+                                            tint = TextFaint,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

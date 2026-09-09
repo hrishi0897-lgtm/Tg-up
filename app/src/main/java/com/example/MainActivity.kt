@@ -248,9 +248,12 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         isWifiOnly = uiState.isWifiOnly,
                         lastSyncedTime = uiState.lastSyncedTime,
                         isSyncing = uiState.isResyncing,
+                        resyncMessage = uiState.resyncMessage,
                         onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
                         onWifiOnlyChange = { viewModel.setWifiOnly(it) },
                         onResyncClick = { viewModel.resyncFromTelegram() },
+                        onPublishClick = { viewModel.forcePublishVaultIndex() },
+                        onDismissResyncMessage = { viewModel.clearResyncMessage() },
                         onDisconnect = { viewModel.disconnect() },
                         onDismiss = { viewModel.navigateToVaultScreen() },
                         onStartTestTransfer = { viewModel.startSyntheticTestTransfer() }

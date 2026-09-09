@@ -615,6 +615,31 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         syncVault()
     }
 
+    fun forcePublishVaultIndex() {
+        _uiState.update { it.copy(isResyncing = true, resyncMessage = null) }
+        viewModelScope.launch {
+            val result = vaultSyncManager.publishVaultIndex()
+            if (result.isSuccess) {
+                val idx = result.getOrThrow()
+                _uiState.update {
+                    it.copy(
+                        isResyncing = false,
+                        lastSyncedTime = creds.getLastSyncedTime(),
+                        resyncMessage = "Published Vault Index with ${idx.files.size} file(s) and ${idx.folders.size} folder(s) to Telegram."
+                    )
+                }
+            } else {
+                val err = result.exceptionOrNull()?.localizedMessage ?: "Publish failed"
+                _uiState.update {
+                    it.copy(
+                        isResyncing = false,
+                        resyncMessage = "Publish error: $err"
+                    )
+                }
+            }
+        }
+    }
+
     fun clearResyncMessage() {
         _uiState.update { it.copy(resyncMessage = null) }
     }

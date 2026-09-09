@@ -64,4 +64,27 @@ interface TelegramApi {
         @Query("offset") offset: Long? = null,
         @Query("limit") limit: Int? = 100
     ): Response<TelegramResponse<List<TelegramUpdate>>>
+
+    @GET
+    suspend fun getChat(
+        @Url url: String,
+        @Query("chat_id") chatId: String
+    ): Response<TelegramResponse<TelegramChatFull>>
+
+    @FormUrlEncoded
+    @POST
+    suspend fun pinChatMessage(
+        @Url url: String,
+        @Field("chat_id") chatId: String,
+        @Field("message_id") messageId: Long,
+        @Field("disable_notification") disableNotification: Boolean = true
+    ): Response<TelegramResponse<Boolean>>
+
+    @FormUrlEncoded
+    @POST
+    suspend fun unpinChatMessage(
+        @Url url: String,
+        @Field("chat_id") chatId: String,
+        @Field("message_id") messageId: Long? = null
+    ): Response<TelegramResponse<Boolean>>
 }

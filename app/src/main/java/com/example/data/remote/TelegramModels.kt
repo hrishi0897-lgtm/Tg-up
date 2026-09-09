@@ -35,6 +35,15 @@ data class TelegramChat(
 )
 
 @JsonClass(generateAdapter = true)
+data class TelegramChatFull(
+    @Json(name = "id") val id: Long,
+    @Json(name = "type") val type: String,
+    @Json(name = "title") val title: String? = null,
+    @Json(name = "username") val username: String? = null,
+    @Json(name = "pinned_message") val pinnedMessage: TelegramMessage? = null
+)
+
+@JsonClass(generateAdapter = true)
 data class TelegramDocument(
     @Json(name = "file_id") val fileId: String,
     @Json(name = "file_unique_id") val fileUniqueId: String,
