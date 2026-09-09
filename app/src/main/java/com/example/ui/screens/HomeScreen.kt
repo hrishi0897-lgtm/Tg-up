@@ -436,19 +436,29 @@ fun HomeScreen(
             // Resync notification banner if present
             if (resyncMessage != null) {
                 item {
+                    val isError = resyncMessage.contains("error", ignoreCase = true) ||
+                            resyncMessage.contains("failed", ignoreCase = true) ||
+                            resyncMessage.contains("No Vault Index", ignoreCase = true)
+
+                    val bannerBg = if (isError) Color(0x29FF5252) else Color(0x1A8C7CFF)
+                    val bannerBorder = if (isError) Color(0x80FF5252) else Color(0x408C7CFF)
+                    val bannerTint = if (isError) Color(0xFFFF5252) else AccentViolet
+                    val bannerIcon = if (isError) Icons.Default.Warning else Icons.Default.CloudDone
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0x1A8C7CFF))
-                            .border(1.dp, Color(0x408C7CFF), RoundedCornerShape(12.dp))
-                            .padding(12.dp),
+                            .background(bannerBg)
+                            .border(1.dp, bannerBorder, RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                            .testTag("sync_banner"),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Default.CloudDone,
-                            contentDescription = null,
-                            tint = AccentViolet,
+                            imageVector = bannerIcon,
+                            contentDescription = if (isError) "Sync Error" else "Sync Status",
+                            tint = bannerTint,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -459,7 +469,12 @@ fun HomeScreen(
                             fontFamily = BodySansFont,
                             modifier = Modifier.weight(1f)
                         )
-                        IconButton(onClick = onDismissResyncMsg, modifier = Modifier.size(24.dp)) {
+                        IconButton(
+                            onClick = onDismissResyncMsg,
+                            modifier = Modifier
+                                .size(24.dp)
+                                .testTag("dismiss_sync_banner")
+                        ) {
                             Text("✕", color = TextDimmed, fontSize = 12.sp)
                         }
                     }

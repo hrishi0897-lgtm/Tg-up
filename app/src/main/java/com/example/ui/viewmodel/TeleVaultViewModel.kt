@@ -14,6 +14,7 @@ import com.example.data.local.entity.FolderEntity
 import com.example.data.remote.TelegramRepository
 import com.example.data.remote.TelegramUser
 import com.example.data.sync.VaultSyncManager
+import com.example.data.sync.VaultSyncWorker
 import com.example.data.transfer.TransferManager
 import com.example.domain.model.BreadcrumbItem
 import com.example.domain.model.StorageStats
@@ -120,9 +121,10 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        // On app start with existing credentials, automatically trigger a background sync to pull latest remote state
+        // On app start with existing credentials, schedule periodic worker and trigger background check
         if (creds.hasCredentials()) {
-            syncVault()
+            VaultSyncWorker.schedule(application)
+            syncVault(onlyIfNewer = true, isManual = false)
         }
     }
 
@@ -277,7 +279,8 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                         validationError = null
                     )
                 }
-                syncVault()
+                VaultSyncWorker.schedule(getApplication())
+                syncVault(onlyIfNewer = false, isManual = false)
             } else {
                 val error = result.exceptionOrNull()?.localizedMessage ?: "Validation failed"
                 _uiState.update {
@@ -291,12 +294,15 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun disconnect() {
+        VaultSyncWorker.cancel(getApplication())
         creds.clearCredentials()
         _uiState.update {
             it.copy(
                 isAuthenticated = false,
                 validationSuccessUser = null,
-                validationError = null
+                validationError = null,
+                lastSyncedTime = 0L,
+                resyncMessage = null
             )
         }
     }
@@ -370,7 +376,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             )
             db.folderDao().insert(folder)
             _uiState.update { it.copy(showCreateFolderDialog = false) }
-            vaultSyncManager.publishVaultIndex()
+            vaultSyncManager.scheduleAutoPublish()
         }
     }
 
@@ -379,7 +385,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             db.folderDao().renameFolder(folderId, newName.trim())
             _uiState.update { it.copy(folderToRename = null) }
-            vaultSyncManager.publishVaultIndex()
+            vaultSyncManager.scheduleAutoPublish()
         }
     }
 
@@ -393,7 +399,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 current.copy(fileToRename = null, selectedFileForDetail = updatedFile)
             }
-            vaultSyncManager.publishVaultIndex()
+            vaultSyncManager.scheduleAutoPublish()
         }
     }
 
@@ -405,7 +411,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 transferManager.deleteFile(file.id)
             }
             db.folderDao().deleteById(folder.id)
-            vaultSyncManager.publishVaultIndex()
+            vaultSyncManager.scheduleAutoPublish()
         }
     }
 
@@ -413,7 +419,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             db.fileDao().moveFile(fileId, targetFolderId)
             _uiState.update { it.copy(itemToMove = null) }
-            vaultSyncManager.publishVaultIndex()
+            vaultSyncManager.scheduleAutoPublish()
         }
     }
 
@@ -586,33 +592,58 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // Multi-Device Sync Vault from Telegram chat
-    fun syncVault() {
-        _uiState.update { it.copy(isResyncing = true, resyncMessage = null) }
+    fun syncVault(onlyIfNewer: Boolean = false, isManual: Boolean = true) {
+        if (isManual) {
+            _uiState.update { it.copy(isResyncing = true, resyncMessage = null) }
+        }
         viewModelScope.launch {
-            val result = vaultSyncManager.syncVault()
+            val result = vaultSyncManager.syncVault(onlyIfNewer = onlyIfNewer, isManual = isManual)
             if (result.isSuccess) {
                 val syncData = result.getOrThrow()
+                val showMessage = isManual || syncData.newFilesCount > 0
                 _uiState.update {
                     it.copy(
                         isResyncing = false,
                         lastSyncedTime = creds.getLastSyncedTime(),
-                        resyncMessage = syncData.summary
+                        resyncMessage = if (showMessage) syncData.summary else it.resyncMessage
                     )
                 }
             } else {
-                val err = result.exceptionOrNull()?.localizedMessage ?: "Sync failed"
-                _uiState.update {
-                    it.copy(
-                        isResyncing = false,
-                        resyncMessage = "Sync error: $err"
-                    )
+                if (isManual) {
+                    val err = result.exceptionOrNull()?.localizedMessage ?: "Sync failed"
+                    _uiState.update {
+                        it.copy(
+                            isResyncing = false,
+                            resyncMessage = "Sync error: $err"
+                        )
+                    }
+                } else {
+                    _uiState.update { it.copy(isResyncing = false) }
                 }
             }
         }
     }
 
+    /**
+     * Manual sync triggered exclusively from the header refresh icon on the Vault screen.
+     */
+    fun manualSyncFromHeader() {
+        syncVault(onlyIfNewer = false, isManual = true)
+    }
+
     fun resyncFromTelegram() {
-        syncVault()
+        manualSyncFromHeader()
+    }
+
+    /**
+     * Triggered on app open or when brought to foreground (onResume).
+     * Only updates if remote index timestamp is newer than local lastSyncedTime.
+     * Silent when up to date.
+     */
+    fun onAppForeground() {
+        if (creds.hasCredentials()) {
+            syncVault(onlyIfNewer = true, isManual = false)
+        }
     }
 
     fun forcePublishVaultIndex() {

@@ -87,6 +87,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        viewModel.onAppForeground()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
@@ -246,14 +251,8 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         chatId = chatId,
                         chunkSizeMb = uiState.chunkSizeMb,
                         isWifiOnly = uiState.isWifiOnly,
-                        lastSyncedTime = uiState.lastSyncedTime,
-                        isSyncing = uiState.isResyncing,
-                        resyncMessage = uiState.resyncMessage,
                         onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
                         onWifiOnlyChange = { viewModel.setWifiOnly(it) },
-                        onResyncClick = { viewModel.resyncFromTelegram() },
-                        onPublishClick = { viewModel.forcePublishVaultIndex() },
-                        onDismissResyncMessage = { viewModel.clearResyncMessage() },
                         onDisconnect = { viewModel.disconnect() },
                         onDismiss = { viewModel.navigateToVaultScreen() },
                         onStartTestTransfer = { viewModel.startSyntheticTestTransfer() }
@@ -284,7 +283,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         onUploadFileClick = { filePickerLauncher.launch("*/*") },
                         onOpenTransfers = { viewModel.navigateToTransfersScreen() },
                         onOpenSettings = { viewModel.navigateToSettingsScreen() },
-                        onResync = { viewModel.resyncFromTelegram() },
+                        onResync = { viewModel.manualSyncFromHeader() },
                         onDismissResyncMsg = { viewModel.clearResyncMessage() },
                         transferErrorMessage = uiState.transferErrorMessage,
                         onDismissTransferError = { viewModel.dismissTransferError() }

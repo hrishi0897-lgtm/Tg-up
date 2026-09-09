@@ -766,14 +766,8 @@ class TransferManager private constructor(
                 database.fileDao().updateManifestId(fileId, manifestMessage.messageId)
                 database.fileDao().updateStatus(fileId, FileStatus.COMPLETED)
 
-                // Publish fresh VaultIndex to Telegram so other devices stay in sync
-                scope.launch {
-                    try {
-                        VaultSyncManager.getInstance(context).publishVaultIndex()
-                    } catch (syncEx: Exception) {
-                        Log.w("TransferManager", "Non-critical: Failed to publish vault index after upload: ${syncEx.message}")
-                    }
-                }
+                // Debounced auto-publish fresh VaultIndex to Telegram so other devices stay in sync
+                VaultSyncManager.getInstance(context).scheduleAutoPublish()
 
                 val completedProgress = TransferProgress(
                     fileId = fileId,
@@ -1366,14 +1360,8 @@ class TransferManager private constructor(
             database.fileDao().deleteById(fileId)
             _transfers.update { it - fileId }
 
-            // Publish updated VaultIndex to Telegram
-            scope.launch {
-                try {
-                    VaultSyncManager.getInstance(context).publishVaultIndex()
-                } catch (syncEx: Exception) {
-                    Log.w("TransferManager", "Non-critical: Failed to publish vault index after file deletion: ${syncEx.message}")
-                }
-            }
+            // Debounced auto-publish updated VaultIndex to Telegram
+            VaultSyncManager.getInstance(context).scheduleAutoPublish()
 
             Result.success(Unit)
         } catch (e: Exception) {

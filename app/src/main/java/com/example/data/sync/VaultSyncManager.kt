@@ -13,12 +13,16 @@ import com.example.data.remote.TelegramRepository
 import com.example.data.remote.VaultIndex
 import com.example.data.remote.VaultIndexFile
 import com.example.data.remote.VaultIndexFolder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -49,6 +53,9 @@ class VaultSyncManager private constructor(private val context: Context) {
     private val _lastSyncedTime = MutableStateFlow(credentialsManager.getLastSyncedTime())
     val lastSyncedTime: StateFlow<Long> = _lastSyncedTime.asStateFlow()
 
+    private var debouncePublishJob: Job? = null
+    private val debounceMutex = Mutex()
+
     companion object {
         private const val TAG = "VaultSyncManager"
 
@@ -58,6 +65,43 @@ class VaultSyncManager private constructor(private val context: Context) {
         fun getInstance(context: Context): VaultSyncManager {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: VaultSyncManager(context.applicationContext).also { INSTANCE = it }
+            }
+        }
+    }
+
+    /**
+     * Debounces auto-publishing the vault index to Telegram.
+     * When local vault structure changes (file uploaded, deleted, folder created/renamed/deleted, or file moved),
+     * waits until burst of changes settles (default: 7 seconds) before publishing once.
+     */
+    fun scheduleAutoPublish(debounceDelayMs: Long = 7000L) {
+        val token = credentialsManager.getBotToken()
+        val chatId = credentialsManager.getChatId()
+        if (token.isNullOrBlank() || chatId.isNullOrBlank()) {
+            return
+        }
+
+        scope.launch {
+            debounceMutex.withLock {
+                debouncePublishJob?.cancel()
+                debouncePublishJob = scope.launch {
+                    try {
+                        Log.i(TAG, "Auto-publish debounce timer ($debounceDelayMs ms) started...")
+                        delay(debounceDelayMs)
+                        Log.i(TAG, "Debounce timer expired. Auto-publishing updated VAULT_INDEX to Telegram...")
+                        val result = publishVaultIndex()
+                        if (result.isSuccess) {
+                            val idx = result.getOrThrow()
+                            Log.i(TAG, "Auto-published VAULT_INDEX successfully (${idx.files.size} files, ${idx.folders.size} folders).")
+                        } else {
+                            Log.w(TAG, "Auto-publish VAULT_INDEX failed: ${result.exceptionOrNull()?.message}")
+                        }
+                    } catch (cancelled: CancellationException) {
+                        Log.d(TAG, "Debounce timer reset by new local change.")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Auto-publish exception: ${e.message}", e)
+                    }
+                }
             }
         }
     }
@@ -151,13 +195,10 @@ class VaultSyncManager private constructor(private val context: Context) {
 
     /**
      * Synchronizes the vault from Telegram:
-     * Step 1: Sync started (validating credentials, preparing states).
-     * Step 2: Searching for VAULT_INDEX message in Telegram chat.
-     * Step 3: Parsing index from remote document.
-     * Step 4: Rebuilding local database (folders, files, chunk mappings).
-     * Step 5: Sync complete with exact summary or specific error at failure point.
+     * @param onlyIfNewer If true, skips downloading and rebuilding if remote index timestamp is not newer than local lastSyncedTime.
+     * @param isManual If true, was explicitly triggered by user tapping the header refresh button.
      */
-    suspend fun syncVault(): Result<SyncResult> = syncMutex.withLock {
+    suspend fun syncVault(onlyIfNewer: Boolean = false, isManual: Boolean = false): Result<SyncResult> = syncMutex.withLock {
         val token = credentialsManager.getBotToken()
         val chatId = credentialsManager.getChatId()
         if (token.isNullOrBlank() || chatId.isNullOrBlank()) {
@@ -170,7 +211,8 @@ class VaultSyncManager private constructor(private val context: Context) {
         try {
             val localFilesPre = database.fileDao().getAll().filter { it.status == FileStatus.COMPLETED }
             val localFoldersPre = database.folderDao().getAll()
-            Log.i(TAG, "Sync started: Device ${credentialsManager.getDeviceId()}, Chat $chatId, localFiles=${localFilesPre.size}, localFolders=${localFoldersPre.size}")
+            val localLastSyncedTime = credentialsManager.getLastSyncedTime()
+            Log.i(TAG, "Sync started: Device ${credentialsManager.getDeviceId()}, Chat $chatId, localFiles=${localFilesPre.size}, localFolders=${localFoldersPre.size}, lastSynced=$localLastSyncedTime, onlyIfNewer=$onlyIfNewer, isManual=$isManual")
 
             Log.i(TAG, "Searching for VAULT_INDEX message in Telegram chat $chatId...")
             val remoteIndexResult = repository.fetchLatestVaultIndex(token, chatId)
@@ -186,6 +228,20 @@ class VaultSyncManager private constructor(private val context: Context) {
             if (remoteIndexPair != null) {
                 val (remoteIndex, remoteMsgId) = remoteIndexPair
                 Log.i(TAG, "VAULT_INDEX found (messageId=$remoteMsgId, timestamp=${remoteIndex.timestamp}, deviceId=${remoteIndex.deviceId})")
+
+                // Compare timestamp: if onlyIfNewer is true and remoteIndex is not newer, skip download & rebuild
+                if (onlyIfNewer && localLastSyncedTime > 0L && remoteIndex.timestamp <= localLastSyncedTime) {
+                    Log.i(TAG, "Remote VAULT_INDEX timestamp (${remoteIndex.timestamp}) is not newer than local lastSyncedTime ($localLastSyncedTime). Skipping local rebuild.")
+                    val summary = "Vault is up to date (${remoteIndex.files.size} files, ${remoteIndex.folders.size} folders)."
+                    return Result.success(
+                        SyncResult(
+                            foldersCount = remoteIndex.folders.size,
+                            filesCount = remoteIndex.files.size,
+                            newFilesCount = 0,
+                            summary = summary
+                        )
+                    )
+                }
 
                 Log.i(TAG, "Parsing index: ${remoteIndex.files.size} file(s), ${remoteIndex.folders.size} folder(s)")
 
@@ -297,8 +353,9 @@ class VaultSyncManager private constructor(private val context: Context) {
 
                 val now = System.currentTimeMillis()
                 credentialsManager.setLastVaultIndexMessageId(remoteMsgId)
-                credentialsManager.setLastSyncedTime(now)
-                _lastSyncedTime.value = now
+                val updatedSyncedTime = maxOf(now, remoteIndex.timestamp)
+                credentialsManager.setLastSyncedTime(updatedSyncedTime)
+                _lastSyncedTime.value = updatedSyncedTime
 
                 val summary = if (newDiscoveredFiles > 0) {
                     "Sync complete: discovered $newDiscoveredFiles new file(s), ${remoteIndex.folders.size} folders from Telegram."
@@ -323,7 +380,7 @@ class VaultSyncManager private constructor(private val context: Context) {
                 val currentFiles = database.fileDao().getAll().filter { it.status == FileStatus.COMPLETED }
 
                 if (currentFolders.isNotEmpty() || currentFiles.isNotEmpty()) {
-                    // This device has local files/folders (e.g. Device 1). Publish them to Telegram now!
+                    // This device has local files/folders. Publish them to Telegram now!
                     Log.i(TAG, "Local device has ${currentFiles.size} files and ${currentFolders.size} folders. Publishing initial VAULT_INDEX to Telegram...")
                     val pubResult = publishVaultIndex()
                     if (pubResult.isSuccess) {
@@ -343,10 +400,21 @@ class VaultSyncManager private constructor(private val context: Context) {
                         Result.failure(Exception("Failed to upload Vault Index to Telegram: $pubErr"))
                     }
                 } else {
-                    // This device has 0 local files and 0 local folders, and no VAULT_INDEX exists in chat
-                    val errMsg = "No Vault Index found in Telegram chat. Please open TeleVault on your other device (where your files were uploaded) and tap 'Sync Now' in Settings to publish the vault to Telegram."
-                    Log.e(TAG, "Sync failed: $errMsg")
-                    Result.failure(Exception(errMsg))
+                    if (isManual) {
+                        val errMsg = "No Vault Index found in Telegram chat. Open TeleVault on your other device where files were uploaded so it can publish the vault."
+                        Log.e(TAG, "Sync failed: $errMsg")
+                        Result.failure(Exception(errMsg))
+                    } else {
+                        Log.i(TAG, "No Vault Index in chat and no local items. Background check finished silently.")
+                        Result.success(
+                            SyncResult(
+                                foldersCount = 0,
+                                filesCount = 0,
+                                newFilesCount = 0,
+                                summary = "Vault is up to date"
+                            )
+                        )
+                    }
                 }
             }
         } catch (e: Exception) {
