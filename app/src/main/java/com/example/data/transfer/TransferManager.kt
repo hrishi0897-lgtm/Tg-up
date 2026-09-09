@@ -11,6 +11,7 @@ import com.example.data.local.EncryptedCredentialsManager
 import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
+import com.example.data.sync.VaultSyncManager
 import com.example.data.remote.FileManifest
 import com.example.data.remote.ManifestChunk
 import com.example.data.remote.TelegramApiException
@@ -765,6 +766,15 @@ class TransferManager private constructor(
                 database.fileDao().updateManifestId(fileId, manifestMessage.messageId)
                 database.fileDao().updateStatus(fileId, FileStatus.COMPLETED)
 
+                // Publish fresh VaultIndex to Telegram so other devices stay in sync
+                scope.launch {
+                    try {
+                        VaultSyncManager.getInstance(context).publishVaultIndex()
+                    } catch (syncEx: Exception) {
+                        Log.w("TransferManager", "Non-critical: Failed to publish vault index after upload: ${syncEx.message}")
+                    }
+                }
+
                 val completedProgress = TransferProgress(
                     fileId = fileId,
                     fileName = fileEntity.name,
@@ -903,7 +913,55 @@ class TransferManager private constructor(
             database.fileDao().updateStatus(fileId, FileStatus.DOWNLOADING)
             notifyService("Downloading ${fileEntity.name}")
 
-            val chunks = database.chunkDao().getChunksForFile(fileId)
+            var chunks = database.chunkDao().getChunksForFile(fileId)
+            if (chunks.isEmpty()) {
+                // If chunks are not present locally, attempt to recover them from chat manifests
+                Log.w("TransferManager", "Chunks missing locally for $fileId. Attempting to fetch from chat manifests...")
+                val legacyManifests = repository.fetchManifestsFromChat(token)
+                if (legacyManifests.isSuccess) {
+                    val matchingManifest = legacyManifests.getOrThrow().find { it.fileId == fileId }
+                    if (matchingManifest != null) {
+                        val chunkEntities = matchingManifest.chunks.map { mc ->
+                            ChunkEntity(
+                                fileId = fileId,
+                                chunkIndex = mc.index,
+                                telegramMessageId = mc.messageId,
+                                telegramFileId = mc.telegramFileId,
+                                checksum = mc.sha256,
+                                size = mc.size,
+                                isUploaded = true,
+                                isDownloaded = false
+                            )
+                        }
+                        database.chunkDao().insertAll(chunkEntities)
+                        chunks = database.chunkDao().getChunksForFile(fileId)
+                    }
+                }
+            }
+
+            if (chunks.isEmpty()) {
+                val err = "File chunk metadata not found. Please tap 'Sync now' in Vault Settings to refresh."
+                Log.e("TransferManager", "Download failed for $fileId: $err")
+                database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
+                updateProgressState(
+                    TransferProgress(
+                        fileId = fileId,
+                        fileName = fileEntity.name,
+                        isUpload = false,
+                        currentChunk = 0,
+                        totalChunks = fileEntity.totalChunks,
+                        progressFraction = 0f,
+                        bytesTransferred = 0L,
+                        totalBytes = fileEntity.size,
+                        speedBytesPerSec = 0L,
+                        status = FileStatus.FAILED,
+                        errorMessage = err
+                    )
+                )
+                _transferErrorEvents.tryEmit(err)
+                return@launch
+            }
+
             val downloadTempDir = File(context.cacheDir, "downloads_temp/$fileId").apply { mkdirs() }
             val tempReassembledFile = File(downloadTempDir, "assembled_${fileEntity.name}")
 
@@ -1308,6 +1366,15 @@ class TransferManager private constructor(
             database.fileDao().deleteById(fileId)
             _transfers.update { it - fileId }
 
+            // Publish updated VaultIndex to Telegram
+            scope.launch {
+                try {
+                    VaultSyncManager.getInstance(context).publishVaultIndex()
+                } catch (syncEx: Exception) {
+                    Log.w("TransferManager", "Non-critical: Failed to publish vault index after file deletion: ${syncEx.message}")
+                }
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
@@ -1418,52 +1485,15 @@ class TransferManager private constructor(
     }
 
     /**
-     * Rebuilds local index cache from Telegram chat messages (Resync feature).
+     * Rebuilds local index cache from Telegram chat messages using VaultSyncManager.
      */
     suspend fun resyncFromTelegram(): Result<Int> {
-        val token = credentialsManager.getBotToken() ?: return Result.failure(Exception("Bot token missing"))
-        return try {
-            val result = repository.fetchManifestsFromChat(token)
-            if (result.isFailure) return Result.failure(result.exceptionOrNull() ?: Exception("Sync failed"))
-            val manifests = result.getOrThrow()
-            var importedCount = 0
-
-            for (manifest in manifests) {
-                val existing = database.fileDao().getById(manifest.fileId)
-                if (existing == null) {
-                    val fileEntity = FileEntity(
-                        id = manifest.fileId,
-                        name = manifest.name,
-                        folderId = manifest.folderId,
-                        size = manifest.size,
-                        mimeType = manifest.mimeType,
-                        uploadDate = manifest.uploadDate,
-                        status = FileStatus.COMPLETED,
-                        checksum = manifest.overallSha256,
-                        totalChunks = manifest.chunks.size,
-                        completedChunks = manifest.chunks.size
-                    )
-                    database.fileDao().insert(fileEntity)
-
-                    val chunkEntities = manifest.chunks.map { mc ->
-                        ChunkEntity(
-                            fileId = manifest.fileId,
-                            chunkIndex = mc.index,
-                            telegramMessageId = mc.messageId,
-                            telegramFileId = mc.telegramFileId,
-                            checksum = mc.sha256,
-                            size = mc.size,
-                            isUploaded = true,
-                            isDownloaded = false
-                        )
-                    }
-                    database.chunkDao().insertAll(chunkEntities)
-                    importedCount++
-                }
-            }
-            Result.success(importedCount)
-        } catch (e: Exception) {
-            Result.failure(e)
+        val syncResult = VaultSyncManager.getInstance(context).syncVault()
+        return if (syncResult.isSuccess) {
+            val result = syncResult.getOrThrow()
+            Result.success(result.newFilesCount)
+        } else {
+            Result.failure(syncResult.exceptionOrNull() ?: Exception("Sync failed"))
         }
     }
 

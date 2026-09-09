@@ -13,6 +13,7 @@ import com.example.data.local.entity.FileStatus
 import com.example.data.local.entity.FolderEntity
 import com.example.data.remote.TelegramRepository
 import com.example.data.remote.TelegramUser
+import com.example.data.sync.VaultSyncManager
 import com.example.data.transfer.TransferManager
 import com.example.domain.model.BreadcrumbItem
 import com.example.domain.model.StorageStats
@@ -62,6 +63,7 @@ data class UiState(
     val selectedFileChunks: List<ChunkEntity> = emptyList(),
     val isResyncing: Boolean = false,
     val resyncMessage: String? = null,
+    val lastSyncedTime: Long = 0L,
     val chunkSizeMb: Int = 18,
     val isWifiOnly: Boolean = false,
     val showTransfersSheet: Boolean = false,
@@ -84,12 +86,14 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     private val repo = TelegramRepository()
     private val creds = EncryptedCredentialsManager(application)
     private val transferManager = TransferManager.getInstance(application)
+    private val vaultSyncManager = VaultSyncManager.getInstance(application)
 
     private val _uiState = MutableStateFlow(
         UiState(
             isAuthenticated = creds.hasCredentials(),
             chunkSizeMb = creds.getChunkSizeMb(),
-            isWifiOnly = creds.isWifiOnly()
+            isWifiOnly = creds.isWifiOnly(),
+            lastSyncedTime = creds.getLastSyncedTime()
         )
     )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -104,6 +108,21 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             transferManager.transferNotificationEvents.collect { notifMsg ->
                 _uiState.update { it.copy(transferNotificationMessage = notifMsg) }
             }
+        }
+        viewModelScope.launch {
+            vaultSyncManager.isSyncing.collect { syncing ->
+                _uiState.update { it.copy(isResyncing = syncing) }
+            }
+        }
+        viewModelScope.launch {
+            vaultSyncManager.lastSyncedTime.collect { syncedTime ->
+                _uiState.update { it.copy(lastSyncedTime = syncedTime) }
+            }
+        }
+
+        // On app start with existing credentials, automatically trigger a background sync to pull latest remote state
+        if (creds.hasCredentials()) {
+            syncVault()
         }
     }
 
@@ -258,6 +277,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                         validationError = null
                     )
                 }
+                syncVault()
             } else {
                 val error = result.exceptionOrNull()?.localizedMessage ?: "Validation failed"
                 _uiState.update {
@@ -350,6 +370,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             )
             db.folderDao().insert(folder)
             _uiState.update { it.copy(showCreateFolderDialog = false) }
+            vaultSyncManager.publishVaultIndex()
         }
     }
 
@@ -358,6 +379,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             db.folderDao().renameFolder(folderId, newName.trim())
             _uiState.update { it.copy(folderToRename = null) }
+            vaultSyncManager.publishVaultIndex()
         }
     }
 
@@ -371,6 +393,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 current.copy(fileToRename = null, selectedFileForDetail = updatedFile)
             }
+            vaultSyncManager.publishVaultIndex()
         }
     }
 
@@ -382,6 +405,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 transferManager.deleteFile(file.id)
             }
             db.folderDao().deleteById(folder.id)
+            vaultSyncManager.publishVaultIndex()
         }
     }
 
@@ -389,6 +413,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             db.fileDao().moveFile(fileId, targetFolderId)
             _uiState.update { it.copy(itemToMove = null) }
+            vaultSyncManager.publishVaultIndex()
         }
     }
 
@@ -539,6 +564,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                     it.copy(selectedFileForDetail = null, selectedFileChunks = emptyList())
                 } else it
             }
+            vaultSyncManager.publishVaultIndex()
         }
     }
 
@@ -559,17 +585,18 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(selectedFileForDetail = null, selectedFileChunks = emptyList()) }
     }
 
-    // Resync from Telegram chat
-    fun resyncFromTelegram() {
+    // Multi-Device Sync Vault from Telegram chat
+    fun syncVault() {
         _uiState.update { it.copy(isResyncing = true, resyncMessage = null) }
         viewModelScope.launch {
-            val result = transferManager.resyncFromTelegram()
+            val result = vaultSyncManager.syncVault()
             if (result.isSuccess) {
-                val count = result.getOrThrow()
+                val syncData = result.getOrThrow()
                 _uiState.update {
                     it.copy(
                         isResyncing = false,
-                        resyncMessage = "Sync complete. Discovered $count files from Telegram chat."
+                        lastSyncedTime = creds.getLastSyncedTime(),
+                        resyncMessage = syncData.summary
                     )
                 }
             } else {
@@ -582,6 +609,10 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+    }
+
+    fun resyncFromTelegram() {
+        syncVault()
     }
 
     fun clearResyncMessage() {

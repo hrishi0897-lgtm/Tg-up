@@ -170,6 +170,7 @@ fun HomeScreen(
     activeTransfers: List<TransferProgress>,
     isResyncing: Boolean,
     resyncMessage: String?,
+    lastSyncedTime: Long = 0L,
     onSearchChange: (String) -> Unit,
     onSortChange: (SortBy) -> Unit,
     onToggleViewMode: () -> Unit,
@@ -203,6 +204,7 @@ fun HomeScreen(
         topBar = {
             HomeTopBar(
                 isResyncing = isResyncing,
+                lastSyncedTime = lastSyncedTime,
                 onOpenSettings = onOpenSettings,
                 onResync = onResync
             )
@@ -735,6 +737,7 @@ fun HomeScreen(
 @Composable
 private fun HomeTopBar(
     isResyncing: Boolean,
+    lastSyncedTime: Long = 0L,
     onOpenSettings: () -> Unit,
     onResync: () -> Unit
 ) {
@@ -812,12 +815,41 @@ private fun HomeTopBar(
                     style = WordmarkTextStyle
                 )
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Telegram cloud storage",
-                    fontSize = 12.sp,
-                    fontFamily = BodySansFont,
-                    color = TextFaint
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    val dotColor = when {
+                        isResyncing -> AccentTeal
+                        lastSyncedTime > 0 -> StatusMint
+                        else -> TextFaint
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(dotColor)
+                    )
+                    val statusText = when {
+                        isResyncing -> "Syncing vault..."
+                        lastSyncedTime > 0 -> {
+                            val diff = System.currentTimeMillis() - lastSyncedTime
+                            when {
+                                diff < 60_000L -> "Synced just now"
+                                diff < 3_600_000L -> "Synced ${diff / 60_000L}m ago"
+                                diff < 86_400_000L -> "Synced ${diff / 3_600_000L}h ago"
+                                else -> "Synced on ${java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date(lastSyncedTime))}"
+                            }
+                        }
+                        else -> "Telegram cloud storage"
+                    }
+                    Text(
+                        text = statusText,
+                        fontSize = 11.sp,
+                        fontFamily = BodySansFont,
+                        color = if (isResyncing) AccentTeal else TextFaint
+                    )
+                }
             }
         }
 

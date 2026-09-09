@@ -31,6 +31,9 @@ class EncryptedCredentialsManager(context: Context) {
         private const val PREF_CHAT_ID = "encrypted_chat_id"
         private const val PREF_CHUNK_SIZE_MB = "chunk_size_mb"
         private const val PREF_WIFI_ONLY = "wifi_only_transfers"
+        private const val PREF_LAST_SYNCED = "last_synced_timestamp"
+        private const val PREF_LAST_INDEX_MSG_ID = "last_vault_index_message_id"
+        private const val PREF_DEVICE_ID = "vault_device_id"
         // Telegram Bot API allows uploading up to 50MB via sendDocument, BUT strictly limits
         // downloading to 20MB via getFile. If a chunk exceeds 20MB, getFile returns HTTP 400 'Bad Request: file is too big'.
         // We set CHUNK_SIZE_BYTES globally to 18MB to leave safe headroom for multipart boundary overhead and API limits.
@@ -146,5 +149,30 @@ class EncryptedCredentialsManager(context: Context) {
 
     fun setWifiOnly(enabled: Boolean) {
         prefs.edit().putBoolean(PREF_WIFI_ONLY, enabled).apply()
+    }
+
+    fun getLastSyncedTime(): Long {
+        return prefs.getLong(PREF_LAST_SYNCED, 0L)
+    }
+
+    fun setLastSyncedTime(timestamp: Long) {
+        prefs.edit().putLong(PREF_LAST_SYNCED, timestamp).apply()
+    }
+
+    fun getLastVaultIndexMessageId(): Long? {
+        val id = prefs.getLong(PREF_LAST_INDEX_MSG_ID, -1L)
+        return if (id > 0) id else null
+    }
+
+    fun setLastVaultIndexMessageId(messageId: Long?) {
+        prefs.edit().putLong(PREF_LAST_INDEX_MSG_ID, messageId ?: -1L).apply()
+    }
+
+    fun getDeviceId(): String {
+        val existing = prefs.getString(PREF_DEVICE_ID, null)
+        if (!existing.isNullOrBlank()) return existing
+        val newId = java.util.UUID.randomUUID().toString()
+        prefs.edit().putString(PREF_DEVICE_ID, newId).apply()
+        return newId
     }
 }

@@ -39,6 +39,7 @@ class TelegramRepository(
         .create(TelegramApi::class.java)
 
     private val manifestAdapter = moshi.adapter(FileManifest::class.java)
+    private val vaultIndexAdapter = moshi.adapter(VaultIndex::class.java)
     private val captionMetaAdapter = moshi.adapter(ChunkCaptionMeta::class.java)
     private val errorAdapter = moshi.adapter(TelegramErrorResponse::class.java)
 
@@ -47,6 +48,7 @@ class TelegramRepository(
         const val MANIFEST_PREFIX = "TELEVAULT_MANIFEST_V1:"
         const val MANIFEST_CAPTION_PREFIX = "MANIFEST|"
         const val CHUNK_CAPTION_PREFIX = "TELEVAULT_CHUNK:"
+        const val VAULT_INDEX_CAPTION = "VAULT_INDEX"
         private const val MAX_RETRIES = 3
         private const val BASE_BACKOFF_MS = 1000L
 
@@ -508,6 +510,121 @@ class TelegramRepository(
                 Result.success(manifests)
             } else {
                 Result.success(emptyList())
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Uploads the full vault structure index as a JSON document to Telegram chat tagged with VAULT_INDEX caption.
+     * Overwrites previous index reference by deleting previousIndexMessageId so copies don't accumulate.
+     */
+    suspend fun uploadVaultIndex(
+        token: String,
+        chatId: String,
+        vaultIndex: VaultIndex,
+        previousIndexMessageId: Long? = null
+    ): Result<TelegramMessage> {
+        val targetUrl = botUrl(token, "sendDocument")
+        val partName = "vault_index.json"
+        val captionText = VAULT_INDEX_CAPTION
+
+        val jsonString = vaultIndexAdapter.toJson(vaultIndex)
+        val requestBody = jsonString.toRequestBody("application/json".toMediaTypeOrNull())
+        val multipart = MultipartBody.Part.createFormData("document", partName, requestBody)
+        val chatIdBody = chatId.toRequestBody("text/plain".toMediaTypeOrNull())
+        val captionBody = captionText.toRequestBody("text/plain".toMediaTypeOrNull())
+
+        Log.i("TelegramRepo", ">>> [uploadVaultIndex] Uploading index doc: ${vaultIndex.folders.size} folders, ${vaultIndex.files.size} files, ts=${vaultIndex.timestamp}")
+
+        val uploadResult = executeWithRetry("Uploading vault index document") {
+            api.sendDocument(targetUrl, chatIdBody, captionBody, multipart)
+        }
+
+        if (uploadResult.isSuccess && previousIndexMessageId != null && previousIndexMessageId > 0) {
+            try {
+                Log.i("TelegramRepo", ">>> [uploadVaultIndex] Deleting previous index message: $previousIndexMessageId")
+                deleteMessage(token, chatId, previousIndexMessageId)
+            } catch (delEx: Exception) {
+                Log.w("TelegramRepo", "Non-critical: Failed to delete previous index message $previousIndexMessageId: ${delEx.message}")
+            }
+        }
+
+        return uploadResult
+    }
+
+    /**
+     * Downloads and parses VaultIndex from Telegram remote document file_id.
+     */
+    suspend fun downloadVaultIndexDocument(token: String, fileId: String): Result<VaultIndex> {
+        return try {
+            val fileInfoResult = getFileInfo(token, fileId)
+            if (fileInfoResult.isFailure) {
+                return Result.failure(fileInfoResult.exceptionOrNull() ?: Exception("Failed to get vault index file info"))
+            }
+            val filePath = fileInfoResult.getOrThrow().filePath
+                ?: return Result.failure(Exception("Vault index getFile returned empty file_path"))
+
+            val streamResult = downloadFileStream(token, filePath)
+            if (streamResult.isFailure) {
+                return Result.failure(streamResult.exceptionOrNull() ?: Exception("Failed to download vault index stream"))
+            }
+
+            val jsonString = streamResult.getOrThrow().string()
+            val index = vaultIndexAdapter.fromJson(jsonString)
+                ?: return Result.failure(Exception("Failed to deserialize VaultIndex JSON from downloaded document"))
+            Result.success(index)
+        } catch (e: Exception) {
+            Log.e("TelegramRepo", "downloadVaultIndexDocument error: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Finds the latest VAULT_INDEX message in the chat, downloads and returns the parsed VaultIndex along with its message ID.
+     */
+    suspend fun fetchLatestVaultIndex(token: String): Result<Pair<VaultIndex, Long>?> {
+        return try {
+            val response = api.getUpdates(botUrl(token, "getUpdates"), offset = null, limit = 100)
+            if (response.isSuccessful && response.body()?.ok == true) {
+                val updates = response.body()?.result ?: emptyList()
+                val indexMessages = mutableListOf<TelegramMessage>()
+                for (update in updates) {
+                    val msg = update.message ?: update.channelPost ?: continue
+                    val caption = msg.caption?.trim()
+                    val doc = msg.document
+                    if (doc != null && caption != null && (caption == VAULT_INDEX_CAPTION || caption.startsWith(VAULT_INDEX_CAPTION))) {
+                        indexMessages.add(msg)
+                    }
+                }
+
+                if (indexMessages.isEmpty()) {
+                    return Result.success(null)
+                }
+
+                val latestMsg = indexMessages.maxByOrNull { it.messageId } ?: indexMessages.last()
+                val doc = latestMsg.document ?: return Result.success(null)
+
+                val downloadResult = downloadVaultIndexDocument(token, doc.fileId)
+                if (downloadResult.isFailure) {
+                    return Result.failure(downloadResult.exceptionOrNull() ?: Exception("Failed to download vault index document"))
+                }
+
+                // Clean up older VAULT_INDEX messages if multiple exist in chat updates to prevent clutter
+                val olderMessages = indexMessages.filter { it.messageId != latestMsg.messageId }
+                for (oldMsg in olderMessages) {
+                    val chatId = oldMsg.chat?.id?.toString()
+                    if (chatId != null) {
+                        try {
+                            deleteMessage(token, chatId, oldMsg.messageId)
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                Result.success(Pair(downloadResult.getOrThrow(), latestMsg.messageId))
+            } else {
+                Result.success(null)
             }
         } catch (e: Exception) {
             Result.failure(e)

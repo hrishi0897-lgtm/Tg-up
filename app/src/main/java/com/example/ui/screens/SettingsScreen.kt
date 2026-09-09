@@ -23,12 +23,14 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -57,8 +59,11 @@ import com.example.ui.theme.pressScale
 import com.example.ui.theme.OledBlack
 import com.example.ui.theme.OledBorder
 import com.example.ui.theme.OledCard
+import com.example.ui.theme.OledSurface
 import com.example.ui.theme.StatusError
+import com.example.ui.theme.StatusMint
 import com.example.ui.theme.TelegramBlue
+import com.example.ui.theme.TextFaint
 import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.TextSecondary
 import com.example.ui.theme.TextTertiary
@@ -69,6 +74,8 @@ fun SettingsScreen(
     chatId: String,
     chunkSizeMb: Int,
     isWifiOnly: Boolean,
+    lastSyncedTime: Long = 0L,
+    isSyncing: Boolean = false,
     onChunkSizeChange: (Int) -> Unit,
     onWifiOnlyChange: (Boolean) -> Unit,
     onResyncClick: () -> Unit,
@@ -381,7 +388,7 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 4. Resync Vault Index Card
+            // 4. Multi-Device Vault Sync Card
             Card(
                 colors = CardDefaults.cardColors(containerColor = OledCard),
                 shape = RoundedCornerShape(12.dp),
@@ -389,49 +396,133 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.CloudSync,
-                            contentDescription = null,
-                            tint = TelegramBlue,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "RESTORE & RESYNC FROM CHAT",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TelegramBlue,
-                            letterSpacing = 0.5.sp
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.CloudSync,
+                                contentDescription = null,
+                                tint = TelegramBlue,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "MULTI-DEVICE VAULT SYNC",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TelegramBlue,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+
+                        if (isSyncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = TelegramBlue,
+                                strokeWidth = 2.dp
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Since Telegram is the persistent source of truth, TeleVault can rebuild your local metadata index if the app cache was ever cleared.",
+                        text = "TeleVault maintains a single unified vault index (folders, hierarchy, and file manifests) directly in Telegram. Multiple devices sharing this bot token & chat ID stay completely synchronized.",
                         fontSize = 12.sp,
                         color = TextSecondary,
                         lineHeight = 16.sp
                     )
 
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Last Synced status box
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(OledSurface)
+                            .border(1.dp, OledBorder, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (lastSyncedTime > 0) StatusMint else TextFaint)
+                            )
+                            Text(
+                                text = "Sync Status",
+                                fontSize = 11.sp,
+                                color = TextTertiary,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        val lastSyncedFormatted = when {
+                            isSyncing -> "Syncing now..."
+                            lastSyncedTime > 0 -> {
+                                val diff = System.currentTimeMillis() - lastSyncedTime
+                                when {
+                                    diff < 60_000L -> "Synced just now"
+                                    diff < 3_600_000L -> "Synced ${diff / 60_000L}m ago"
+                                    diff < 86_400_000L -> "Synced ${diff / 3_600_000L}h ago"
+                                    else -> java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(lastSyncedTime))
+                                }
+                            }
+                            else -> "Never synced"
+                        }
+
+                        Text(
+                            text = lastSyncedFormatted,
+                            fontSize = 11.sp,
+                            color = if (isSyncing) TelegramBlue else TextPrimary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Button(
                         onClick = {
-                            onDismiss()
                             onResyncClick()
                         },
+                        enabled = !isSyncing,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = TelegramBlue.copy(alpha = 0.15f),
-                            contentColor = TelegramBlue
+                            contentColor = TelegramBlue,
+                            disabledContainerColor = TelegramBlue.copy(alpha = 0.05f),
+                            disabledContentColor = TextFaint
                         ),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .pressScale(0.92f)
                     ) {
-                        Text("Resync Manifests from Telegram Chat", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isSyncing) "Syncing with Telegram..." else "Sync Now",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
             }

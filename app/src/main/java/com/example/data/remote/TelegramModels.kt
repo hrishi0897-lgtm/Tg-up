@@ -83,6 +83,41 @@ data class FileManifest(
     @Json(name = "chunks") val chunks: List<ManifestChunk>
 )
 
+/**
+ * Vault index representing the entire vault's folder structure, nesting, and file metadata.
+ * Stored as a single JSON document in Telegram chat tagged with VAULT_INDEX caption for multi-device sync.
+ */
+@JsonClass(generateAdapter = true)
+data class VaultIndex(
+    @Json(name = "version") val version: Int = 1,
+    @Json(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
+    @Json(name = "deviceId") val deviceId: String? = null,
+    @Json(name = "folders") val folders: List<VaultIndexFolder> = emptyList(),
+    @Json(name = "files") val files: List<VaultIndexFile> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class VaultIndexFolder(
+    @Json(name = "id") val id: String,
+    @Json(name = "name") val name: String,
+    @Json(name = "parentFolderId") val parentFolderId: String? = null,
+    @Json(name = "createdDate") val createdDate: Long = System.currentTimeMillis()
+)
+
+@JsonClass(generateAdapter = true)
+data class VaultIndexFile(
+    @Json(name = "id") val id: String,
+    @Json(name = "name") val name: String,
+    @Json(name = "folderId") val folderId: String? = null,
+    @Json(name = "size") val size: Long,
+    @Json(name = "mimeType") val mimeType: String,
+    @Json(name = "uploadDate") val uploadDate: Long = System.currentTimeMillis(),
+    @Json(name = "checksum") val checksum: String,
+    @Json(name = "totalChunks") val totalChunks: Int = 1,
+    @Json(name = "manifestMessageId") val manifestMessageId: Long? = null,
+    @Json(name = "chunks") val chunks: List<ManifestChunk> = emptyList()
+)
+
 @JsonClass(generateAdapter = true)
 data class ManifestChunk(
     @Json(name = "index") val index: Int,
