@@ -41,10 +41,19 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
+import java.io.InterruptedIOException
 import java.io.RandomAccessFile
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.PortUnreachableException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
 
 /**
  * Core engine responsible for chunking, uploading, downloading, and reassembling files
@@ -274,7 +283,7 @@ class TransferManager private constructor(
                     )
                 )
 
-                // 5. Clean up any stale chunk files from a previous attempt before chunking
+                // 5. Clean up any stale chunk files from a previous attempt
                 val chunksDir = File(context.cacheDir, "upload_chunks/$fileId")
                 if (chunksDir.exists()) {
                     Log.d("TransferManager", "Cleaning up stale chunk directory for fileId=$fileId: ${chunksDir.absolutePath}")
@@ -282,17 +291,18 @@ class TransferManager private constructor(
                 }
                 chunksDir.mkdirs()
 
-                // Pre-generate chunk entities and write fresh, discrete chunk files on disk
+                // Pre-generate chunk entities by computing SHA-256 directly from staging file range.
+                // Discrete chunk files on disk are written strictly on-demand one at a time during upload
+                // to prevent running out of disk space on large multi-gigabyte files (e.g. 1.8GB, 98 chunks).
                 val chunkEntities = mutableListOf<ChunkEntity>()
                 for (i in 0 until totalChunks) {
                     val offset = i * targetChunkSize
                     val chunkLength = minOf(targetChunkSize, (actualSize - offset).coerceAtLeast(0L))
-                    val chunkFile = writeChunkFileOnDisk(stagingFile, chunksDir, i, offset, chunkLength)
-                    val chunkHash = ChecksumUtil.computeSha256(chunkFile)
+                    val chunkHash = ChecksumUtil.computeSha256Range(stagingFile, offset, chunkLength)
 
                     Log.i(
                         "TransferManager",
-                        "Created chunk $i on disk: ${chunkFile.name} (${chunkFile.length()} bytes, target=$chunkLength, hash=$chunkHash)"
+                        "Pre-computed chunk $i metadata: offset=$offset, size=$chunkLength, hash=$chunkHash"
                     )
 
                     chunkEntities.add(
@@ -396,8 +406,8 @@ class TransferManager private constructor(
                 return@launch
             }
 
-            val stagingFile = fileEntity.localPath?.let { File(it) }
-            if (stagingFile == null || !stagingFile.exists()) {
+            val stagingFile = fileEntity.localPath?.let { File(it) } ?: File(context.cacheDir, "upload_staging/$fileId.tmp")
+            if (!stagingFile.exists() || stagingFile.length() == 0L) {
                 val errorMsg = "Source staging file missing"
                 database.fileDao().updateStatus(fileId, FileStatus.FAILED, errorMsg)
                 updateProgressState(
@@ -419,7 +429,32 @@ class TransferManager private constructor(
                 return@launch
             }
 
-            val chunks = database.chunkDao().getChunksForFile(fileId)
+            var chunks = database.chunkDao().getChunksForFile(fileId)
+            if (chunks.isEmpty()) {
+                Log.w("TransferManager", "No chunks found in database for $fileId (${fileEntity.name}). Generating metadata...")
+                val actualSize = stagingFile.length()
+                val maxChunkSize = minOf(credentialsManager.getChunkSizeMb() * 1024 * 1024L, CHUNK_SIZE_BYTES)
+                val totalChunks = ((actualSize + maxChunkSize - 1) / maxChunkSize).toInt().coerceAtLeast(1)
+                val targetChunkSize = ((actualSize + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
+                val chunkEntities = mutableListOf<ChunkEntity>()
+                for (i in 0 until totalChunks) {
+                    val offset = i * targetChunkSize
+                    val chunkLength = minOf(targetChunkSize, (actualSize - offset).coerceAtLeast(0L))
+                    val chunkHash = ChecksumUtil.computeSha256Range(stagingFile, offset, chunkLength)
+                    chunkEntities.add(
+                        ChunkEntity(
+                            fileId = fileId,
+                            chunkIndex = i,
+                            checksum = chunkHash,
+                            size = chunkLength,
+                            isUploaded = false
+                        )
+                    )
+                }
+                database.chunkDao().insertAll(chunkEntities)
+                chunks = database.chunkDao().getChunksForFile(fileId)
+            }
+
             var completedCount = chunks.count { it.isUploaded }
             var totalBytesSent = chunks.filter { it.isUploaded }.sumOf { it.size }
             val initialFraction = if (fileEntity.size > 0) (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f) else 0f
@@ -561,8 +596,8 @@ class TransferManager private constructor(
                         }
                     }
 
-                    // Upload chunk with retries (up to 3 attempts)
-                    val maxRetries = 3
+                    // Upload chunk with auto-retries (up to 5 attempts with backoff for transient network glitches)
+                    val maxRetries = 5
                     var attempt = 0
                     var chunkSuccess = false
                     var lastError: String? = null
@@ -571,6 +606,27 @@ class TransferManager private constructor(
                     while (attempt < maxRetries && !chunkSuccess) {
                         attempt++
                         var lastProgressUiUpdate = 0L
+
+                        // Check for pause request before dispatching network attempt
+                        if (pauseRequestedFiles.contains(fileId)) {
+                            pauseRequestedFiles.remove(fileId)
+                            database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused by user")
+                            updateProgressState(
+                                TransferProgress(
+                                    fileId = fileId,
+                                    fileName = fileEntity.name,
+                                    isUpload = true,
+                                    currentChunk = completedCount,
+                                    totalChunks = fileEntity.totalChunks,
+                                    progressFraction = (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                                    bytesTransferred = totalBytesSent,
+                                    totalBytes = fileEntity.size,
+                                    speedBytesPerSec = 0L,
+                                    status = FileStatus.PAUSED
+                                )
+                            )
+                            return@launch
+                        }
 
                         val uploadResult = repository.uploadChunk(
                             token = token,
@@ -621,20 +677,56 @@ class TransferManager private constructor(
                         } else {
                             val exception = uploadResult.exceptionOrNull()
                             lastError = exception?.message ?: "Network error"
-                            Log.e("TransferManager", "Chunk upload failed (chunk ${chunkIndex + 1}/${fileEntity.totalChunks}, attempt $attempt/$maxRetries): $lastError", exception)
-                            // If it's a permanent 4xx error (e.g. Forbidden, Bad Request), break immediately without retrying
-                            if (exception is TelegramApiException && exception.errorCode != null && exception.errorCode in 400..499 && exception.errorCode != 429) {
-                                Log.e("TransferManager", "Permanent 4xx Telegram API error (${exception.errorCode}): '$lastError'. Aborting upload retries.")
+                            val isTransient = isTransientNetworkError(exception)
+                            Log.w("TransferManager", "Chunk upload attempt $attempt/$maxRetries for chunk ${chunkIndex + 1}/${fileEntity.totalChunks} failed (isTransient=$isTransient): $lastError", exception)
+
+                            // Permanent errors (e.g. 4xx Forbidden, bad bot token) abort retries immediately
+                            if (!isTransient) {
+                                Log.e("TransferManager", "Permanent non-retryable error on chunk ${chunkIndex + 1}: '$lastError'. Aborting retries immediately.")
                                 break
                             }
+
+                            // Transient network glitch: backoff and retry seamlessly
                             if (attempt < maxRetries) {
-                                delay(1000L * attempt)
+                                val backoffMs = when (attempt) {
+                                    1 -> 2000L   // 2s
+                                    2 -> 4000L   // 4s
+                                    3 -> 8000L   // 8s
+                                    4 -> 16000L  // 16s
+                                    else -> 30000L // 30s
+                                }
+                                val retryStatusMsg = "Reconnecting… retrying chunk ${chunkIndex + 1}/${fileEntity.totalChunks} (attempt $attempt/$maxRetries)"
+                                Log.i("TransferManager", "$retryStatusMsg in ${backoffMs / 1000}s...")
+
+                                updateProgressState(
+                                    TransferProgress(
+                                        fileId = fileId,
+                                        fileName = fileEntity.name,
+                                        isUpload = true,
+                                        currentChunk = chunkIndex + 1,
+                                        totalChunks = fileEntity.totalChunks,
+                                        progressFraction = (totalBytesSent.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                                        bytesTransferred = totalBytesSent,
+                                        totalBytes = fileEntity.size,
+                                        speedBytesPerSec = 0L,
+                                        status = FileStatus.UPLOADING,
+                                        errorMessage = retryStatusMsg
+                                    )
+                                )
+
+                                var waited = 0L
+                                while (waited < backoffMs) {
+                                    if (pauseRequestedFiles.contains(fileId)) break
+                                    val step = minOf(500L, backoffMs - waited)
+                                    delay(step)
+                                    waited += step
+                                }
                             }
                         }
                     }
 
                     if (!chunkSuccess || uploadedMessage == null) {
-                        val failReason = "[Upload Chunk ${(chunkIndex + 1).coerceAtMost(fileEntity.totalChunks)}/${fileEntity.totalChunks}] ${lastError ?: "Upload failed"}"
+                        val failReason = "[Upload Chunk ${(chunkIndex + 1).coerceAtMost(fileEntity.totalChunks)}/${fileEntity.totalChunks}] ${lastError ?: "Upload failed after $maxRetries attempts"}"
                         Log.e("TransferManager", "Marking upload for $fileId (${fileEntity.name}) as FAILED. Reason: $failReason")
                         database.fileDao().updateStatus(fileId, FileStatus.FAILED, failReason)
                         updateProgressState(
@@ -1008,7 +1100,7 @@ class TransferManager private constructor(
                     val remoteFileId = chunk.telegramFileId
                         ?: throw IllegalStateException("Missing Telegram file_id for chunk ${chunk.chunkIndex}")
 
-                    val maxRetries = 3
+                    val maxRetries = 5
                     var attempt = 0
                     var chunkSuccess = false
                     var lastError: String? = null
@@ -1098,10 +1190,49 @@ class TransferManager private constructor(
                             }
 
                             chunkSuccess = true
-                        } catch (e: Exception) {
+                        } catch (e: Throwable) {
                             lastError = e.localizedMessage ?: "Download error"
+                            val isTransient = isTransientNetworkError(e)
+                            Log.w("TransferManager", "Download attempt $attempt/$maxRetries for chunk ${chunk.chunkIndex + 1}/${fileEntity.totalChunks} failed (isTransient=$isTransient): $lastError", e)
+
+                            // Permanent errors abort retries immediately
+                            if (!isTransient) {
+                                Log.e("TransferManager", "Permanent non-retryable error on download chunk ${chunk.chunkIndex + 1}: '$lastError'. Aborting retries immediately.")
+                                break
+                            }
+
                             if (attempt < maxRetries) {
-                                delay(1000L * attempt)
+                                val backoffMs = when (attempt) {
+                                    1 -> 2000L   // 2s
+                                    2 -> 4000L   // 4s
+                                    3 -> 8000L   // 8s
+                                    4 -> 16000L  // 16s
+                                    else -> 30000L // 30s
+                                }
+                                val retryStatusMsg = "Reconnecting… retrying chunk ${chunk.chunkIndex + 1}/${fileEntity.totalChunks} (attempt $attempt/$maxRetries)"
+                                updateProgressState(
+                                    TransferProgress(
+                                        fileId = fileId,
+                                        fileName = fileEntity.name,
+                                        isUpload = false,
+                                        currentChunk = chunk.chunkIndex + 1,
+                                        totalChunks = fileEntity.totalChunks,
+                                        progressFraction = (downloadedBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                                        bytesTransferred = downloadedBytes,
+                                        totalBytes = fileEntity.size,
+                                        speedBytesPerSec = 0L,
+                                        status = FileStatus.DOWNLOADING,
+                                        errorMessage = retryStatusMsg
+                                    )
+                                )
+
+                                var waited = 0L
+                                while (waited < backoffMs) {
+                                    if (pauseRequestedFiles.contains(fileId)) break
+                                    val step = minOf(500L, backoffMs - waited)
+                                    delay(step)
+                                    waited += step
+                                }
                             }
                         }
                     }
@@ -1425,18 +1556,17 @@ class TransferManager private constructor(
             "totalChunks=$totalChunks, targetChunkSize=$targetChunkSize bytes (${ChecksumUtil.formatBytes(targetChunkSize)})"
         )
 
-        // 6. Write fresh chunk files to disk and generate ChunkEntity records
+        // 6. Pre-generate fresh chunk entities by computing SHA-256 directly from staging file range
         chunksDir.mkdirs()
         val chunkEntities = mutableListOf<ChunkEntity>()
         for (i in 0 until totalChunks) {
             val offset = i * targetChunkSize
             val chunkLength = minOf(targetChunkSize, actualSize - offset)
-            val chunkFile = writeChunkFileOnDisk(stagingFile, chunksDir, i, offset, chunkLength)
-            val chunkSha256 = ChecksumUtil.computeSha256(chunkFile)
+            val chunkSha256 = ChecksumUtil.computeSha256Range(stagingFile, offset, chunkLength)
 
             Log.i(
                 "TransferManager",
-                "forceFreshUpload: Written chunk $i of $totalChunks: ${chunkFile.length()} bytes, sha256=$chunkSha256"
+                "forceFreshUpload: Chunk metadata $i of $totalChunks: length=$chunkLength, sha256=$chunkSha256"
             )
 
             chunkEntities.add(
@@ -1586,5 +1716,57 @@ class TransferManager private constructor(
             )
         }
         return chunkFile
+    }
+
+    /**
+     * Identifies whether a failure is a transient network/connection error that should be auto-retried with backoff,
+     * as opposed to a permanent error (e.g. 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found, or file too large)
+     * which must fail immediately without wasting retries.
+     */
+    fun isTransientNetworkError(t: Throwable?): Boolean {
+        if (t == null) return false
+        if (t is SocketTimeoutException ||
+            t is ConnectException ||
+            t is UnknownHostException ||
+            t is NoRouteToHostException ||
+            t is PortUnreachableException ||
+            t is InterruptedIOException ||
+            t is SSLHandshakeException ||
+            t is SSLException) return true
+
+        if (t is TelegramApiException) {
+            // Rate limit / Flood control (429) or server errors (5xx) are transient!
+            if (t.errorCode == 429 || (t.errorCode != null && t.errorCode in 500..599)) {
+                return true
+            }
+            // 4xx client errors (400, 401, 403, 404) are permanent
+            if (t.errorCode != null && t.errorCode in 400..499) {
+                return false
+            }
+        }
+
+        val msg = t.message ?: ""
+        val lower = msg.lowercase()
+        if (lower.contains("network connection failed") ||
+            lower.contains("timed out") ||
+            lower.contains("timeout") ||
+            lower.contains("connection reset") ||
+            lower.contains("broken pipe") ||
+            lower.contains("unexpected end of stream") ||
+            lower.contains("failed to connect") ||
+            lower.contains("software caused connection abort") ||
+            lower.contains("no route to host") ||
+            lower.contains("ssl handshake") ||
+            lower.contains("unable to resolve host") ||
+            lower.contains("connection closed") ||
+            lower.contains("connection abort")) {
+            return true
+        }
+
+        val cause = t.cause
+        if (cause != null && cause != t) {
+            return isTransientNetworkError(cause)
+        }
+        return false
     }
 }

@@ -37,6 +37,27 @@ object ChecksumUtil {
     }
 
     /**
+     * Computes the SHA-256 checksum of a specific byte range within a file
+     * without creating intermediate files or loading the entire range into memory.
+     */
+    fun computeSha256Range(file: File, offset: Long, length: Long): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        java.io.RandomAccessFile(file, "r").use { raf ->
+            raf.seek(offset)
+            val buffer = ByteArray(64 * 1024)
+            var remaining = length
+            while (remaining > 0) {
+                val toRead = minOf(buffer.size.toLong(), remaining).toInt()
+                val read = raf.read(buffer, 0, toRead)
+                if (read == -1) break
+                digest.update(buffer, 0, read)
+                remaining -= read
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
      * Computes the SHA-256 checksum from an InputStream up to [length] bytes.
      */
     fun computeSha256(input: InputStream, length: Long): String {

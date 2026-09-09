@@ -123,19 +123,30 @@ class TransferService : Service() {
                         title = title,
                         progress = percent,
                         maxProgress = 100,
-                        content = content
+                        content = content,
+                        isOngoing = true
                     )
                     notificationManager.notify(NOTIFICATION_ID, updatedNotification)
                 } else {
-                    // Check if anything is paused
+                    val failedTransfer = transfersMap.values.firstOrNull { it.status == com.example.data.local.entity.FileStatus.FAILED }
                     val hasPaused = transfersMap.values.any { it.status == com.example.data.local.entity.FileStatus.PAUSED }
                     releaseWakeLock()
-                    if (hasPaused) {
+                    if (failedTransfer != null) {
+                        val failedNotification = buildNotification(
+                            title = "Transfer Failed: ${failedTransfer.fileName}",
+                            progress = 0,
+                            maxProgress = 0,
+                            content = failedTransfer.errorMessage ?: "Tap to view and retry transfer",
+                            isOngoing = false
+                        )
+                        notificationManager.notify(NOTIFICATION_ID, failedNotification)
+                    } else if (hasPaused) {
                         val pausedNotification = buildNotification(
                             title = "Transfers Paused",
                             progress = 0,
                             maxProgress = 0,
-                            content = "Tap to view and resume pending transfers"
+                            content = "Tap to view and resume pending transfers",
+                            isOngoing = false
                         )
                         notificationManager.notify(NOTIFICATION_ID, pausedNotification)
                     } else {
@@ -158,7 +169,8 @@ class TransferService : Service() {
         title: String,
         progress: Int,
         maxProgress: Int,
-        content: String
+        content: String,
+        isOngoing: Boolean = true
     ): Notification {
         val launchIntent = Intent(this, MainActivity::class.java).apply {
             action = ACTION_OPEN_TRANSFERS
@@ -176,7 +188,7 @@ class TransferService : Service() {
             .setContentTitle(title)
             .setContentText(content)
             .setSmallIcon(android.R.drawable.stat_sys_upload)
-            .setOngoing(true)
+            .setOngoing(isOngoing)
             .setOnlyAlertOnce(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -203,11 +215,7 @@ class TransferService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val msg = intent?.getStringExtra(EXTRA_MESSAGE)
-        if (!msg.isNullOrBlank()) {
-            val notification = buildNotification("TeleVault Transfer Service", 0, 0, msg)
-            notificationManager.notify(NOTIFICATION_ID, notification)
-        }
+        // State updates are driven reactively through observeTransfers()
         return START_NOT_STICKY
     }
 

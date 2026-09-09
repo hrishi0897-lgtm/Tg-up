@@ -3,6 +3,7 @@ package com.example.ui.viewmodel
 import android.app.Application
 import android.net.Uri
 import android.provider.OpenableColumns
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
@@ -207,9 +208,21 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         val result = mutableListOf<TransferProgress>()
         val seenFileIds = mutableSetOf<String>()
 
-        // 1. In-memory transfers (live byte rates, chunk status) take precedence
+        // 1. In-memory transfers (live byte rates, chunk status)
         for (item in inMemoryMap.values) {
-            result.add(item)
+            val dbFile = dbNonCompletedFiles.find { it.id == item.fileId }
+            // If Room database reports FAILED or PAUSED, the database status
+            // strictly takes precedence over any stale in-memory UPLOADING/DOWNLOADING state!
+            val reconciledItem = if (dbFile != null && (dbFile.status == FileStatus.FAILED || dbFile.status == FileStatus.PAUSED)) {
+                item.copy(
+                    status = dbFile.status,
+                    errorMessage = dbFile.errorMessage ?: item.errorMessage,
+                    speedBytesPerSec = 0L
+                )
+            } else {
+                item
+            }
+            result.add(reconciledItem)
             seenFileIds.add(item.fileId)
         }
 
@@ -542,22 +555,43 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun retryTransfer(fileId: String) {
         viewModelScope.launch {
-            val file = db.fileDao().getById(fileId) ?: return@launch
-            val chunks = db.chunkDao().getChunksForFile(fileId)
-            val stagingFile = file.localPath?.let { java.io.File(it) }
-            val hasStaging = stagingFile != null && stagingFile.exists()
+            try {
+                val file = db.fileDao().getById(fileId) ?: run {
+                    Log.e("TeleVaultViewModel", "retryTransfer: file $fileId not found in database")
+                    return@launch
+                }
+                Log.i("TeleVaultViewModel", "retryTransfer: Retrying transfer for ${file.name} (id=$fileId), current status=${file.status}")
 
-            // If file has staging file available and has oversized chunks (>18MB) or un-uploaded chunks or failed status,
-            // force a completely fresh split-and-upload attempt with clean chunk files on disk and safe chunk sizes.
-            val hasOversizedChunks = chunks.any { it.size > TransferManager.CHUNK_SIZE_BYTES }
-            val needsUpload = chunks.any { !it.isUploaded }
+                val chunks = db.chunkDao().getChunksForFile(fileId)
+                val stagingFile = file.localPath?.let { java.io.File(it) } ?: java.io.File(getApplication<Application>().cacheDir, "upload_staging/$fileId.tmp")
+                val hasStaging = stagingFile.exists() && stagingFile.length() > 0L
 
-            if (hasStaging && (hasOversizedChunks || needsUpload || file.status == FileStatus.FAILED)) {
-                transferManager.forceFreshUpload(fileId)
-            } else if (needsUpload) {
-                transferManager.startUpload(fileId)
-            } else {
-                transferManager.startDownload(fileId)
+                val hasOversizedChunks = chunks.any { it.size > TransferManager.CHUNK_SIZE_BYTES }
+                val hasUnuploadedChunks = chunks.isEmpty() || chunks.any { !it.isUploaded }
+
+                if (hasStaging && hasOversizedChunks) {
+                    // Only re-split if the chunks themselves were improperly sized (>18MB)
+                    Log.i("TeleVaultViewModel", "retryTransfer: File has oversized chunks, forcing clean re-split and upload")
+                    transferManager.forceFreshUpload(fileId)
+                } else if (hasStaging && (hasUnuploadedChunks || file.status == FileStatus.FAILED || file.status == FileStatus.PAUSED)) {
+                    // RESUME upload from the first uncompleted chunk!
+                    val uploadedCount = chunks.count { it.isUploaded }
+                    Log.i("TeleVaultViewModel", "retryTransfer: Resuming upload from chunk ${uploadedCount + 1}/${file.totalChunks}")
+                    transferManager.startUpload(fileId)
+                } else if (!hasStaging && chunks.isNotEmpty() && chunks.all { it.telegramFileId != null }) {
+                    // Chunks exist in Telegram, no local staging file -> start/resume download
+                    Log.i("TeleVaultViewModel", "retryTransfer: Retrying download for ${file.name}")
+                    transferManager.startDownload(fileId)
+                } else if (hasStaging) {
+                    transferManager.startUpload(fileId)
+                } else {
+                    transferManager.startDownload(fileId)
+                }
+            } catch (e: Throwable) {
+                Log.e("TeleVaultViewModel", "CRASH PREVENTED: Error during retryTransfer for fileId=$fileId", e)
+                _uiState.update {
+                    it.copy(transferErrorMessage = "Retry failed: ${e.message ?: e::class.java.simpleName}")
+                }
             }
         }
     }
