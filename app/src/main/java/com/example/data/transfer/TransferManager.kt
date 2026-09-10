@@ -1350,6 +1350,19 @@ class TransferManager private constructor(
     }
 
     /**
+     * Cancels all active and queued transfers immediately.
+     */
+    fun cancelAllTransfers() {
+        activeJobs.forEach { (fileId, job) ->
+            pauseRequestedFiles.remove(fileId)
+            job.cancel()
+        }
+        activeJobs.clear()
+        _transfers.value = emptyMap()
+        _recentlyCompleted.value = emptyList()
+    }
+
+    /**
      * Deletes a file both locally and remotely from Telegram chat.
      */
     suspend fun deleteFile(fileId: String): Result<Unit> {

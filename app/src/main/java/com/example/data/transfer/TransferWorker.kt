@@ -60,8 +60,10 @@ class TransferWorker(
 
         fun scheduleNetworkResume(context: Context) {
             try {
+                val creds = com.example.data.local.EncryptedCredentialsManager(context)
+                val requiredNetwork = if (creds.isWifiOnly()) NetworkType.UNMETERED else NetworkType.CONNECTED
                 val constraints = Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .setRequiredNetworkType(requiredNetwork)
                     .build()
 
                 val request = OneTimeWorkRequestBuilder<TransferWorker>()

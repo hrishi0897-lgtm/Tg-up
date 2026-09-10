@@ -132,13 +132,7 @@ import com.example.domain.ChecksumUtil
 import com.example.domain.model.BreadcrumbItem
 import com.example.domain.model.StorageStats
 import com.example.domain.model.TransferProgress
-import com.example.ui.theme.AccentTeal
-import com.example.ui.theme.AccentViolet
-import com.example.ui.theme.AppBackgroundOuter
-import com.example.ui.theme.AppSurface
 import com.example.ui.theme.BodySansFont
-import com.example.ui.theme.BorderDivider
-import com.example.ui.theme.BorderSubtle
 import com.example.ui.theme.BrandMarkGradient
 import com.example.ui.theme.DisplaySerifFont
 import com.example.ui.theme.EmptyHeadlineStyle
@@ -152,16 +146,7 @@ import com.example.ui.theme.FileColorVideo
 import com.example.ui.theme.MonoStatValueLarge
 import com.example.ui.theme.MonoStatValueMedium
 import com.example.ui.theme.NumericMonoFont
-import com.example.ui.theme.StatusError
-import com.example.ui.theme.StatusMint
-import com.example.ui.theme.StatusMintBg
-import com.example.ui.theme.StatusMintBorder
-import com.example.ui.theme.SurfaceCard
-import com.example.ui.theme.SurfaceCardElevated
 import com.example.ui.theme.TealFabGradient
-import com.example.ui.theme.TextDimmed
-import com.example.ui.theme.TextFaint
-import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.VioletButtonGradient
 import com.example.ui.theme.WordmarkTextStyle
 import com.example.ui.viewmodel.SortBy
@@ -236,66 +221,72 @@ fun HomeScreen(
                     ),
                     exit = fadeOut(animationSpec = tween(100)) + shrinkVertically(animationSpec = tween(150))
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.surface,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
+                        shadowElevation = 8.dp,
+                        modifier = Modifier.padding(bottom = 6.dp)
                     ) {
-                        // New Folder Action
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(colors.surfaceHi)
-                                .border(1.dp, colors.line, RoundedCornerShape(14.dp))
-                                .clickable {
-                                    showFabMenu = false
-                                    onCreateFolderClick()
-                                }
-                                .padding(horizontal = 16.dp, vertical = 10.dp)
+                        Column(
+                            modifier = Modifier.padding(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.CreateNewFolder,
-                                contentDescription = null,
-                                tint = colors.teal,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "New Folder",
-                                color = colors.text,
-                                fontSize = 13.sp,
-                                fontFamily = BodySansFont,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                            // New Folder Action
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(colors.surfaceHi)
+                                    .clickable {
+                                        showFabMenu = false
+                                        onCreateFolderClick()
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CreateNewFolder,
+                                    contentDescription = null,
+                                    tint = colors.teal,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "New Folder",
+                                    color = colors.text,
+                                    fontSize = 13.sp,
+                                    fontFamily = BodySansFont,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
 
-                        // Upload File Action
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(colors.surfaceHi)
-                                .border(1.dp, colors.line, RoundedCornerShape(14.dp))
-                                .clickable {
-                                    showFabMenu = false
-                                    onUploadFileClick()
-                                }
-                                .padding(horizontal = 16.dp, vertical = 10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.UploadFile,
-                                contentDescription = null,
-                                tint = colors.teal,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                text = "Upload File",
-                                color = colors.text,
-                                fontSize = 13.sp,
-                                fontFamily = BodySansFont,
-                                fontWeight = FontWeight.SemiBold
-                            )
+                            // Upload File Action
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(colors.surfaceHi)
+                                    .clickable {
+                                        showFabMenu = false
+                                        onUploadFileClick()
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.UploadFile,
+                                    contentDescription = null,
+                                    tint = colors.teal,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Upload File",
+                                    color = colors.text,
+                                    fontSize = 13.sp,
+                                    fontFamily = BodySansFont,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                 }
@@ -383,22 +374,22 @@ fun HomeScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0x22FF5252))
-                            .border(1.dp, Color(0x55FF5252), RoundedCornerShape(12.dp))
+                            .background(colors.danger.copy(alpha = 0.15f))
+                            .border(1.dp, colors.danger.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.Error,
                             contentDescription = "Transfer Error",
-                            tint = StatusError,
+                            tint = colors.danger,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Transfer Failed",
-                                color = StatusError,
+                                color = colors.danger,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = BodySansFont
@@ -406,7 +397,7 @@ fun HomeScreen(
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = transferErrorMessage,
-                                color = TextPrimary,
+                                color = colors.text,
                                 fontSize = 12.sp,
                                 fontFamily = BodySansFont,
                                 maxLines = 3,
@@ -420,14 +411,14 @@ fun HomeScreen(
                         ) {
                             Text(
                                 "View",
-                                color = AccentViolet,
+                                color = colors.violet,
                                 fontSize = 12.sp,
                                 fontFamily = BodySansFont,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                         IconButton(onClick = onDismissTransferError, modifier = Modifier.size(24.dp)) {
-                            Text("✕", color = TextDimmed, fontSize = 12.sp)
+                            Text("✕", color = colors.textDim, fontSize = 12.sp)
                         }
                     }
                     Spacer(modifier = Modifier.height(12.dp))
@@ -441,9 +432,9 @@ fun HomeScreen(
                             resyncMessage.contains("failed", ignoreCase = true) ||
                             resyncMessage.contains("No Vault Index", ignoreCase = true)
 
-                    val bannerBg = if (isError) Color(0x29FF5252) else Color(0x1A8C7CFF)
-                    val bannerBorder = if (isError) Color(0x80FF5252) else Color(0x408C7CFF)
-                    val bannerTint = if (isError) Color(0xFFFF5252) else AccentViolet
+                    val bannerBg = if (isError) colors.danger.copy(alpha = 0.15f) else colors.violet.copy(alpha = 0.12f)
+                    val bannerBorder = if (isError) colors.danger.copy(alpha = 0.4f) else colors.violet.copy(alpha = 0.35f)
+                    val bannerTint = if (isError) colors.danger else colors.violet
                     val bannerIcon = if (isError) Icons.Default.Warning else Icons.Default.CloudDone
 
                     Row(
@@ -465,7 +456,7 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = resyncMessage,
-                            color = TextPrimary,
+                            color = colors.text,
                             fontSize = 12.sp,
                             fontFamily = BodySansFont,
                             modifier = Modifier.weight(1f)
@@ -476,7 +467,7 @@ fun HomeScreen(
                                 .size(24.dp)
                                 .testTag("dismiss_sync_banner")
                         ) {
-                            Text("✕", color = TextDimmed, fontSize = 12.sp)
+                            Text("✕", color = colors.textDim, fontSize = 12.sp)
                         }
                     }
                     Spacer(modifier = Modifier.height(12.dp))
@@ -645,7 +636,7 @@ fun HomeScreen(
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = BodySansFont,
-                                color = TextDimmed
+                                color = colors.textDim
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                         }
@@ -684,13 +675,13 @@ fun HomeScreen(
                             fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = BodySansFont,
-                            color = TextPrimary
+                            color = colors.text
                         )
                         Text(
                             text = "${files.size} items",
                             fontSize = 12.5.sp,
                             fontFamily = NumericMonoFont,
-                            color = TextFaint
+                            color = colors.textFaint
                         )
                     }
                 }
@@ -769,7 +760,7 @@ private fun HomeTopBar(
                     .size(44.dp)
                     .drawBehind {
                         drawRoundRect(
-                            color = Color(0x598C7CFF),
+                            color = colors.violet.copy(alpha = 0.35f),
                             cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx()),
                             topLeft = Offset(0f, 4.dp.toPx()),
                             size = Size(size.width, size.height)
@@ -1058,14 +1049,15 @@ private fun VaultBottomNav(
     activeTransferCount: Int,
     onTransfersSelected: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     Surface(
-        color = Color(0xEB0B0D14),
+        color = colors.navBg,
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .border(
                 width = 1.dp,
-                color = BorderDivider,
+                color = colors.line,
                 shape = RoundedCornerShape(0.dp)
             )
     ) {
@@ -1089,7 +1081,7 @@ private fun VaultBottomNav(
                 Icon(
                     imageVector = Icons.Default.Folder,
                     contentDescription = "Vault",
-                    tint = TextPrimary,
+                    tint = colors.text,
                     modifier = Modifier.size(20.dp)
                 )
                 Text(
@@ -1097,7 +1089,7 @@ private fun VaultBottomNav(
                     fontSize = 11.5.sp,
                     fontFamily = BodySansFont,
                     fontWeight = FontWeight.Medium,
-                    color = TextPrimary
+                    color = colors.text
                 )
                 // Active Underline Indicator in Violet
                 Box(
@@ -1105,7 +1097,7 @@ private fun VaultBottomNav(
                         .width(18.dp)
                         .height(2.5.dp)
                         .clip(RoundedCornerShape(2.dp))
-                        .background(AccentViolet)
+                        .background(colors.violet)
                 )
             }
 
@@ -1123,8 +1115,8 @@ private fun VaultBottomNav(
                     BadgedBox(
                         badge = {
                             Badge(
-                                containerColor = AccentViolet,
-                                contentColor = AppBackgroundOuter
+                                containerColor = colors.violet,
+                                contentColor = Color.White
                             ) {
                                 Text(
                                     text = activeTransferCount.toString(),
@@ -1138,7 +1130,7 @@ private fun VaultBottomNav(
                         Icon(
                             imageVector = Icons.Default.Sync,
                             contentDescription = "Transfers",
-                            tint = TextFaint,
+                            tint = colors.textFaint,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -1146,7 +1138,7 @@ private fun VaultBottomNav(
                     Icon(
                         imageVector = Icons.Default.Sync,
                         contentDescription = "Transfers",
-                        tint = TextFaint,
+                        tint = colors.textFaint,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -1155,7 +1147,7 @@ private fun VaultBottomNav(
                     fontSize = 11.5.sp,
                     fontFamily = BodySansFont,
                     fontWeight = FontWeight.Normal,
-                    color = TextFaint
+                    color = colors.textFaint
                 )
                 Spacer(modifier = Modifier.height(2.5.dp))
             }
@@ -1172,6 +1164,7 @@ private fun BreadcrumbBar(
     breadcrumbs: List<BreadcrumbItem>,
     onBreadcrumbClick: (Int) -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     val scrollState = rememberScrollState()
     Row(
         modifier = Modifier
@@ -1186,7 +1179,7 @@ private fun BreadcrumbBar(
                 fontSize = 13.sp,
                 fontFamily = BodySansFont,
                 fontWeight = if (isLast) FontWeight.SemiBold else FontWeight.Normal,
-                color = if (isLast) TextPrimary else TextDimmed,
+                color = if (isLast) colors.text else colors.textDim,
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
                     .clickable { onBreadcrumbClick(index) }
@@ -1196,7 +1189,7 @@ private fun BreadcrumbBar(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                     contentDescription = null,
-                    tint = TextFaint,
+                    tint = colors.textFaint,
                     modifier = Modifier.size(10.dp)
                 )
             }
@@ -1211,14 +1204,15 @@ private fun FolderItemRow(
     onRename: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     var showMenu by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(SurfaceCard)
-            .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.line, RoundedCornerShape(14.dp))
             .pressScale(0.98f)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -1228,8 +1222,8 @@ private fun FolderItemRow(
             modifier = Modifier
                 .size(42.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(SurfaceCardElevated)
-                .border(1.dp, BorderSubtle, RoundedCornerShape(10.dp)),
+                .background(colors.surfaceHi)
+                .border(1.dp, colors.line, RoundedCornerShape(10.dp)),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -1246,7 +1240,7 @@ private fun FolderItemRow(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = BodySansFont,
-                color = TextPrimary,
+                color = colors.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1255,7 +1249,7 @@ private fun FolderItemRow(
                 text = "Folder · ${ChecksumUtil.formatDate(folder.createdDate)}",
                 fontSize = 11.sp,
                 fontFamily = NumericMonoFont,
-                color = TextFaint
+                color = colors.textFaint
             )
         }
 
@@ -1269,7 +1263,7 @@ private fun FolderItemRow(
                 Icon(
                     imageVector = Icons.Default.MoreVert,
                     contentDescription = "Folder Options",
-                    tint = TextDimmed,
+                    tint = colors.textDim,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -1278,18 +1272,18 @@ private fun FolderItemRow(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
                 modifier = Modifier
-                    .background(SurfaceCardElevated)
-                    .border(1.dp, BorderDivider, RoundedCornerShape(12.dp))
+                    .background(colors.surfaceHi)
+                    .border(1.dp, colors.line, RoundedCornerShape(12.dp))
             ) {
                 DropdownMenuItem(
-                    text = { Text("Rename Folder", color = TextPrimary, fontSize = 13.sp, fontFamily = BodySansFont) },
+                    text = { Text("Rename Folder", color = colors.text, fontSize = 13.sp, fontFamily = BodySansFont) },
                     onClick = {
                         showMenu = false
                         onRename()
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Delete Folder", color = StatusError, fontSize = 13.sp, fontFamily = BodySansFont, fontWeight = FontWeight.SemiBold) },
+                    text = { Text("Delete Folder", color = colors.danger, fontSize = 13.sp, fontFamily = BodySansFont, fontWeight = FontWeight.SemiBold) },
                     onClick = {
                         showMenu = false
                         onDelete()
@@ -1305,12 +1299,13 @@ private fun FileListItem(
     file: FileEntity,
     onClick: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(SurfaceCard)
-            .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.line, RoundedCornerShape(14.dp))
             .pressScale(0.98f)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -1324,7 +1319,7 @@ private fun FileListItem(
                 fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = BodySansFont,
-                color = TextPrimary,
+                color = colors.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -1334,18 +1329,18 @@ private fun FileListItem(
                     text = ChecksumUtil.formatFileSize(file.size),
                     fontSize = 11.sp,
                     fontFamily = NumericMonoFont,
-                    color = TextDimmed
+                    color = colors.textDim
                 )
                 Text(
                     text = " · ",
                     fontSize = 11.sp,
-                    color = TextFaint
+                    color = colors.textFaint
                 )
                 Text(
                     text = ChecksumUtil.formatDate(file.uploadDate),
                     fontSize = 11.sp,
                     fontFamily = NumericMonoFont,
-                    color = TextFaint
+                    color = colors.textFaint
                 )
             }
         }
@@ -1360,13 +1355,14 @@ private fun FileGridCard(
     file: FileEntity,
     onClick: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(140.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(SurfaceCard)
-            .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
+            .background(colors.surface)
+            .border(1.dp, colors.line, RoundedCornerShape(14.dp))
             .pressScale(0.98f)
             .clickable(onClick = onClick)
             .padding(14.dp)
@@ -1390,7 +1386,7 @@ private fun FileGridCard(
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = BodySansFont,
-                    color = TextPrimary,
+                    color = colors.text,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1399,7 +1395,7 @@ private fun FileGridCard(
                     text = ChecksumUtil.formatFileSize(file.size),
                     fontSize = 10.5.sp,
                     fontFamily = NumericMonoFont,
-                    color = TextDimmed
+                    color = colors.textDim
                 )
             }
         }
@@ -1438,12 +1434,13 @@ fun FileIcon(mimeType: String, size: androidx.compose.ui.unit.Dp) {
 
 @Composable
 private fun FileStatusIndicator(status: FileStatus) {
+    val colors = LocalTeleVaultColors.current
     when (status) {
         FileStatus.COMPLETED -> {
             Icon(
                 imageVector = Icons.Default.CheckCircle,
                 contentDescription = "Stored",
-                tint = StatusMint,
+                tint = colors.mint,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1451,7 +1448,7 @@ private fun FileStatusIndicator(status: FileStatus) {
             Icon(
                 imageVector = Icons.Default.Sync,
                 contentDescription = "Transferring",
-                tint = AccentViolet,
+                tint = colors.violet,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1459,7 +1456,7 @@ private fun FileStatusIndicator(status: FileStatus) {
             Icon(
                 imageVector = Icons.Default.Error,
                 contentDescription = "Failed",
-                tint = StatusError,
+                tint = colors.danger,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1467,7 +1464,7 @@ private fun FileStatusIndicator(status: FileStatus) {
             Icon(
                 imageVector = Icons.Default.Warning,
                 contentDescription = "Paused",
-                tint = Color(0xFFFFCA28),
+                tint = colors.amber,
                 modifier = Modifier.size(16.dp)
             )
         }
@@ -1475,7 +1472,7 @@ private fun FileStatusIndicator(status: FileStatus) {
             Icon(
                 imageVector = Icons.Default.Sync,
                 contentDescription = "Pending",
-                tint = TextFaint,
+                tint = colors.textFaint,
                 modifier = Modifier.size(16.dp)
             )
         }

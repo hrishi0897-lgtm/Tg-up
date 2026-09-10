@@ -26,6 +26,7 @@ data class TeleVaultColors(
     val teal: Color = Color(0xFF35E0C2),
     val amber: Color = Color(0xFFF2B84B),
     val mint: Color = Color(0xFF4ADE9E),
+    val danger: Color = Color(0xFFFF5252),
     val isDark: Boolean
 )
 

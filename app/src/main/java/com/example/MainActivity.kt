@@ -262,12 +262,16 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         chunkSizeMb = uiState.chunkSizeMb,
                         isWifiOnly = uiState.isWifiOnly,
                         isDarkTheme = isDarkTheme,
+                        testTransferRunning = uiState.testTransferRunning,
+                        testTransferStatus = uiState.testTransferStatus,
+                        testTransferSuccess = uiState.testTransferSuccess,
                         onToggleTheme = { viewModel.toggleTheme() },
                         onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
                         onWifiOnlyChange = { viewModel.setWifiOnly(it) },
                         onDisconnect = { viewModel.disconnect() },
                         onDismiss = { viewModel.navigateToVaultScreen() },
-                        onStartTestTransfer = { viewModel.startSyntheticTestTransfer() }
+                        onStartTestTransfer = { viewModel.startSyntheticTestTransfer() },
+                        onDismissTestStatus = { viewModel.resetTestTransferStatus() }
                     )
                 } else {
                     HomeScreen(
@@ -366,12 +370,18 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     chatId = chatId,
                     chunkSizeMb = uiState.chunkSizeMb,
                     isWifiOnly = uiState.isWifiOnly,
+                    isDarkTheme = isDarkTheme,
+                    testTransferRunning = uiState.testTransferRunning,
+                    testTransferStatus = uiState.testTransferStatus,
+                    testTransferSuccess = uiState.testTransferSuccess,
+                    onToggleTheme = { viewModel.toggleTheme() },
                     onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
                     onWifiOnlyChange = { viewModel.setWifiOnly(it) },
                     onResyncClick = { viewModel.resyncFromTelegram() },
                     onDisconnect = { viewModel.disconnect() },
                     onDismiss = { viewModel.setShowSettingsSheet(false) },
-                    onStartTestTransfer = { viewModel.startSyntheticTestTransfer() }
+                    onStartTestTransfer = { viewModel.startSyntheticTestTransfer() },
+                    onDismissTestStatus = { viewModel.resetTestTransferStatus() }
                 )
             }
 

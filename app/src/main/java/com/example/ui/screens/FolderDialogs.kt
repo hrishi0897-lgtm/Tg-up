@@ -375,13 +375,13 @@ fun LargeFileConfirmationDialog(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(Color(0x26FFB300)),
+                    .background(colors.amber.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Warning,
                     contentDescription = null,
-                    tint = Color(0xFFFFB300),
+                    tint = colors.amber,
                     modifier = Modifier.size(24.dp)
                 )
             }

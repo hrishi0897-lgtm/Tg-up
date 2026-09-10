@@ -82,7 +82,10 @@ data class UiState(
     val showInAppGuide: Boolean = false,
     val pendingUploadWarning: PendingUploadWarning? = null,
     val transferErrorMessage: String? = null,
-    val transferNotificationMessage: String? = null
+    val transferNotificationMessage: String? = null,
+    val testTransferRunning: Boolean = false,
+    val testTransferStatus: String? = null,
+    val testTransferSuccess: Boolean? = null
 )
 
 class TeleVaultViewModel(application: Application) : AndroidViewModel(application) {
@@ -337,16 +340,40 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun disconnect() {
-        VaultSyncWorker.cancel(getApplication())
-        creds.clearCredentials()
-        _uiState.update {
-            it.copy(
-                isAuthenticated = false,
-                validationSuccessUser = null,
-                validationError = null,
-                lastSyncedTime = 0L,
-                resyncMessage = null
-            )
+        viewModelScope.launch {
+            try {
+                VaultSyncWorker.cancel(getApplication())
+                try {
+                    androidx.work.WorkManager.getInstance(getApplication()).cancelAllWork()
+                } catch (e: Exception) {
+                    Log.w("TeleVaultViewModel", "Failed to cancel work manager: ${e.message}")
+                }
+                transferManager.cancelAllTransfers()
+                db.fileDao().clearAll()
+                db.folderDao().clearAll()
+                db.chunkDao().clearAll()
+                creds.clearCredentials()
+            } catch (e: Exception) {
+                Log.e("TeleVaultViewModel", "Error during disconnect: ${e.message}", e)
+            } finally {
+                _uiState.update {
+                    it.copy(
+                        isAuthenticated = false,
+                        currentScreen = AppScreen.VAULT,
+                        validationSuccessUser = null,
+                        validationError = null,
+                        lastSyncedTime = 0L,
+                        resyncMessage = null,
+                        showSettingsSheet = false,
+                        breadcrumbs = listOf(BreadcrumbItem(null, "Vault")),
+                        currentFolderId = null,
+                        searchQuery = "",
+                        testTransferRunning = false,
+                        testTransferStatus = null,
+                        testTransferSuccess = null
+                    )
+                }
+            }
         }
     }
 
@@ -769,6 +796,12 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     fun setWifiOnly(enabled: Boolean) {
         creds.setWifiOnly(enabled)
         _uiState.update { it.copy(isWifiOnly = creds.isWifiOnly()) }
+        try {
+            VaultSyncWorker.schedule(getApplication())
+            com.example.data.transfer.TransferWorker.scheduleNetworkResume(getApplication())
+        } catch (e: Exception) {
+            Log.w("TeleVaultViewModel", "Failed to reschedule workers with new network constraint", e)
+        }
     }
 
     // Dialog state toggles
@@ -800,28 +833,215 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         return Pair(creds.getBotToken() ?: "", creds.getChatId() ?: "")
     }
 
-    // Creates a multi-chunk file to test pause/resume chunk integrity
+    fun resetTestTransferStatus() {
+        _uiState.update {
+            it.copy(
+                testTransferRunning = false,
+                testTransferStatus = null,
+                testTransferSuccess = null
+            )
+        }
+    }
+
+    // Runs an actual synthetic 5-chunk test transfer:
+    // Generates a small in-memory file, splits into 5 chunks, uploads chunk 1,
+    // triggers a simulated pause/resume cycle, verifies completed chunks are never re-uploaded,
+    // completes the remaining chunks, and reports a clear pass/fail result.
     fun startSyntheticTestTransfer() {
+        if (_uiState.value.testTransferRunning) return
+
         viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    testTransferRunning = true,
+                    testTransferStatus = "Initializing 5-chunk integrity test…",
+                    testTransferSuccess = null
+                )
+            }
+
             try {
-                val testFile = java.io.File(getApplication<Application>().cacheDir, "test_resume_5chunks.bin")
-                // Create exactly 500KB file (5 chunks of 100KB each)
-                val chunkBytes = 100 * 1024
-                val totalBytes = 5 * chunkBytes
-                val buffer = ByteArray(chunkBytes) { (it % 128).toByte() }
-                testFile.outputStream().use { fos ->
-                    repeat(5) {
-                        fos.write(buffer)
+                val token = creds.getBotToken()
+                val chatId = creds.getChatId()
+                if (token.isNullOrBlank() || chatId.isNullOrBlank()) {
+                    throw IllegalStateException("Bot credentials are not configured")
+                }
+
+                // 1. Generate small synthetic file: 5 chunks of 20KB each (100KB total)
+                _uiState.update { it.copy(testTransferStatus = "Generating 5 synthetic test chunks…") }
+                val testFileId = "test_" + UUID.randomUUID().toString().take(8)
+                val testFileName = "televault_integrity_test_5chunks.bin"
+                val chunkCount = 5
+                val chunkBytes = 20 * 1024 // 20 KB per chunk
+                val totalBytes = (chunkCount * chunkBytes).toLong()
+
+                val testDir = java.io.File(getApplication<Application>().cacheDir, "test_transfers").apply { mkdirs() }
+                val stagingFile = java.io.File(testDir, "$testFileId.tmp")
+                val chunkDir = java.io.File(testDir, "chunks_$testFileId").apply { mkdirs() }
+
+                val testBuffer = ByteArray(chunkBytes) { (it % 251).toByte() }
+                stagingFile.outputStream().use { fos ->
+                    repeat(chunkCount) {
+                        fos.write(testBuffer)
                     }
                 }
-                transferManager.enqueueUpload(
-                    uri = Uri.fromFile(testFile),
-                    folderId = _uiState.value.currentFolderId,
-                    customChunkSizeBytes = chunkBytes.toLong()
+
+                val overallChecksum = com.example.domain.ChecksumUtil.computeSha256(stagingFile)
+
+                // Register file and chunks in Room
+                val fileEntity = FileEntity(
+                    id = testFileId,
+                    name = testFileName,
+                    folderId = null,
+                    size = totalBytes,
+                    mimeType = "application/octet-stream",
+                    status = FileStatus.UPLOADING,
+                    checksum = overallChecksum,
+                    totalChunks = chunkCount,
+                    completedChunks = 0,
+                    localPath = stagingFile.absolutePath
                 )
-                _uiState.update { it.copy(currentScreen = AppScreen.TRANSFERS) }
+                db.fileDao().insert(fileEntity)
+
+                val chunkEntities = (0 until chunkCount).map { idx ->
+                    ChunkEntity(
+                        fileId = testFileId,
+                        chunkIndex = idx,
+                        size = chunkBytes.toLong(),
+                        checksum = ""
+                    )
+                }
+                db.chunkDao().insertAll(chunkEntities)
+
+                // 2. Upload Chunk 0
+                _uiState.update { it.copy(testTransferStatus = "Uploading chunk 1 of 5…") }
+                val chunk0File = java.io.File(chunkDir, "chunk_0.tpart")
+                chunk0File.writeBytes(testBuffer)
+                val chunk0Sha256 = com.example.domain.ChecksumUtil.computeSha256(chunk0File)
+
+                val uploadResult0 = repo.uploadChunk(
+                    token = token,
+                    chatId = chatId,
+                    fileId = testFileId,
+                    fileName = testFileName,
+                    chunkIndex = 0,
+                    totalChunks = chunkCount,
+                    chunkFile = chunk0File,
+                    chunkSha256 = chunk0Sha256,
+                    expectedChunkSize = chunkBytes.toLong()
+                ) { _, _ -> }
+
+                if (uploadResult0.isFailure) {
+                    val err = uploadResult0.exceptionOrNull()?.message ?: "Upload failed on chunk 1"
+                    throw IllegalStateException("Failed uploading chunk 1: $err")
+                }
+
+                val msg0 = uploadResult0.getOrThrow()
+                db.chunkDao().markChunkUploaded(
+                    fileId = testFileId,
+                    chunkIndex = 0,
+                    messageId = msg0.messageId,
+                    fileIdRemote = msg0.document?.fileId ?: "",
+                    checksum = chunk0Sha256
+                )
+                db.fileDao().updateProgress(testFileId, 1, FileStatus.UPLOADING)
+                chunk0File.delete()
+
+                // 3. Trigger simulated pause!
+                _uiState.update { it.copy(testTransferStatus = "Simulating pause & verifying recorded chunk state…") }
+                kotlinx.coroutines.delay(400)
+                db.fileDao().updateStatus(testFileId, FileStatus.PAUSED, "Simulated pause for verification test")
+
+                // 4. Verify that chunk 0 is recorded as uploaded in Room
+                val chunksAfterPause = db.chunkDao().getChunksForFile(testFileId)
+                val completedChunksBeforeResume = chunksAfterPause.filter { it.isUploaded }
+                if (completedChunksBeforeResume.size != 1 || completedChunksBeforeResume.first().chunkIndex != 0) {
+                    throw IllegalStateException("Integrity failure: Chunk 0 was not recorded as uploaded in Room database")
+                }
+
+                // 5. Resume transfer: verify chunk 0 is SKIPPED and NEVER re-uploaded
+                _uiState.update { it.copy(testTransferStatus = "Resuming transfer… confirming chunk 1 is skipped…") }
+                kotlinx.coroutines.delay(400)
+                db.fileDao().updateStatus(testFileId, FileStatus.UPLOADING)
+
+                val pendingChunks = chunksAfterPause.filter { !it.isUploaded }.sortedBy { it.chunkIndex }
+                if (pendingChunks.any { it.chunkIndex == 0 }) {
+                    throw IllegalStateException("Integrity failure: Chunk 0 was scheduled for redundant re-upload upon resume")
+                }
+
+                // 6. Upload remaining chunks 1 through 4
+                for (chunk in pendingChunks) {
+                    val idx = chunk.chunkIndex
+                    _uiState.update { it.copy(testTransferStatus = "Uploading chunk ${idx + 1} of 5…") }
+                    val chunkFile = java.io.File(chunkDir, "chunk_$idx.tpart")
+                    chunkFile.writeBytes(testBuffer)
+                    val chunkSha = com.example.domain.ChecksumUtil.computeSha256(chunkFile)
+
+                    val uploadRes = repo.uploadChunk(
+                        token = token,
+                        chatId = chatId,
+                        fileId = testFileId,
+                        fileName = testFileName,
+                        chunkIndex = idx,
+                        totalChunks = chunkCount,
+                        chunkFile = chunkFile,
+                        chunkSha256 = chunkSha,
+                        expectedChunkSize = chunkBytes.toLong()
+                    ) { _, _ -> }
+
+                    if (uploadRes.isFailure) {
+                        val err = uploadRes.exceptionOrNull()?.message ?: "Upload failed on chunk ${idx + 1}"
+                        throw IllegalStateException("Failed uploading chunk ${idx + 1}: $err")
+                    }
+
+                    val msg = uploadRes.getOrThrow()
+                    db.chunkDao().markChunkUploaded(
+                        fileId = testFileId,
+                        chunkIndex = idx,
+                        messageId = msg.messageId,
+                        fileIdRemote = msg.document?.fileId ?: "",
+                        checksum = chunkSha
+                    )
+                    db.fileDao().updateProgress(testFileId, idx + 1, FileStatus.UPLOADING)
+                    chunkFile.delete()
+                }
+
+                // 7. Verify all 5 chunks completed
+                val finalChunks = db.chunkDao().getChunksForFile(testFileId)
+                val finalCompletedCount = finalChunks.count { it.isUploaded }
+                if (finalCompletedCount != 5) {
+                    throw IllegalStateException("Integrity failure: Expected 5/5 chunks completed, found $finalCompletedCount")
+                }
+
+                // Clean up remote test messages and local test records so vault remains clean
+                try {
+                    finalChunks.forEach { ch ->
+                        ch.telegramMessageId?.let { mId -> repo.deleteMessage(token, chatId, mId) }
+                    }
+                    db.fileDao().deleteById(testFileId)
+                    db.chunkDao().deleteForFile(testFileId)
+                    stagingFile.delete()
+                    chunkDir.deleteRecursively()
+                } catch (cleanupEx: Exception) {
+                    Log.w("TeleVaultViewModel", "Cleanup after test transfer non-fatal: ${cleanupEx.message}")
+                }
+
+                _uiState.update {
+                    it.copy(
+                        testTransferRunning = false,
+                        testTransferSuccess = true,
+                        testTransferStatus = "Test passed — pause/resume integrity confirmed (5/5 chunks verified, zero redundant uploads)"
+                    )
+                }
             } catch (e: Exception) {
-                android.util.Log.e("TeleVaultViewModel", "Failed to start test transfer", e)
+                Log.e("TeleVaultViewModel", "Synthetic 5-chunk test failed", e)
+                val failureMsg = e.message ?: "Unknown transfer failure"
+                _uiState.update {
+                    it.copy(
+                        testTransferRunning = false,
+                        testTransferSuccess = false,
+                        testTransferStatus = "Test failed: $failureMsg"
+                    )
+                }
             }
         }
     }

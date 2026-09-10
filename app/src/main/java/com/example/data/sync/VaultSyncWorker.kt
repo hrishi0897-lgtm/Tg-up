@@ -27,8 +27,10 @@ class VaultSyncWorker(
 
         fun schedule(context: Context) {
             try {
+                val creds = com.example.data.local.EncryptedCredentialsManager(context)
+                val requiredNetwork = if (creds.isWifiOnly()) NetworkType.UNMETERED else NetworkType.CONNECTED
                 val constraints = Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .setRequiredNetworkType(requiredNetwork)
                     .build()
 
                 val request = PeriodicWorkRequestBuilder<VaultSyncWorker>(
@@ -39,10 +41,10 @@ class VaultSyncWorker(
 
                 WorkManager.getInstance(context.applicationContext).enqueueUniquePeriodicWork(
                     WORK_NAME,
-                    ExistingPeriodicWorkPolicy.KEEP,
+                    ExistingPeriodicWorkPolicy.UPDATE,
                     request
                 )
-                Log.i(TAG, "Scheduled 15-minute periodic VaultSyncWorker (NetworkType.CONNECTED)")
+                Log.i(TAG, "Scheduled 15-minute periodic VaultSyncWorker ($requiredNetwork)")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to schedule VaultSyncWorker: ${e.message}", e)
             }
