@@ -1,6 +1,7 @@
 package com.example.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -27,7 +28,7 @@ val WordmarkTextStyle = TextStyle(
     fontWeight = FontWeight.Normal,
     fontSize = 28.sp,
     lineHeight = 30.sp,
-    color = TextPrimary
+    color = Color.Unspecified
 )
 
 val EmptyHeadlineStyle = TextStyle(
@@ -36,7 +37,7 @@ val EmptyHeadlineStyle = TextStyle(
     fontWeight = FontWeight.Normal,
     fontSize = 22.sp,
     lineHeight = 28.sp,
-    color = TextPrimary
+    color = Color.Unspecified
 )
 
 val MonoStatValueLarge = TextStyle(
@@ -44,7 +45,7 @@ val MonoStatValueLarge = TextStyle(
     fontWeight = FontWeight.SemiBold,
     fontSize = 19.sp,
     lineHeight = 22.sp,
-    color = TextPrimary
+    color = Color.Unspecified
 )
 
 val MonoStatValueMedium = TextStyle(
@@ -52,7 +53,7 @@ val MonoStatValueMedium = TextStyle(
     fontWeight = FontWeight.Medium,
     fontSize = 14.sp,
     lineHeight = 18.sp,
-    color = TextPrimary
+    color = Color.Unspecified
 )
 
 val MonoStatValueSmall = TextStyle(
@@ -60,7 +61,7 @@ val MonoStatValueSmall = TextStyle(
     fontWeight = FontWeight.Normal,
     fontSize = 12.5.sp,
     lineHeight = 16.sp,
-    color = TextFaint
+    color = Color.Unspecified
 )
 
 // Standard M3 Typography paired to the three-font system
@@ -71,7 +72,7 @@ val Typography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 36.sp,
         lineHeight = 40.sp,
-        color = TextPrimary
+        color = Color.Unspecified
     ),
     displayMedium = TextStyle(
         fontFamily = DisplaySerifFont,
@@ -79,70 +80,70 @@ val Typography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 28.sp,
         lineHeight = 32.sp,
-        color = TextPrimary
+        color = Color.Unspecified
     ),
     headlineLarge = TextStyle(
         fontFamily = DisplaySerifFont,
         fontWeight = FontWeight.Normal,
         fontSize = 22.sp,
         lineHeight = 28.sp,
-        color = TextPrimary
+        color = Color.Unspecified
     ),
     headlineMedium = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.SemiBold,
         fontSize = 18.sp,
         lineHeight = 24.sp,
-        color = TextPrimary
+        color = Color.Unspecified
     ),
     titleLarge = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.SemiBold,
         fontSize = 16.sp,
         lineHeight = 22.sp,
-        color = TextPrimary
+        color = Color.Unspecified
     ),
     titleMedium = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.SemiBold,
         fontSize = 14.sp,
         lineHeight = 18.sp,
-        color = TextPrimary
+        color = Color.Unspecified
     ),
     bodyLarge = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        color = TextPrimary
+        color = Color.Unspecified
     ),
     bodyMedium = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         lineHeight = 18.sp,
-        color = TextDimmed
+        color = Color.Unspecified
     ),
     bodySmall = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.Normal,
         fontSize = 11.sp,
         lineHeight = 15.sp,
-        color = TextFaint
+        color = Color.Unspecified
     ),
     labelLarge = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.SemiBold,
         fontSize = 13.sp,
         lineHeight = 16.sp,
-        color = TextPrimary
+        color = Color.Unspecified
     ),
     labelSmall = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.Medium,
         fontSize = 10.sp,
         lineHeight = 14.sp,
-        color = TextFaint
+        color = Color.Unspecified
     )
 )
 

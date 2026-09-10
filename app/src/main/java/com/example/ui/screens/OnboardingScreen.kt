@@ -64,16 +64,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.OledBlack
-import com.example.ui.theme.OledBorder
-import com.example.ui.theme.OledCard
-import com.example.ui.theme.OledSurfaceVariant
+import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.StatusError
 import com.example.ui.theme.StatusSuccess
-import com.example.ui.theme.TelegramBlue
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.TextTertiary
 
 @Composable
 fun OnboardingScreen(
@@ -82,6 +75,7 @@ fun OnboardingScreen(
     onConnect: (token: String, chatId: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalTeleVaultColors.current
     var botToken by remember { mutableStateOf("") }
     var chatId by remember { mutableStateOf("") }
     var isTokenVisible by remember { mutableStateOf(false) }
@@ -92,7 +86,7 @@ fun OnboardingScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(OledBlack)
+            .background(colors.bg)
             .safeDrawingPadding()
             .padding(horizontal = 24.dp)
     ) {
@@ -108,14 +102,14 @@ fun OnboardingScreen(
                 modifier = Modifier
                     .size(80.dp)
                     .clip(CircleShape)
-                    .background(TelegramBlue.copy(alpha = 0.15f))
-                    .border(1.5.dp, TelegramBlue.copy(alpha = 0.4f), CircleShape),
+                    .background(colors.violet.copy(alpha = 0.15f))
+                    .border(1.5.dp, colors.violet.copy(alpha = 0.4f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Cloud,
                     contentDescription = "TeleVault Cloud",
-                    tint = TelegramBlue,
+                    tint = colors.violet,
                     modifier = Modifier.size(42.dp)
                 )
             }
@@ -126,7 +120,7 @@ fun OnboardingScreen(
                 text = "TeleVault",
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                color = TextPrimary,
+                color = colors.text,
                 letterSpacing = (-0.5).sp
             )
 
@@ -135,7 +129,7 @@ fun OnboardingScreen(
             Text(
                 text = "Free, unlimited personal cloud storage backed by your private Telegram account",
                 fontSize = 14.sp,
-                color = TextSecondary,
+                color = colors.textDim,
                 textAlign = TextAlign.Center,
                 lineHeight = 20.sp,
                 modifier = Modifier.padding(horizontal = 16.dp)
@@ -145,9 +139,9 @@ fun OnboardingScreen(
 
             // Credentials Card
             Card(
-                colors = CardDefaults.cardColors(containerColor = OledCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -159,7 +153,7 @@ fun OnboardingScreen(
                         text = "CONNECT YOUR TELEGRAM BOT",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = TelegramBlue,
+                        color = colors.violet,
                         letterSpacing = 1.sp
                     )
 
@@ -170,7 +164,7 @@ fun OnboardingScreen(
                         text = "Telegram Bot Token",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
-                        color = TextPrimary
+                        color = colors.text
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
@@ -179,7 +173,7 @@ fun OnboardingScreen(
                         placeholder = {
                             Text(
                                 "123456789:ABCdefGHIjklMNOpqr...",
-                                color = TextTertiary,
+                                color = colors.textFaint,
                                 fontSize = 13.sp
                             )
                         },
@@ -187,7 +181,7 @@ fun OnboardingScreen(
                             Icon(
                                 imageVector = Icons.Default.Key,
                                 contentDescription = null,
-                                tint = TextSecondary,
+                                tint = colors.textDim,
                                 modifier = Modifier.size(20.dp)
                             )
                         },
@@ -196,7 +190,7 @@ fun OnboardingScreen(
                                 Icon(
                                     imageVector = if (isTokenVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
                                     contentDescription = "Toggle token visibility",
-                                    tint = TextSecondary
+                                    tint = colors.textDim
                                 )
                             }
                         },
@@ -207,13 +201,13 @@ fun OnboardingScreen(
                         ),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = TelegramBlue,
-                            unfocusedBorderColor = OledBorder,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            cursorColor = TelegramBlue,
-                            focusedContainerColor = OledBlack,
-                            unfocusedContainerColor = OledBlack
+                            focusedBorderColor = colors.violet,
+                            unfocusedBorderColor = colors.line,
+                            focusedTextColor = colors.text,
+                            unfocusedTextColor = colors.text,
+                            cursorColor = colors.violet,
+                            focusedContainerColor = colors.bg,
+                            unfocusedContainerColor = colors.bg
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
@@ -228,7 +222,7 @@ fun OnboardingScreen(
                         text = "Your Telegram Chat ID",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
-                        color = TextPrimary
+                        color = colors.text
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
@@ -237,7 +231,7 @@ fun OnboardingScreen(
                         placeholder = {
                             Text(
                                 "e.g. 987654321 or -100123456789",
-                                color = TextTertiary,
+                                color = colors.textFaint,
                                 fontSize = 13.sp
                             )
                         },
@@ -245,7 +239,7 @@ fun OnboardingScreen(
                             Icon(
                                 imageVector = Icons.Default.Send,
                                 contentDescription = null,
-                                tint = TextSecondary,
+                                tint = colors.textDim,
                                 modifier = Modifier.size(20.dp)
                             )
                         },
@@ -262,13 +256,13 @@ fun OnboardingScreen(
                         ),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = TelegramBlue,
-                            unfocusedBorderColor = OledBorder,
-                            focusedTextColor = TextPrimary,
-                            unfocusedTextColor = TextPrimary,
-                            cursorColor = TelegramBlue,
-                            focusedContainerColor = OledBlack,
-                            unfocusedContainerColor = OledBlack
+                            focusedBorderColor = colors.violet,
+                            unfocusedBorderColor = colors.line,
+                            focusedTextColor = colors.text,
+                            unfocusedTextColor = colors.text,
+                            cursorColor = colors.violet,
+                            focusedContainerColor = colors.bg,
+                            unfocusedContainerColor = colors.bg
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
@@ -298,7 +292,7 @@ fun OnboardingScreen(
                                 Text(
                                     text = validationError ?: "",
                                     fontSize = 12.sp,
-                                    color = Color(0xFFFF8A80),
+                                    color = StatusError,
                                     lineHeight = 17.sp
                                 )
                             }
@@ -312,10 +306,10 @@ fun OnboardingScreen(
                         onClick = { onConnect(botToken, chatId) },
                         enabled = !isValidating && botToken.isNotBlank() && chatId.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = TelegramBlue,
-                            contentColor = OledBlack,
-                            disabledContainerColor = OledSurfaceVariant,
-                            disabledContentColor = TextTertiary
+                            containerColor = colors.violet,
+                            contentColor = Color.White,
+                            disabledContainerColor = colors.surfaceHi,
+                            disabledContentColor = colors.textFaint
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
@@ -326,7 +320,7 @@ fun OnboardingScreen(
                         if (isValidating) {
                             CircularProgressIndicator(
                                 strokeWidth = 2.dp,
-                                color = OledBlack,
+                                color = Color.White,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
@@ -357,7 +351,7 @@ fun OnboardingScreen(
             // Guide Toggle Button
             TextButton(
                 onClick = { showGuide = !showGuide },
-                colors = ButtonDefaults.textButtonColors(contentColor = TelegramBlue)
+                colors = ButtonDefaults.textButtonColors(contentColor = colors.violet)
             ) {
                 Icon(
                     imageVector = Icons.Default.HelpOutline,
@@ -375,9 +369,9 @@ fun OnboardingScreen(
             // Interactive Step-by-Step Guide
             AnimatedVisibility(visible = showGuide) {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = OledCard),
+                    colors = CardDefaults.cardColors(containerColor = colors.surface),
                     shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp)
@@ -391,7 +385,7 @@ fun OnboardingScreen(
                             text = "3-STEP SETUP GUIDE",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
-                            color = TelegramBlue,
+                            color = colors.violet,
                             letterSpacing = 1.sp
                         )
 
@@ -432,14 +426,14 @@ fun OnboardingScreen(
                 Icon(
                     imageVector = Icons.Default.Lock,
                     contentDescription = "Encrypted",
-                    tint = TextTertiary,
+                    tint = colors.textFaint,
                     modifier = Modifier.size(14.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "Stored encrypted at rest via hardware Android KeyStore (AES-256)",
                     fontSize = 11.sp,
-                    color = TextTertiary,
+                    color = colors.textFaint,
                     textAlign = TextAlign.Center
                 )
             }
@@ -453,6 +447,7 @@ private fun GuideStep(
     title: String,
     description: String
 ) {
+    val colors = LocalTeleVaultColors.current
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Start,
@@ -462,12 +457,12 @@ private fun GuideStep(
             modifier = Modifier
                 .size(24.dp)
                 .clip(CircleShape)
-                .background(TelegramBlue.copy(alpha = 0.2f)),
+                .background(colors.violet.copy(alpha = 0.2f)),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = stepNumber,
-                color = TelegramBlue,
+                color = colors.violet,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -478,13 +473,13 @@ private fun GuideStep(
                 text = title,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = TextPrimary
+                color = colors.text
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = description,
                 fontSize = 12.sp,
-                color = TextSecondary,
+                color = colors.textDim,
                 lineHeight = 17.sp
             )
         }

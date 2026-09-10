@@ -48,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,21 +56,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import com.example.ui.theme.pressScale
-import com.example.ui.theme.OledBlack
-import com.example.ui.theme.OledBorder
-import com.example.ui.theme.OledCard
-import com.example.ui.theme.OledSurface
+import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.StatusError
-import com.example.ui.theme.StatusMint
-import com.example.ui.theme.TelegramBlue
-import com.example.ui.theme.TextFaint
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.TextTertiary
+import com.example.ui.theme.pressScale
 
 @Composable
 fun SettingsScreen(
@@ -80,6 +74,8 @@ fun SettingsScreen(
     lastSyncedTime: Long = 0L,
     isSyncing: Boolean = false,
     resyncMessage: String? = null,
+    isDarkTheme: Boolean = false,
+    onToggleTheme: (() -> Unit)? = null,
     onChunkSizeChange: (Int) -> Unit,
     onWifiOnlyChange: (Boolean) -> Unit,
     onResyncClick: (() -> Unit)? = null,
@@ -89,16 +85,17 @@ fun SettingsScreen(
     onDismiss: () -> Unit,
     onStartTestTransfer: (() -> Unit)? = null
 ) {
+    val colors = LocalTeleVaultColors.current
     val scrollState = rememberScrollState()
 
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(OledBlack),
-        containerColor = OledBlack,
+            .background(colors.bg),
+        containerColor = colors.bg,
         topBar = {
             Surface(
-                color = OledBlack,
+                color = colors.bg,
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
@@ -119,7 +116,7 @@ fun SettingsScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back to Vault",
-                            tint = TextPrimary
+                            tint = colors.text
                         )
                     }
 
@@ -127,7 +124,7 @@ fun SettingsScreen(
                         text = "Vault Settings",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
+                        color = colors.text,
                         modifier = Modifier.padding(start = 4.dp)
                     )
                 }
@@ -142,12 +139,76 @@ fun SettingsScreen(
                 .verticalScroll(scrollState)
                 .padding(bottom = 36.dp)
         ) {
+            // 0. Appearance Card
+            if (onToggleTheme != null) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = colors.surface),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (isDarkTheme) Icons.Default.DarkMode else Icons.Default.LightMode,
+                                contentDescription = null,
+                                tint = colors.violet,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "APPEARANCE",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.violet,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = if (isDarkTheme) "Dark OLED Theme" else "Light Theme",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = colors.text
+                                )
+                                Text(
+                                    text = if (isDarkTheme) "Deep black high-contrast OLED palette" else "Clean modern light paper palette",
+                                    fontSize = 11.sp,
+                                    color = colors.textDim,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = isDarkTheme,
+                                onCheckedChange = { onToggleTheme() },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = colors.bg,
+                                    checkedTrackColor = colors.violet,
+                                    uncheckedThumbColor = colors.textFaint,
+                                    uncheckedTrackColor = colors.surfaceHi
+                                )
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+            }
 
             // 1. Account Credentials Card
             Card(
-                colors = CardDefaults.cardColors(containerColor = OledCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -155,7 +216,7 @@ fun SettingsScreen(
                         Icon(
                             imageVector = Icons.Default.Key,
                             contentDescription = null,
-                            tint = TelegramBlue,
+                            tint = colors.violet,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -163,23 +224,23 @@ fun SettingsScreen(
                             text = "CONNECTED BOT ACCOUNT",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = TelegramBlue,
+                            color = colors.violet,
                             letterSpacing = 0.5.sp
                         )
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Text(text = "Chat ID", fontSize = 11.sp, color = TextTertiary)
-                    Text(text = chatId, fontSize = 13.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                    Text(text = "Chat ID", fontSize = 11.sp, color = colors.textFaint)
+                    Text(text = chatId, fontSize = 13.sp, color = colors.text, fontWeight = FontWeight.Medium)
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    Text(text = "Bot Token", fontSize = 11.sp, color = TextTertiary)
+                    Text(text = "Bot Token", fontSize = 11.sp, color = colors.textFaint)
                     Text(
                         text = if (botTokenMasked.length > 8) "${botTokenMasked.take(6)}••••••••••••" else "••••••••",
                         fontSize = 13.sp,
-                        color = TextPrimary,
+                        color = colors.text,
                         fontWeight = FontWeight.Medium
                     )
 
@@ -209,9 +270,9 @@ fun SettingsScreen(
 
             // 2. Safe Chunk Size Config Card
             Card(
-                colors = CardDefaults.cardColors(containerColor = OledCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -219,7 +280,7 @@ fun SettingsScreen(
                         Icon(
                             imageVector = Icons.Default.Tune,
                             contentDescription = null,
-                            tint = TelegramBlue,
+                            tint = colors.violet,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -227,7 +288,7 @@ fun SettingsScreen(
                             text = "CHUNK SLICE SIZE",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = TelegramBlue,
+                            color = colors.violet,
                             letterSpacing = 0.5.sp
                         )
                     }
@@ -237,7 +298,7 @@ fun SettingsScreen(
                     Text(
                         text = "Telegram limits standard bot downloads to 20MB per file via getFile. Slices are capped at 18MB to leave safe headroom for multipart overhead so files can be seamlessly uploaded and re-downloaded.",
                         fontSize = 12.sp,
-                        color = TextSecondary,
+                        color = colors.textDim,
                         lineHeight = 16.sp
                     )
 
@@ -253,13 +314,13 @@ fun SettingsScreen(
                                 onClick = { onChunkSizeChange(size) },
                                 label = { Text("$size MB") },
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = TelegramBlue,
-                                    selectedLabelColor = OledBlack,
-                                    containerColor = OledBlack,
-                                    labelColor = TextPrimary
+                                    selectedContainerColor = colors.violet,
+                                    selectedLabelColor = Color.White,
+                                    containerColor = colors.surfaceHi,
+                                    labelColor = colors.text
                                 ),
                                 border = FilterChipDefaults.filterChipBorder(
-                                    borderColor = if (chunkSizeMb == size) TelegramBlue else OledBorder,
+                                    borderColor = if (chunkSizeMb == size) colors.violet else colors.line,
                                     enabled = true,
                                     selected = chunkSizeMb == size
                                 )
@@ -273,9 +334,9 @@ fun SettingsScreen(
 
             // 3. Network & Power Policy Card
             Card(
-                colors = CardDefaults.cardColors(containerColor = OledCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -283,7 +344,7 @@ fun SettingsScreen(
                         Icon(
                             imageVector = Icons.Default.Wifi,
                             contentDescription = null,
-                            tint = TelegramBlue,
+                            tint = colors.violet,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -291,7 +352,7 @@ fun SettingsScreen(
                             text = "NETWORK & POWER POLICY",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
-                            color = TelegramBlue,
+                            color = colors.violet,
                             letterSpacing = 0.5.sp
                         )
                     }
@@ -308,12 +369,12 @@ fun SettingsScreen(
                                 text = "Transfer only on Wi-Fi",
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = TextPrimary
+                                color = colors.text
                             )
                             Text(
                                 text = "Restricts large multi-chunk uploads & downloads to Wi-Fi to preserve mobile data.",
                                 fontSize = 11.sp,
-                                color = TextSecondary,
+                                color = colors.textDim,
                                 lineHeight = 15.sp
                             )
                         }
@@ -322,10 +383,10 @@ fun SettingsScreen(
                             checked = isWifiOnly,
                             onCheckedChange = onWifiOnlyChange,
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = OledBlack,
-                                checkedTrackColor = TelegramBlue,
-                                uncheckedThumbColor = TextTertiary,
-                                uncheckedTrackColor = OledBorder
+                                checkedThumbColor = colors.bg,
+                                checkedTrackColor = colors.violet,
+                                uncheckedThumbColor = colors.textFaint,
+                                uncheckedTrackColor = colors.surfaceHi
                             )
                         )
                     }
@@ -337,14 +398,14 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(TelegramBlue.copy(alpha = 0.1f))
+                                .background(colors.violet.copy(alpha = 0.1f))
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.BatteryChargingFull,
                                 contentDescription = null,
-                                tint = TelegramBlue,
+                                tint = colors.violet,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
@@ -353,12 +414,12 @@ fun SettingsScreen(
                                     text = "Background Execution",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = TextPrimary
+                                    color = colors.text
                                 )
                                 Text(
                                     text = "Allow TeleVault to ignore battery optimizations for uninterrupted multi-GB transfers.",
                                     fontSize = 11.sp,
-                                    color = TextSecondary,
+                                    color = colors.textDim,
                                     lineHeight = 14.sp
                                 )
                             }
@@ -378,8 +439,8 @@ fun SettingsScreen(
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = TelegramBlue,
-                                    contentColor = OledBlack
+                                    containerColor = colors.violet,
+                                    contentColor = Color.White
                                 ),
                                 shape = RoundedCornerShape(6.dp),
                                 modifier = Modifier.pressScale(0.90f),
@@ -397,9 +458,9 @@ fun SettingsScreen(
 
                 // 4. Verification & Test Mode Card
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = OledCard),
+                    colors = CardDefaults.cardColors(containerColor = colors.surface),
                     shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -407,7 +468,7 @@ fun SettingsScreen(
                             Icon(
                                 imageVector = Icons.Default.Tune,
                                 contentDescription = null,
-                                tint = TelegramBlue,
+                                tint = colors.violet,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -415,7 +476,7 @@ fun SettingsScreen(
                                 text = "TRANSFER VERIFICATION TEST",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = TelegramBlue,
+                                color = colors.violet,
                                 letterSpacing = 0.5.sp
                             )
                         }
@@ -425,7 +486,7 @@ fun SettingsScreen(
                         Text(
                             text = "Starts a synthetic 5-chunk multi-part test transfer to verify pause/resume chunk integrity and ensure completed chunks are never re-uploaded.",
                             fontSize = 12.sp,
-                            color = TextSecondary,
+                            color = colors.textDim,
                             lineHeight = 16.sp
                         )
 
@@ -437,8 +498,8 @@ fun SettingsScreen(
                                 onStartTestTransfer()
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = TelegramBlue.copy(alpha = 0.15f),
-                                contentColor = TelegramBlue
+                                containerColor = colors.violet.copy(alpha = 0.15f),
+                                contentColor = colors.violet
                             ),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
@@ -454,11 +515,11 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // 4. Security info
+            // 5. Security info
             Card(
-                colors = CardDefaults.cardColors(containerColor = OledCard),
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
                 shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -468,14 +529,14 @@ fun SettingsScreen(
                     Icon(
                         imageVector = Icons.Default.Security,
                         contentDescription = null,
-                        tint = TelegramBlue,
+                        tint = colors.violet,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         text = "Hardware KeyStore Encryption: All credentials & tokens are encrypted via AES-256-GCM. No third-party servers.",
                         fontSize = 11.sp,
-                        color = TextSecondary,
+                        color = colors.textDim,
                         lineHeight = 16.sp
                     )
                 }

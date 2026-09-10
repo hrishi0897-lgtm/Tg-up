@@ -43,10 +43,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.ui.theme.AccentViolet
-import com.example.ui.theme.AppBackgroundOuter
 import com.example.ui.theme.BodySansFont
-import com.example.ui.theme.BorderDivider
 import com.example.ui.theme.LocalReduceMotion
 import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.MotionSpecs
@@ -183,8 +180,8 @@ fun TeleVaultBottomNav(
                         BadgedBox(
                             badge = {
                                 Badge(
-                                    containerColor = AccentViolet,
-                                    contentColor = AppBackgroundOuter
+                                    containerColor = colors.violet,
+                                    contentColor = Color.White
                                 ) {
                                     Text(
                                         text = activeTransferCount.toString(),

@@ -66,20 +66,14 @@ import com.example.data.local.entity.FileStatus
 import com.example.domain.ChecksumUtil
 import com.example.domain.model.TransferProgress
 import androidx.compose.animation.core.snap
+import androidx.compose.material3.MaterialTheme
 import com.example.ui.components.TeleVaultBottomNav
 import com.example.ui.theme.LocalReduceMotion
-import com.example.ui.theme.pressScale
-import com.example.ui.viewmodel.AppScreen
-import com.example.ui.theme.OledBlack
-import com.example.ui.theme.OledBorder
-import com.example.ui.theme.OledCard
-import com.example.ui.theme.OledSurface
+import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.StatusError
 import com.example.ui.theme.StatusSuccess
-import com.example.ui.theme.TelegramBlue
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.TextTertiary
+import com.example.ui.theme.pressScale
+import com.example.ui.viewmodel.AppScreen
 
 @Composable
 fun TransfersScreen(
@@ -95,6 +89,7 @@ fun TransfersScreen(
     onClearCompleted: () -> Unit,
     onNavigateToVault: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     val activeCount = transfers.count {
         it.status == FileStatus.UPLOADING || it.status == FileStatus.DOWNLOADING || it.status == FileStatus.PENDING
     }
@@ -105,8 +100,8 @@ fun TransfersScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(OledBlack),
-        containerColor = OledBlack,
+            .background(colors.bg),
+        containerColor = colors.bg,
         topBar = {
             TransfersTopBar(
                 activeCount = activeCount,
@@ -159,7 +154,7 @@ fun TransfersScreen(
                                     text = "ACTIVE TRANSFERS (${transfers.size})",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = TextTertiary,
+                                    color = colors.textFaint,
                                     letterSpacing = 1.sp
                                 )
                             }
@@ -193,13 +188,13 @@ fun TransfersScreen(
                                     text = "RECENTLY COMPLETED",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = TextTertiary,
+                                    color = colors.textFaint,
                                     letterSpacing = 1.sp
                                 )
                                 Text(
                                     text = "Clear",
                                     fontSize = 12.sp,
-                                    color = TelegramBlue,
+                                    color = colors.violet,
                                     fontWeight = FontWeight.Medium,
                                     modifier = Modifier
                                         .pressScale(0.90f)
@@ -236,8 +231,9 @@ private fun TransfersTopBar(
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     Surface(
-        color = OledBlack,
+        color = colors.bg,
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
@@ -257,7 +253,7 @@ private fun TransfersTopBar(
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back to Vault",
-                    tint = TextPrimary
+                    tint = colors.text
                 )
             }
 
@@ -270,7 +266,7 @@ private fun TransfersTopBar(
                     text = "Active Transfers",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TextPrimary
+                    color = colors.text
                 )
                 Text(
                     text = if (totalCount == 0) {
@@ -281,7 +277,7 @@ private fun TransfersTopBar(
                         "$totalCount items in queue"
                     },
                     fontSize = 12.sp,
-                    color = TextSecondary
+                    color = colors.textDim
                 )
             }
 
@@ -296,7 +292,7 @@ private fun TransfersTopBar(
                     Icon(
                         imageVector = Icons.Default.Pause,
                         contentDescription = "Pause All",
-                        tint = TextSecondary
+                        tint = colors.textDim
                     )
                 }
             } else if (hasPausedTransfers) {
@@ -310,7 +306,7 @@ private fun TransfersTopBar(
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = "Resume All",
-                        tint = TelegramBlue
+                        tint = colors.violet
                     )
                 }
             }
@@ -326,6 +322,7 @@ private fun TransferRowCard(
     onCancel: () -> Unit,
     onRetry: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     val reduceMotion = LocalReduceMotion.current
     val isFailed = transfer.status == FileStatus.FAILED
     val percent = (transfer.progressFraction * 100).toInt().coerceIn(0, 100)
@@ -337,11 +334,11 @@ private fun TransferRowCard(
     )
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = OledCard),
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
         shape = RoundedCornerShape(14.dp),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (isFailed) StatusError.copy(alpha = 0.5f) else OledBorder
+            if (isFailed) StatusError.copy(alpha = 0.5f) else colors.line
         ),
         modifier = Modifier
             .fillMaxWidth()
@@ -361,14 +358,14 @@ private fun TransferRowCard(
                         .clip(CircleShape)
                         .background(
                             if (isFailed) StatusError.copy(alpha = 0.15f)
-                            else TelegramBlue.copy(alpha = 0.15f)
+                            else colors.violet.copy(alpha = 0.15f)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = if (transfer.isUpload) Icons.Default.CloudUpload else Icons.Default.CloudDownload,
                         contentDescription = if (transfer.isUpload) "Upload" else "Download",
-                        tint = if (isFailed) StatusError else TelegramBlue,
+                        tint = if (isFailed) StatusError else colors.violet,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -380,7 +377,7 @@ private fun TransferRowCard(
                         text = transfer.fileName,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = TextPrimary,
+                        color = colors.text,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -398,9 +395,9 @@ private fun TransferRowCard(
                         fontWeight = if (isFailed) FontWeight.Medium else FontWeight.Normal,
                         color = when (transfer.status) {
                             FileStatus.FAILED -> StatusError
-                            FileStatus.UPLOADING, FileStatus.DOWNLOADING -> TelegramBlue
-                            FileStatus.PAUSED -> TextSecondary
-                            else -> TextTertiary
+                            FileStatus.UPLOADING, FileStatus.DOWNLOADING -> colors.violet
+                            FileStatus.PAUSED -> colors.textDim
+                            else -> colors.textFaint
                         }
                     )
                 }
@@ -418,7 +415,7 @@ private fun TransferRowCard(
                             Icon(
                                 Icons.Default.Pause,
                                 contentDescription = "Pause transfer",
-                                tint = TextSecondary,
+                                tint = colors.textDim,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -432,7 +429,7 @@ private fun TransferRowCard(
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "Cancel transfer",
-                                tint = TextSecondary,
+                                tint = colors.textDim,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -448,7 +445,7 @@ private fun TransferRowCard(
                             Icon(
                                 Icons.Default.PlayArrow,
                                 contentDescription = "Resume transfer",
-                                tint = TelegramBlue,
+                                tint = colors.violet,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -462,7 +459,7 @@ private fun TransferRowCard(
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "Cancel transfer",
-                                tint = TextSecondary,
+                                tint = colors.textDim,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -478,7 +475,7 @@ private fun TransferRowCard(
                             Icon(
                                 Icons.Default.Replay,
                                 contentDescription = "Retry transfer",
-                                tint = TelegramBlue,
+                                tint = colors.violet,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -492,7 +489,7 @@ private fun TransferRowCard(
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "Dismiss error",
-                                tint = TextSecondary,
+                                tint = colors.textDim,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -507,7 +504,7 @@ private fun TransferRowCard(
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "Cancel queued transfer",
-                                tint = TextSecondary,
+                                tint = colors.textDim,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -537,9 +534,9 @@ private fun TransferRowCard(
                 color = when {
                     isFailed -> StatusError
                     transfer.status == FileStatus.COMPLETED -> StatusSuccess
-                    else -> TelegramBlue
+                    else -> colors.violet
                 },
-                trackColor = OledSurface,
+                trackColor = colors.surfaceHi,
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -564,14 +561,14 @@ private fun TransferRowCard(
                     text = chunkProgressLabel,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = TextPrimary
+                    color = colors.text
                 )
 
                 Text(
                     text = "${ChecksumUtil.formatBytes(transfer.bytesTransferred)} / ${ChecksumUtil.formatBytes(transfer.totalBytes)}",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
-                    color = TextSecondary
+                    color = colors.textDim
                 )
             }
 
@@ -601,7 +598,7 @@ private fun TransferRowCard(
                     text = speedText,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
-                    color = if (transfer.status == FileStatus.UPLOADING || transfer.status == FileStatus.DOWNLOADING) TelegramBlue else TextTertiary
+                    color = if (transfer.status == FileStatus.UPLOADING || transfer.status == FileStatus.DOWNLOADING) colors.violet else colors.textFaint
                 )
 
                 val etaText = when (transfer.status) {
@@ -627,7 +624,7 @@ private fun TransferRowCard(
                         text = etaText,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Normal,
-                        color = TextTertiary
+                        color = colors.textFaint
                     )
                 }
             }
@@ -665,10 +662,11 @@ private fun TransferRowCard(
 
 @Composable
 private fun CompletedTransferCard(item: TransferProgress) {
+    val colors = LocalTeleVaultColors.current
     Card(
-        colors = CardDefaults.cardColors(containerColor = OledCard),
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
         shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -680,7 +678,7 @@ private fun CompletedTransferCard(item: TransferProgress) {
             Icon(
                 imageVector = Icons.Default.CheckCircle,
                 contentDescription = "Completed",
-                tint = StatusSuccess,
+                tint = colors.mint,
                 modifier = Modifier.size(20.dp)
             )
 
@@ -691,7 +689,7 @@ private fun CompletedTransferCard(item: TransferProgress) {
                     text = item.fileName,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
-                    color = TextPrimary,
+                    color = colors.text,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -699,7 +697,7 @@ private fun CompletedTransferCard(item: TransferProgress) {
                 Text(
                     text = "${if (item.isUpload) "Uploaded" else "Downloaded"} · ${ChecksumUtil.formatBytes(item.totalBytes)} · Verified",
                     fontSize = 11.sp,
-                    color = TextSecondary
+                    color = colors.textDim
                 )
             }
         }
@@ -708,6 +706,7 @@ private fun CompletedTransferCard(item: TransferProgress) {
 
 @Composable
 private fun EmptyTransfersView() {
+    val colors = LocalTeleVaultColors.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -719,13 +718,13 @@ private fun EmptyTransfersView() {
                 modifier = Modifier
                     .size(64.dp)
                     .clip(CircleShape)
-                    .background(OledSurface),
+                    .background(colors.surfaceHi),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.CloudDone,
                     contentDescription = null,
-                    tint = TextSecondary,
+                    tint = colors.textDim,
                     modifier = Modifier.size(32.dp)
                 )
             }
@@ -734,111 +733,16 @@ private fun EmptyTransfersView() {
                 text = "No active transfers",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = TextPrimary
+                color = colors.text
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = "Files you upload or download will appear here\nwith live chunk progress and resumption controls.",
                 fontSize = 13.sp,
-                color = TextSecondary,
+                color = colors.textDim,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 lineHeight = 18.sp
             )
         }
-    }
-}
-
-@Composable
-private fun TransfersBottomNav(
-    activeTransferCount: Int,
-    onVaultSelected: () -> Unit
-) {
-    NavigationBar(
-        containerColor = OledBlack,
-        contentColor = TextPrimary,
-        tonalElevation = 0.dp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .border(
-                width = 1.dp,
-                color = OledBorder,
-                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-            )
-    ) {
-        NavigationBarItem(
-            selected = false,
-            onClick = onVaultSelected,
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Folder,
-                    contentDescription = "Vault",
-                    modifier = Modifier.size(24.dp)
-                )
-            },
-            label = {
-                Text(
-                    text = "Vault",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = TelegramBlue,
-                selectedTextColor = TelegramBlue,
-                unselectedIconColor = TextSecondary,
-                unselectedTextColor = TextSecondary,
-                indicatorColor = Color.Transparent
-            ),
-            modifier = Modifier.testTag("tab_nav_vault")
-        )
-
-        NavigationBarItem(
-            selected = true,
-            onClick = { /* Already on Transfers */ },
-            icon = {
-                if (activeTransferCount > 0) {
-                    BadgedBox(badge = {
-                        Badge(
-                            containerColor = TelegramBlue,
-                            contentColor = Color.White
-                        ) {
-                            Text(
-                                text = activeTransferCount.toString(),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Sync,
-                            contentDescription = "Transfers",
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Sync,
-                        contentDescription = "Transfers",
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            },
-            label = {
-                Text(
-                    text = "Transfers",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            colors = NavigationBarItemDefaults.colors(
-                selectedIconColor = TelegramBlue,
-                selectedTextColor = TelegramBlue,
-                unselectedIconColor = TextSecondary,
-                unselectedTextColor = TextSecondary,
-                indicatorColor = Color.Transparent
-            ),
-            modifier = Modifier.testTag("tab_nav_transfers")
-        )
     }
 }

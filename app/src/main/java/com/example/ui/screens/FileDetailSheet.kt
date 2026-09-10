@@ -70,17 +70,9 @@ import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
 import com.example.domain.ChecksumUtil
-import com.example.ui.theme.OledBlack
-import com.example.ui.theme.OledBorder
-import com.example.ui.theme.OledCard
-import com.example.ui.theme.OledCardElevated
-import com.example.ui.theme.OledSurface
+import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.StatusError
 import com.example.ui.theme.StatusSuccess
-import com.example.ui.theme.TelegramBlue
-import com.example.ui.theme.TextPrimary
-import com.example.ui.theme.TextSecondary
-import com.example.ui.theme.TextTertiary
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,6 +87,7 @@ fun FileDetailSheet(
     onMove: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -140,7 +133,7 @@ fun FileDetailSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = OledBlack,
+        containerColor = colors.surface,
         dragHandle = {
             Box(
                 modifier = Modifier
@@ -148,7 +141,7 @@ fun FileDetailSheet(
                     .width(36.dp)
                     .height(4.dp)
                     .clip(CircleShape)
-                    .background(OledBorder)
+                    .background(colors.line)
             )
         }
     ) {
@@ -161,9 +154,9 @@ fun FileDetailSheet(
         ) {
             // Header: Preview / Thumbnail / Icon + File details
             Card(
-                colors = CardDefaults.cardColors(containerColor = OledCard),
+                colors = CardDefaults.cardColors(containerColor = colors.bg),
                 shape = RoundedCornerShape(16.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -179,8 +172,8 @@ fun FileDetailSheet(
                                 .fillMaxWidth()
                                 .height(160.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(OledSurface)
-                                .border(1.dp, OledBorder, RoundedCornerShape(12.dp)),
+                                .background(colors.surfaceHi)
+                                .border(1.dp, colors.line, RoundedCornerShape(12.dp)),
                             contentAlignment = Alignment.Center
                         ) {
                             AsyncImage(
@@ -217,7 +210,7 @@ fun FileDetailSheet(
                         text = file.name,
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary,
+                        color = colors.text,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -245,17 +238,17 @@ fun FileDetailSheet(
                             text = ChecksumUtil.formatFileSize(file.size),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = TextSecondary
+                            color = colors.textDim
                         )
                         Text(
                             text = " · ",
                             fontSize = 13.sp,
-                            color = TextTertiary
+                            color = colors.textFaint
                         )
                         Text(
                             text = ChecksumUtil.formatDate(file.uploadDate),
                             fontSize = 13.sp,
-                            color = TextSecondary
+                            color = colors.textDim
                         )
                     }
 
@@ -290,14 +283,14 @@ fun FileDetailSheet(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(CircleShape)
-                                .background(TelegramBlue.copy(alpha = 0.12f))
-                                .border(1.dp, TelegramBlue.copy(alpha = 0.35f), CircleShape)
+                                .background(colors.violet.copy(alpha = 0.12f))
+                                .border(1.dp, colors.violet.copy(alpha = 0.35f), CircleShape)
                                 .padding(horizontal = 12.dp, vertical = 5.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.VerifiedUser,
                                 contentDescription = "Archived",
-                                tint = TelegramBlue,
+                                tint = colors.violet,
                                 modifier = Modifier.size(15.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
@@ -305,7 +298,7 @@ fun FileDetailSheet(
                                 text = "Archived in Vault",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = TelegramBlue
+                                color = colors.violet
                             )
                         }
                     }
@@ -375,14 +368,14 @@ fun FileDetailSheet(
                 text = "Actions",
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                color = TextSecondary,
+                color = colors.textDim,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
             )
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = OledCard),
+                colors = CardDefaults.cardColors(containerColor = colors.bg),
                 shape = RoundedCornerShape(14.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, OledBorder),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -391,7 +384,8 @@ fun FileDetailSheet(
                         ActionItem(
                             icon = Icons.Default.OpenInNew,
                             label = "Open File",
-                            iconTint = TelegramBlue,
+                            iconTint = colors.violet,
+                            labelColor = colors.text,
                             onClick = {
                                 if (shareableUri != null) {
                                     val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -412,7 +406,8 @@ fun FileDetailSheet(
                         ActionItem(
                             icon = Icons.Default.Download,
                             label = "Download",
-                            iconTint = TelegramBlue,
+                            iconTint = colors.violet,
+                            labelColor = colors.text,
                             onClick = {
                                 onDownload()
                                 onDismiss()
@@ -420,45 +415,48 @@ fun FileDetailSheet(
                         )
                     }
 
-                    HorizontalDivider(color = OledBorder, thickness = 0.5.dp)
+                    HorizontalDivider(color = colors.line, thickness = 0.5.dp)
 
                     // Action 2: Share
                     ActionItem(
                         icon = Icons.Default.Share,
                         label = "Share",
-                        iconTint = TelegramBlue,
+                        iconTint = colors.violet,
+                        labelColor = colors.text,
                         onClick = {
                             onShare()
                         }
                     )
 
-                    HorizontalDivider(color = OledBorder, thickness = 0.5.dp)
+                    HorizontalDivider(color = colors.line, thickness = 0.5.dp)
 
                     // Action 3: Rename
                     ActionItem(
                         icon = Icons.Default.Edit,
                         label = "Rename",
-                        iconTint = TextPrimary,
+                        iconTint = colors.text,
+                        labelColor = colors.text,
                         onClick = {
                             onDismiss()
                             onRename()
                         }
                     )
 
-                    HorizontalDivider(color = OledBorder, thickness = 0.5.dp)
+                    HorizontalDivider(color = colors.line, thickness = 0.5.dp)
 
                     // Action 4: Move to folder
                     ActionItem(
                         icon = Icons.Default.DriveFileMove,
                         label = "Move to folder",
-                        iconTint = TextPrimary,
+                        iconTint = colors.text,
+                        labelColor = colors.text,
                         onClick = {
                             onDismiss()
                             onMove()
                         }
                     )
 
-                    HorizontalDivider(color = OledBorder, thickness = 0.5.dp)
+                    HorizontalDivider(color = colors.line, thickness = 0.5.dp)
 
                     // Action 5: Delete
                     ActionItem(
@@ -478,9 +476,9 @@ fun FileDetailSheet(
             AnimatedVisibility(visible = isDebugMode) {
                 Column(modifier = Modifier.padding(top = 18.dp)) {
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = OledCardElevated),
+                        colors = CardDefaults.cardColors(containerColor = colors.surfaceHi),
                         shape = RoundedCornerShape(12.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, TelegramBlue.copy(alpha = 0.4f)),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.violet.copy(alpha = 0.4f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(14.dp)) {
@@ -493,7 +491,7 @@ fun FileDetailSheet(
                                     Icon(
                                         imageVector = Icons.Default.BugReport,
                                         contentDescription = null,
-                                        tint = TelegramBlue,
+                                        tint = colors.violet,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
@@ -501,7 +499,7 @@ fun FileDetailSheet(
                                         text = "DEBUG: INTERNAL CHUNKS (${chunks.size})",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = TelegramBlue,
+                                        color = colors.violet,
                                         letterSpacing = 0.5.sp
                                     )
                                 }
@@ -509,7 +507,7 @@ fun FileDetailSheet(
                                 Text(
                                     text = if (file.manifestMessageId != null) "Manifest Msg #${file.manifestMessageId}" else "Manifest Pending",
                                     fontSize = 10.sp,
-                                    color = TextTertiary
+                                    color = colors.textFaint
                                 )
                             }
 
@@ -519,7 +517,7 @@ fun FileDetailSheet(
                                 text = "Checksum: ${file.checksum}",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 10.sp,
-                                color = TextSecondary,
+                                color = colors.textDim,
                                 lineHeight = 14.sp
                             )
 
@@ -529,7 +527,7 @@ fun FileDetailSheet(
                                 Text(
                                     text = "No chunk records stored in local database.",
                                     fontSize = 11.sp,
-                                    color = TextTertiary
+                                    color = colors.textFaint
                                 )
                             } else {
                                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -538,7 +536,7 @@ fun FileDetailSheet(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clip(RoundedCornerShape(6.dp))
-                                                .background(OledSurface)
+                                                .background(colors.bg)
                                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
@@ -546,12 +544,12 @@ fun FileDetailSheet(
                                             Text(
                                                 text = "Part ${chunk.chunkIndex + 1} · Msg #${chunk.telegramMessageId ?: "-"}",
                                                 fontSize = 11.sp,
-                                                color = TextPrimary
+                                                color = colors.text
                                             )
                                             Text(
                                                 text = ChecksumUtil.formatFileSize(chunk.size),
                                                 fontSize = 11.sp,
-                                                color = TextTertiary
+                                                color = colors.textFaint
                                             )
                                         }
                                     }
@@ -559,7 +557,7 @@ fun FileDetailSheet(
                                         Text(
                                             text = "...and ${chunks.size - 8} more chunks",
                                             fontSize = 10.sp,
-                                            color = TextTertiary
+                                            color = colors.textFaint
                                         )
                                     }
                                 }
@@ -577,7 +575,7 @@ private fun ActionItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     iconTint: Color,
-    labelColor: Color = TextPrimary,
+    labelColor: Color = LocalTeleVaultColors.current.text,
     onClick: () -> Unit
 ) {
     Row(

@@ -49,19 +49,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.FolderEntity
 import com.example.domain.ChecksumUtil
-import com.example.ui.theme.AccentViolet
-import com.example.ui.theme.AppBackgroundOuter
-import com.example.ui.theme.AppSurface
 import com.example.ui.theme.BodySansFont
-import com.example.ui.theme.BorderDivider
-import com.example.ui.theme.BorderSubtle
+import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.NumericMonoFont
 import com.example.ui.theme.StatusError
-import com.example.ui.theme.SurfaceCard
-import com.example.ui.theme.SurfaceCardElevated
-import com.example.ui.theme.TextDimmed
-import com.example.ui.theme.TextFaint
-import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.VaultAnimatedDialog
 import com.example.ui.theme.pressScale
 
@@ -74,11 +65,12 @@ private fun AnimatedDialogCard(
     confirmButton: @Composable () -> Unit,
     dismissButton: (@Composable () -> Unit)? = null
 ) {
+    val colors = LocalTeleVaultColors.current
     VaultAnimatedDialog(onDismissRequest = onDismiss) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = SurfaceCard),
+            colors = CardDefaults.cardColors(containerColor = colors.surface),
             shape = RoundedCornerShape(20.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, BorderDivider),
+            border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
             modifier = Modifier
                 .fillMaxWidth()
                 .widthIn(max = 400.dp)
@@ -99,7 +91,7 @@ private fun AnimatedDialogCard(
                 }
                 Text(
                     text = title,
-                    color = TextPrimary,
+                    color = colors.text,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont
@@ -128,6 +120,7 @@ fun CreateFolderDialog(
     onDismiss: () -> Unit,
     onConfirm: (name: String) -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     var folderName by remember { mutableStateOf("") }
 
     AnimatedDialogCard(
@@ -137,13 +130,13 @@ fun CreateFolderDialog(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(AccentViolet.copy(alpha = 0.15f)),
+                    .background(colors.violet.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.CreateNewFolder,
                     contentDescription = null,
-                    tint = AccentViolet,
+                    tint = colors.violet,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -153,7 +146,7 @@ fun CreateFolderDialog(
             Column {
                 Text(
                     text = "Enter a name for your new folder:",
-                    color = TextDimmed,
+                    color = colors.textDim,
                     fontSize = 13.sp,
                     fontFamily = BodySansFont
                 )
@@ -161,16 +154,16 @@ fun CreateFolderDialog(
                 OutlinedTextField(
                     value = folderName,
                     onValueChange = { folderName = it },
-                    placeholder = { Text("e.g. Work Documents", color = TextFaint, fontSize = 13.sp) },
+                    placeholder = { Text("e.g. Work Documents", color = colors.textFaint, fontSize = 13.sp) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentViolet,
-                        unfocusedBorderColor = BorderDivider,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = AccentViolet,
-                        focusedContainerColor = AppSurface,
-                        unfocusedContainerColor = AppSurface
+                        focusedBorderColor = colors.violet,
+                        unfocusedBorderColor = colors.line,
+                        focusedTextColor = colors.text,
+                        unfocusedTextColor = colors.text,
+                        cursorColor = colors.violet,
+                        focusedContainerColor = colors.surfaceHi,
+                        unfocusedContainerColor = colors.surfaceHi
                     ),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -182,8 +175,8 @@ fun CreateFolderDialog(
                 onClick = { onConfirm(folderName) },
                 enabled = folderName.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentViolet,
-                    contentColor = AppBackgroundOuter
+                    containerColor = colors.violet,
+                    contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.pressScale(0.93f)
@@ -196,7 +189,7 @@ fun CreateFolderDialog(
                 onClick = onDismiss,
                 modifier = Modifier.pressScale(0.93f)
             ) {
-                Text("Cancel", color = TextDimmed)
+                Text("Cancel", color = colors.textDim)
             }
         }
     )
@@ -208,6 +201,7 @@ fun RenameFolderDialog(
     onDismiss: () -> Unit,
     onConfirm: (newName: String) -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     var folderName by remember { mutableStateOf(currentName) }
 
     AnimatedDialogCard(
@@ -217,13 +211,13 @@ fun RenameFolderDialog(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(AccentViolet.copy(alpha = 0.15f)),
+                    .background(colors.violet.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Edit,
                     contentDescription = null,
-                    tint = AccentViolet,
+                    tint = colors.violet,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -236,13 +230,13 @@ fun RenameFolderDialog(
                     onValueChange = { folderName = it },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentViolet,
-                        unfocusedBorderColor = BorderDivider,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = AccentViolet,
-                        focusedContainerColor = AppSurface,
-                        unfocusedContainerColor = AppSurface
+                        focusedBorderColor = colors.violet,
+                        unfocusedBorderColor = colors.line,
+                        focusedTextColor = colors.text,
+                        unfocusedTextColor = colors.text,
+                        cursorColor = colors.violet,
+                        focusedContainerColor = colors.surfaceHi,
+                        unfocusedContainerColor = colors.surfaceHi
                     ),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -254,8 +248,8 @@ fun RenameFolderDialog(
                 onClick = { onConfirm(folderName) },
                 enabled = folderName.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentViolet,
-                    contentColor = AppBackgroundOuter
+                    containerColor = colors.violet,
+                    contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.pressScale(0.93f)
@@ -268,7 +262,7 @@ fun RenameFolderDialog(
                 onClick = onDismiss,
                 modifier = Modifier.pressScale(0.93f)
             ) {
-                Text("Cancel", color = TextDimmed)
+                Text("Cancel", color = colors.textDim)
             }
         }
     )
@@ -282,6 +276,7 @@ fun MoveFileDialog(
     onDismiss: () -> Unit,
     onSelectDestination: (folderId: String?) -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     AnimatedDialogCard(
         onDismiss = onDismiss,
         icon = {
@@ -289,13 +284,13 @@ fun MoveFileDialog(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(AccentViolet.copy(alpha = 0.15f)),
+                    .background(colors.violet.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.DriveFileMove,
                     contentDescription = null,
-                    tint = AccentViolet,
+                    tint = colors.violet,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -305,7 +300,7 @@ fun MoveFileDialog(
             Column {
                 Text(
                     text = "Select destination:",
-                    color = TextDimmed,
+                    color = colors.textDim,
                     fontSize = 13.sp,
                     fontFamily = BodySansFont
                 )
@@ -321,14 +316,14 @@ fun MoveFileDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (currentFolderId == null) SurfaceCardElevated else Color.Transparent)
+                                .background(if (currentFolderId == null) colors.surfaceHi else Color.Transparent)
                                 .clickable { onSelectDestination(null) }
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Home, contentDescription = null, tint = AccentViolet, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Home, contentDescription = null, tint = colors.violet, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text("Vault Root (No folder)", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("Vault Root (No folder)", color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         }
                     }
 
@@ -338,14 +333,14 @@ fun MoveFileDialog(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(if (isCurrent) SurfaceCardElevated else Color.Transparent)
+                                .background(if (isCurrent) colors.surfaceHi else Color.Transparent)
                                 .clickable { onSelectDestination(folder.id) }
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Folder, contentDescription = null, tint = AccentViolet, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.Folder, contentDescription = null, tint = colors.violet, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text(folder.name, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text(folder.name, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -357,7 +352,7 @@ fun MoveFileDialog(
                 onClick = onDismiss,
                 modifier = Modifier.pressScale(0.93f)
             ) {
-                Text("Cancel", color = TextDimmed)
+                Text("Cancel", color = colors.textDim)
             }
         }
     )
@@ -371,6 +366,7 @@ fun LargeFileConfirmationDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     val formattedSize = ChecksumUtil.formatBytes(fileSize)
     AnimatedDialogCard(
         onDismiss = onDismiss,
@@ -395,13 +391,13 @@ fun LargeFileConfirmationDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "You are about to upload a large file:",
-                    color = TextDimmed,
+                    color = colors.textDim,
                     fontSize = 13.sp,
                     fontFamily = BodySansFont
                 )
                 Text(
                     text = fileName,
-                    color = TextPrimary,
+                    color = colors.text,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = BodySansFont
@@ -410,24 +406,24 @@ fun LargeFileConfirmationDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .background(SurfaceCardElevated)
-                        .border(1.dp, BorderDivider, RoundedCornerShape(8.dp))
+                        .background(colors.surfaceHi)
+                        .border(1.dp, colors.line, RoundedCornerShape(8.dp))
                         .padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column {
-                        Text("Total Size", fontSize = 11.sp, color = TextDimmed)
-                        Text(formattedSize, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = NumericMonoFont, color = AccentViolet)
+                        Text("Total Size", fontSize = 11.sp, color = colors.textDim)
+                        Text(formattedSize, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = NumericMonoFont, color = colors.violet)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("Telegram Chunks", fontSize = 11.sp, color = TextDimmed)
-                        Text("~$estimatedChunks chunks", fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = NumericMonoFont, color = TextPrimary)
+                        Text("Telegram Chunks", fontSize = 11.sp, color = colors.textDim)
+                        Text("~$estimatedChunks chunks", fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = NumericMonoFont, color = colors.text)
                     }
                 }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "This file will be split into $estimatedChunks 18MB chunks and uploaded sequentially. Keep the app active or let the background service complete the transfer.",
-                    color = TextFaint,
+                    color = colors.textFaint,
                     fontSize = 11.sp,
                     lineHeight = 15.sp,
                     fontFamily = BodySansFont
@@ -438,8 +434,8 @@ fun LargeFileConfirmationDialog(
             Button(
                 onClick = onConfirm,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentViolet,
-                    contentColor = AppBackgroundOuter
+                    containerColor = colors.violet,
+                    contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.pressScale(0.93f)
@@ -452,7 +448,7 @@ fun LargeFileConfirmationDialog(
                 onClick = onDismiss,
                 modifier = Modifier.pressScale(0.93f)
             ) {
-                Text("Cancel", color = TextDimmed)
+                Text("Cancel", color = colors.textDim)
             }
         }
     )
@@ -464,6 +460,7 @@ fun RenameFileDialog(
     onDismiss: () -> Unit,
     onConfirm: (newName: String) -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     var fileName by remember { mutableStateOf(currentName) }
 
     AnimatedDialogCard(
@@ -473,13 +470,13 @@ fun RenameFileDialog(
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(AccentViolet.copy(alpha = 0.15f)),
+                    .background(colors.violet.copy(alpha = 0.15f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.Edit,
                     contentDescription = null,
-                    tint = AccentViolet,
+                    tint = colors.violet,
                     modifier = Modifier.size(24.dp)
                 )
             }
@@ -492,13 +489,13 @@ fun RenameFileDialog(
                     onValueChange = { fileName = it },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AccentViolet,
-                        unfocusedBorderColor = BorderDivider,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary,
-                        cursorColor = AccentViolet,
-                        focusedContainerColor = AppSurface,
-                        unfocusedContainerColor = AppSurface
+                        focusedBorderColor = colors.violet,
+                        unfocusedBorderColor = colors.line,
+                        focusedTextColor = colors.text,
+                        unfocusedTextColor = colors.text,
+                        cursorColor = colors.violet,
+                        focusedContainerColor = colors.surfaceHi,
+                        unfocusedContainerColor = colors.surfaceHi
                     ),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -510,8 +507,8 @@ fun RenameFileDialog(
                 onClick = { onConfirm(fileName) },
                 enabled = fileName.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = AccentViolet,
-                    contentColor = AppBackgroundOuter
+                    containerColor = colors.violet,
+                    contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.pressScale(0.93f)
@@ -524,7 +521,7 @@ fun RenameFileDialog(
                 onClick = onDismiss,
                 modifier = Modifier.pressScale(0.93f)
             ) {
-                Text("Cancel", color = TextDimmed)
+                Text("Cancel", color = colors.textDim)
             }
         }
     )
@@ -538,6 +535,7 @@ fun DeleteConfirmationDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     AnimatedDialogCard(
         onDismiss = onDismiss,
         icon = {
@@ -561,13 +559,13 @@ fun DeleteConfirmationDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "Are you sure you want to delete:",
-                    color = TextDimmed,
+                    color = colors.textDim,
                     fontSize = 13.sp,
                     fontFamily = BodySansFont
                 )
                 Text(
                     text = itemName,
-                    color = TextPrimary,
+                    color = colors.text,
                     fontSize = 14.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = BodySansFont
@@ -575,7 +573,7 @@ fun DeleteConfirmationDialog(
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = warningText,
-                    color = TextFaint,
+                    color = colors.textFaint,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
                     fontFamily = BodySansFont
@@ -602,7 +600,7 @@ fun DeleteConfirmationDialog(
                 onClick = onDismiss,
                 modifier = Modifier.pressScale(0.93f)
             ) {
-                Text("Cancel", color = TextDimmed)
+                Text("Cancel", color = colors.textDim)
             }
         }
     )

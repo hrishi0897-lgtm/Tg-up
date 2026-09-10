@@ -1,6 +1,7 @@
 package com.example
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -26,12 +27,15 @@ import androidx.compose.foundation.background
 import com.example.ui.theme.LocalReduceMotion
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import android.widget.Toast
@@ -64,22 +68,29 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         handleIntent(intent)
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+            statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT)
         )
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = false
-            isAppearanceLightNavigationBars = false
-        }
 
         // Schedule background WorkManager to resume any paused transfers upon network reconnection
         TransferWorker.scheduleNetworkResume(applicationContext)
 
         setContent {
-            TeleVaultTheme {
+            val isDarkTheme by viewModel.isDarkTheme.collectAsState()
+            TeleVaultTheme(isDark = isDarkTheme) {
+                val view = LocalView.current
+                if (!view.isInEditMode) {
+                    SideEffect {
+                        val window = (view.context as Activity).window
+                        WindowCompat.getInsetsController(window, view).apply {
+                            isAppearanceLightStatusBars = !isDarkTheme
+                            isAppearanceLightNavigationBars = !isDarkTheme
+                        }
+                    }
+                }
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = OledBlack
+                    color = MaterialTheme.colorScheme.background
                 ) {
                     TeleVaultApp(viewModel = viewModel)
                 }
@@ -110,6 +121,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun TeleVaultApp(viewModel: TeleVaultViewModel) {
     val uiState by viewModel.uiState.collectAsState()
+    val isDarkTheme by viewModel.isDarkTheme.collectAsState()
     val storageStats by viewModel.storageStats.collectAsState()
     val folders by viewModel.currentFolders.collectAsState()
     val files by viewModel.currentFiles.collectAsState()
@@ -171,10 +183,8 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
     val reduceMotion = LocalReduceMotion.current
 
     Surface(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(OledBlack),
-        color = OledBlack
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             AnimatedContent(
@@ -251,6 +261,8 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         chatId = chatId,
                         chunkSizeMb = uiState.chunkSizeMb,
                         isWifiOnly = uiState.isWifiOnly,
+                        isDarkTheme = isDarkTheme,
+                        onToggleTheme = { viewModel.toggleTheme() },
                         onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
                         onWifiOnlyChange = { viewModel.setWifiOnly(it) },
                         onDisconnect = { viewModel.disconnect() },
@@ -271,6 +283,8 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         isResyncing = uiState.isResyncing,
                         resyncMessage = uiState.resyncMessage,
                         lastSyncedTime = uiState.lastSyncedTime,
+                        isDarkTheme = isDarkTheme,
+                        onToggleTheme = { viewModel.toggleTheme() },
                         onSearchChange = { viewModel.setSearchQuery(it) },
                         onSortChange = { viewModel.setSortBy(it) },
                         onToggleViewMode = { viewModel.toggleViewMode() },
