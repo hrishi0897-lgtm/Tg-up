@@ -1,13 +1,76 @@
 package com.example.ui.theme
 
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
 // ==========================================
-// TeleVault Redesign Color System
+// TeleVault Theme Color System (Light & OLED Dark)
 // ==========================================
 
-// Surfaces & Backgrounds
+data class TeleVaultColors(
+    val bg: Color,
+    val surface: Color,
+    val surfaceHi: Color,
+    val line: Color,
+    val text: Color,
+    val textDim: Color,
+    val textFaint: Color,
+    val heroGlow: Color,
+    val navBg: Color,
+    val btnEdge: Color,
+    val searchBg: Color,
+    val bodyBg: Color,
+    val violet: Color = Color(0xFF8C7CFF),
+    val violetDim: Color,
+    val teal: Color = Color(0xFF35E0C2),
+    val amber: Color = Color(0xFFF2B84B),
+    val mint: Color = Color(0xFF4ADE9E),
+    val isDark: Boolean
+)
+
+val DarkTeleVaultColors = TeleVaultColors(
+    bg = Color(0xFF0B0D14),
+    surface = Color(0xFF141826),
+    surfaceHi = Color(0xFF1B2033),
+    line = Color(0xFF262C42),
+    text = Color(0xFFF2F3F8),
+    textDim = Color(0xFF8890A8),
+    textFaint = Color(0xFF545C77),
+    heroGlow = Color(0xFF191F35),
+    navBg = Color(0xEB0B0D14),
+    btnEdge = Color(0xFF0C0F1A),
+    searchBg = Color(0xFF0E1120),
+    bodyBg = Color(0xFF05060A),
+    violetDim = Color(0xFF4A4180),
+    isDark = true
+)
+
+val LightTeleVaultColors = TeleVaultColors(
+    bg = Color(0xFFF3F4FA),
+    surface = Color(0xFFFFFFFF),
+    surfaceHi = Color(0xFFECEEF6),
+    line = Color(0xFFE1E4EE),
+    text = Color(0xFF14161F),
+    textDim = Color(0xFF5B6178),
+    textFaint = Color(0xFF98A0B8),
+    heroGlow = Color(0xFFFFFFFF),
+    navBg = Color(0xD9FFFFFF),
+    btnEdge = Color(0xFFCBCFDE),
+    searchBg = Color(0xFFECEEF6),
+    bodyBg = Color(0xFFE7E9F2),
+    violetDim = Color(0xFF7364DE),
+    isDark = false
+)
+
+val LocalTeleVaultColors = staticCompositionLocalOf { LightTeleVaultColors }
+
+// Category Storage Donut Colors
+val CategoryViolet = Color(0xFF8C7CFF)
+val CategoryTeal = Color(0xFF35E0C2)
+val CategoryAmber = Color(0xFFF2B84B)
+
+// Surfaces & Backgrounds (Default dark constants for backward compatibility)
 val AppBackgroundOuter = Color(0xFF05060A)
 val AppSurface = Color(0xFF0B0D14)
 val SurfaceCard = Color(0xFF141826)

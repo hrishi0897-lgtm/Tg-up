@@ -18,8 +18,11 @@ import com.example.data.sync.VaultSyncManager
 import com.example.data.sync.VaultSyncWorker
 import com.example.data.transfer.TransferManager
 import com.example.domain.model.BreadcrumbItem
+import com.example.domain.model.CategoryStorageBreakdown
+import com.example.domain.model.StorageCategory
 import com.example.domain.model.StorageStats
 import com.example.domain.model.TransferProgress
+import com.example.domain.model.classifyFileCategory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -100,6 +103,15 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
+    private val _isDarkTheme = MutableStateFlow(creds.getThemeMode() == "dark")
+    val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
+
+    fun toggleTheme() {
+        val next = !_isDarkTheme.value
+        _isDarkTheme.value = next
+        creds.setThemeMode(if (next) "dark" else "light")
+    }
+
     init {
         viewModelScope.launch {
             transferManager.transferErrorEvents.collect { errorMsg ->
@@ -139,14 +151,32 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Storage summary reactive stats
     val storageStats: StateFlow<StorageStats> = combine(
-        db.fileDao().observeTotalStorageUsed(),
-        db.fileDao().observeCompletedFileCount(),
+        db.fileDao().observeAll(),
         db.folderDao().observeFolderCount()
-    ) { totalBytes, fileCount, folderCount ->
+    ) { allFiles, folderCount ->
+        val completedFiles = allFiles.filter { it.status == FileStatus.COMPLETED }
+        val totalBytes = completedFiles.sumOf { it.size }
+        var docBytes = 0L
+        var mediaBytes = 0L
+        var otherBytes = 0L
+
+        for (file in completedFiles) {
+            when (classifyFileCategory(file.mimeType, file.name)) {
+                StorageCategory.DOCUMENTS -> docBytes += file.size
+                StorageCategory.MEDIA -> mediaBytes += file.size
+                StorageCategory.OTHER -> otherBytes += file.size
+            }
+        }
+
         StorageStats(
             totalBytesStored = totalBytes,
-            fileCount = fileCount,
-            folderCount = folderCount
+            fileCount = completedFiles.size,
+            folderCount = folderCount,
+            breakdown = CategoryStorageBreakdown(
+                documentsBytes = docBytes,
+                mediaBytes = mediaBytes,
+                otherBytes = otherBytes
+            )
         )
     }.stateIn(
         viewModelScope,

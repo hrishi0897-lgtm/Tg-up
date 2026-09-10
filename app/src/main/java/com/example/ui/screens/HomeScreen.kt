@@ -18,8 +18,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import com.example.ui.components.Fab3D
+import com.example.ui.components.IconButton3D
+import com.example.ui.components.QuickStatsBar
+import com.example.ui.components.SquareButton3D
+import com.example.ui.components.StorageDonutRingCard
 import com.example.ui.components.TeleVaultBottomNav
+import com.example.ui.components.UploadButton3D
 import com.example.ui.theme.LocalReduceMotion
+import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.MotionSpecs
 import com.example.ui.theme.pressScale
 import com.example.ui.viewmodel.AppScreen
@@ -187,8 +196,11 @@ fun HomeScreen(
     onDismissResyncMsg: () -> Unit,
     transferErrorMessage: String? = null,
     onDismissTransferError: () -> Unit = {},
+    isDarkTheme: Boolean = false,
+    onToggleTheme: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalTeleVaultColors.current
     var showFabMenu by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
 
@@ -199,12 +211,14 @@ fun HomeScreen(
     Scaffold(
         modifier = modifier
             .fillMaxSize()
-            .background(AppBackgroundOuter),
-        containerColor = AppSurface,
+            .background(colors.bodyBg),
+        containerColor = colors.bg,
         topBar = {
             HomeTopBar(
                 isResyncing = isResyncing,
                 lastSyncedTime = lastSyncedTime,
+                isDarkTheme = isDarkTheme,
+                onToggleTheme = onToggleTheme,
                 onOpenSettings = onOpenSettings,
                 onResync = onResync
             )
@@ -231,8 +245,8 @@ fun HomeScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(SurfaceCardElevated)
-                                .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
+                                .background(colors.surfaceHi)
+                                .border(1.dp, colors.line, RoundedCornerShape(14.dp))
                                 .clickable {
                                     showFabMenu = false
                                     onCreateFolderClick()
@@ -242,13 +256,13 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.CreateNewFolder,
                                 contentDescription = null,
-                                tint = AccentTeal,
+                                tint = colors.teal,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
                                 text = "New Folder",
-                                color = TextPrimary,
+                                color = colors.text,
                                 fontSize = 13.sp,
                                 fontFamily = BodySansFont,
                                 fontWeight = FontWeight.SemiBold
@@ -260,8 +274,8 @@ fun HomeScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(SurfaceCardElevated)
-                                .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
+                                .background(colors.surfaceHi)
+                                .border(1.dp, colors.line, RoundedCornerShape(14.dp))
                                 .clickable {
                                     showFabMenu = false
                                     onUploadFileClick()
@@ -271,13 +285,13 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.UploadFile,
                                 contentDescription = null,
-                                tint = AccentTeal,
+                                tint = colors.teal,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
                                 text = "Upload File",
-                                color = TextPrimary,
+                                color = colors.text,
                                 fontSize = 13.sp,
                                 fontFamily = BodySansFont,
                                 fontWeight = FontWeight.SemiBold
@@ -286,45 +300,21 @@ fun HomeScreen(
                     }
                 }
 
-                // Primary Teal Gradient FAB with tactile spring scale and rotation
-                val fabInteractionSource = remember { MutableInteractionSource() }
-                val isFabPressed by fabInteractionSource.collectIsPressedAsState()
-                val fabScale by animateFloatAsState(
-                    targetValue = if (isFabPressed) 0.90f else 1f,
-                    animationSpec = spring(dampingRatio = 0.45f, stiffness = 400f),
-                    label = "fab_scale"
-                )
+                // Primary 3D Teal FAB with rotation on open
                 val fabRotation by animateFloatAsState(
                     targetValue = if (showFabMenu) 45f else 0f,
                     animationSpec = spring(dampingRatio = 0.6f, stiffness = 500f),
                     label = "fab_rotation"
                 )
 
-                Box(
-                    modifier = Modifier
-                        .scale(fabScale)
-                        .drawBehind {
-                            drawRoundRect(
-                                color = Color(0x5935E0C2),
-                                cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx()),
-                                topLeft = Offset(0f, 6.dp.toPx()),
-                                size = Size(size.width, size.height)
-                            )
-                        }
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(TealFabGradient)
-                        .clickable(
-                            interactionSource = fabInteractionSource,
-                            indication = null
-                        ) { showFabMenu = !showFabMenu }
-                        .testTag("fab_add"),
-                    contentAlignment = Alignment.Center
+                Fab3D(
+                    onClick = { showFabMenu = !showFabMenu },
+                    modifier = Modifier.testTag("fab_add")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Add options",
-                        tint = AppBackgroundOuter,
+                        tint = Color(0xFF05060A),
                         modifier = Modifier
                             .size(24.dp)
                             .rotate(fabRotation)
@@ -347,29 +337,40 @@ fun HomeScreen(
                 .padding(innerPadding),
             contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 6.dp, bottom = 96.dp)
         ) {
-            // 1. Status Badge: "Backend connected" with glowing mint dot
+            // 1. Status Badge: "Backend connected" with pulsing mint dot
             item {
+                val infinitePulse = rememberInfiniteTransition(label = "badge_pulse")
+                val dotAlpha by infinitePulse.animateFloat(
+                    initialValue = 0.35f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(900, easing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "pulse_dot_alpha"
+                )
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                     modifier = Modifier
                         .clip(RoundedCornerShape(100.dp))
-                        .background(StatusMintBg)
-                        .border(1.dp, StatusMintBorder, RoundedCornerShape(100.dp))
+                        .background(colors.mint.copy(alpha = 0.12f))
+                        .border(1.dp, colors.mint.copy(alpha = 0.35f), RoundedCornerShape(100.dp))
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(6.dp)
+                            .size(7.dp)
                             .clip(CircleShape)
-                            .background(StatusMint)
+                            .background(colors.mint.copy(alpha = dotAlpha))
                     )
                     Text(
                         text = "Backend connected",
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.Medium,
                         fontFamily = BodySansFont,
-                        color = StatusMint
+                        color = colors.mint
                     )
                 }
                 Spacer(modifier = Modifier.height(14.dp))
@@ -482,17 +483,20 @@ fun HomeScreen(
                 }
             }
 
-            // 2. Hero: 120dp Circular Progress Ring Card with subtle radial gradient
+            // 2. Hero: 3-segment Storage Ring Donut Card + Quick Stats Bar
             item {
-                StorageMeterCard(
-                    stats = storageStats,
-                    onOpenTransfers = onOpenTransfers,
-                    activeTransfersCount = activeCount
+                StorageDonutRingCard(stats = storageStats)
+                Spacer(modifier = Modifier.height(12.dp))
+                QuickStatsBar(
+                    filesCount = storageStats.fileCount,
+                    foldersCount = storageStats.folderCount,
+                    activeTransfersCount = activeCount,
+                    onTransfersClick = onOpenTransfers
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // 3. Search & Filter Row: Search Box + Sort Square Button + View Toggle Square Button
+            // 3. Search & Filter Row: Search Box + 3D Sort Button + 3D View Toggle Button
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -505,8 +509,8 @@ fun HomeScreen(
                             .weight(1f)
                             .height(44.dp)
                             .clip(RoundedCornerShape(14.dp))
-                            .background(SurfaceCard)
-                            .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
+                            .background(colors.searchBg)
+                            .border(1.dp, colors.line, RoundedCornerShape(14.dp))
                             .padding(horizontal = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -514,7 +518,7 @@ fun HomeScreen(
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = "Search",
-                            tint = TextFaint,
+                            tint = colors.textFaint,
                             modifier = Modifier.size(16.dp)
                         )
                         BasicTextField(
@@ -523,17 +527,17 @@ fun HomeScreen(
                             textStyle = TextStyle(
                                 fontFamily = BodySansFont,
                                 fontSize = 14.sp,
-                                color = TextPrimary
+                                color = colors.text
                             ),
                             singleLine = true,
-                            cursorBrush = SolidColor(AccentViolet),
+                            cursorBrush = SolidColor(colors.violet),
                             decorationBox = { innerTextField ->
                                 if (searchQuery.isEmpty()) {
                                     Text(
                                         text = "Search the vault",
                                         fontFamily = BodySansFont,
                                         fontSize = 14.sp,
-                                        color = TextFaint
+                                        color = colors.textFaint
                                     )
                                 }
                                 innerTextField()
@@ -545,7 +549,7 @@ fun HomeScreen(
                         if (searchQuery.isNotEmpty()) {
                             Text(
                                 text = "✕",
-                                color = TextDimmed,
+                                color = colors.textDim,
                                 fontSize = 13.sp,
                                 modifier = Modifier
                                     .clickable { onSearchChange("") }
@@ -554,22 +558,15 @@ fun HomeScreen(
                         }
                     }
 
-                    // Sort Square Button
+                    // Sort 3D Button
                     Box {
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(SurfaceCard)
-                                .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
-                                .pressScale(0.88f)
-                                .clickable { showSortMenu = true },
-                            contentAlignment = Alignment.Center
+                        SquareButton3D(
+                            onClick = { showSortMenu = true }
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Sort,
                                 contentDescription = "Sort",
-                                tint = TextDimmed,
+                                tint = colors.textDim,
                                 modifier = Modifier.size(16.dp)
                             )
                         }
@@ -578,25 +575,25 @@ fun HomeScreen(
                             expanded = showSortMenu,
                             onDismissRequest = { showSortMenu = false },
                             modifier = Modifier
-                                .background(SurfaceCardElevated)
-                                .border(1.dp, BorderDivider, RoundedCornerShape(12.dp))
+                                .background(colors.surfaceHi)
+                                .border(1.dp, colors.line, RoundedCornerShape(12.dp))
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Name", color = TextPrimary, fontSize = 13.sp, fontFamily = BodySansFont) },
+                                text = { Text("Name", color = colors.text, fontSize = 13.sp, fontFamily = BodySansFont) },
                                 onClick = {
                                     onSortChange(SortBy.NAME)
                                     showSortMenu = false
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Date Uploaded", color = TextPrimary, fontSize = 13.sp, fontFamily = BodySansFont) },
+                                text = { Text("Date Uploaded", color = colors.text, fontSize = 13.sp, fontFamily = BodySansFont) },
                                 onClick = {
                                     onSortChange(SortBy.DATE)
                                     showSortMenu = false
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("File Size", color = TextPrimary, fontSize = 13.sp, fontFamily = BodySansFont) },
+                                text = { Text("File Size", color = colors.text, fontSize = 13.sp, fontFamily = BodySansFont) },
                                 onClick = {
                                     onSortChange(SortBy.SIZE)
                                     showSortMenu = false
@@ -605,26 +602,19 @@ fun HomeScreen(
                         }
                     }
 
-                    // View Toggle Square Button
+                    // View Toggle 3D Button
                     val viewToggleRot by animateFloatAsState(
                         targetValue = if (isGridView) 180f else 0f,
                         animationSpec = spring(dampingRatio = 0.7f, stiffness = 350f),
                         label = "view_toggle_rot"
                     )
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(SurfaceCard)
-                            .border(1.dp, BorderDivider, RoundedCornerShape(14.dp))
-                            .pressScale(0.88f)
-                            .clickable(onClick = onToggleViewMode),
-                        contentAlignment = Alignment.Center
+                    SquareButton3D(
+                        onClick = onToggleViewMode
                     ) {
                         Icon(
                             imageVector = if (isGridView) Icons.Default.ViewList else Icons.Default.GridView,
                             contentDescription = "Toggle view",
-                            tint = TextDimmed,
+                            tint = colors.textDim,
                             modifier = Modifier
                                 .size(16.dp)
                                 .rotate(viewToggleRot)
@@ -753,9 +743,13 @@ fun HomeScreen(
 private fun HomeTopBar(
     isResyncing: Boolean,
     lastSyncedTime: Long = 0L,
+    isDarkTheme: Boolean = false,
+    onToggleTheme: () -> Unit = {},
     onOpenSettings: () -> Unit,
     onResync: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -827,7 +821,7 @@ private fun HomeTopBar(
             Column {
                 Text(
                     text = "TeleVault",
-                    style = WordmarkTextStyle
+                    style = WordmarkTextStyle.copy(color = colors.text)
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(
@@ -835,9 +829,9 @@ private fun HomeTopBar(
                     horizontalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
                     val dotColor = when {
-                        isResyncing -> AccentTeal
-                        lastSyncedTime > 0 -> StatusMint
-                        else -> TextFaint
+                        isResyncing -> colors.teal
+                        lastSyncedTime > 0 -> colors.mint
+                        else -> colors.textFaint
                     }
                     Box(
                         modifier = Modifier
@@ -862,13 +856,13 @@ private fun HomeTopBar(
                         text = statusText,
                         fontSize = 11.sp,
                         fontFamily = BodySansFont,
-                        color = if (isResyncing) AccentTeal else TextFaint
+                        color = if (isResyncing) colors.teal else colors.textFaint
                     )
                 }
             }
         }
 
-        // Header Action Buttons (38dp square buttons)
+        // Header Action Buttons with 3D pressed edge shadow (38dp)
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -884,42 +878,44 @@ private fun HomeTopBar(
                 label = "resync_angle"
             )
 
-            // Resync icon button
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(SurfaceCard)
-                    .border(1.dp, BorderDivider, RoundedCornerShape(12.dp))
-                    .pressScale(0.88f)
-                    .clickable(enabled = !isResyncing, onClick = onResync),
-                contentAlignment = Alignment.Center
+            // Theme toggle 3D icon button (sun when dark, moon when light)
+            IconButton3D(
+                onClick = onToggleTheme,
+                modifier = Modifier.testTag("theme_toggle_btn")
+            ) {
+                Icon(
+                    imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    contentDescription = if (isDarkTheme) "Switch to light theme" else "Switch to dark theme",
+                    tint = colors.textDim,
+                    modifier = Modifier.size(17.dp)
+                )
+            }
+
+            // Resync 3D icon button
+            IconButton3D(
+                onClick = onResync,
+                enabled = !isResyncing,
+                modifier = Modifier.testTag("resync_btn")
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
                     contentDescription = "Sync",
-                    tint = if (isResyncing) AccentViolet else TextDimmed,
+                    tint = if (isResyncing) colors.violet else colors.textDim,
                     modifier = Modifier
                         .size(17.dp)
                         .rotate(if (isResyncing) spinAngle else 0f)
                 )
             }
 
-            // Settings icon button
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(SurfaceCard)
-                    .border(1.dp, BorderDivider, RoundedCornerShape(12.dp))
-                    .pressScale(0.88f)
-                    .clickable(onClick = onOpenSettings),
-                contentAlignment = Alignment.Center
+            // Settings 3D icon button
+            IconButton3D(
+                onClick = onOpenSettings,
+                modifier = Modifier.testTag("settings_btn")
             ) {
                 Icon(
                     imageVector = Icons.Default.Settings,
                     contentDescription = "Settings",
-                    tint = TextDimmed,
+                    tint = colors.textDim,
                     modifier = Modifier.size(17.dp)
                 )
             }
@@ -928,277 +924,11 @@ private fun HomeTopBar(
 }
 
 // ==========================================
-// Storage Meter Hero Card (120dp Circular Ring + Radial Gradient)
-// ==========================================
 
-@Composable
-private fun StorageMeterCard(
-    stats: StorageStats,
-    onOpenTransfers: () -> Unit,
-    activeTransfersCount: Int
-) {
-    val reduceMotion = LocalReduceMotion.current
-    val (storageValue, storageUnit) = remember(stats.totalBytesStored) {
-        splitStorageValueAndUnit(stats.totalBytesStored)
-    }
 
-    val targetAngle = remember(stats.totalBytesStored) {
-        if (stats.totalBytesStored <= 0L) {
-            28f
-        } else {
-            val gbStored = stats.totalBytesStored.toFloat() / (1024f * 1024f * 1024f)
-            (28f + (gbStored * 30f).coerceIn(0f, 310f)).coerceAtMost(340f)
-        }
-    }
-
-    var ringAnimationStarted by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        ringAnimationStarted = true
-    }
-
-    val animatedAngle by animateFloatAsState(
-        targetValue = if (reduceMotion) targetAngle else if (ringAnimationStarted) targetAngle else 0f,
-        animationSpec = if (reduceMotion) {
-            snap()
-        } else {
-            spring(
-                dampingRatio = 0.8f,
-                stiffness = 220f
-            )
-        },
-        label = "ring_fill_anim"
-    )
-
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .background(SurfaceCard)
-            .drawBehind {
-                drawRect(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color(0xFF191F35), SurfaceCard),
-                        center = Offset(size.width * 0.15f, 0f),
-                        radius = size.width * 1.3f
-                    )
-                )
-            }
-            .border(1.dp, BorderDivider, RoundedCornerShape(28.dp))
-            .padding(top = 24.dp, start = 22.dp, end = 22.dp, bottom = 22.dp)
-            .testTag("storage_card")
-    ) {
-        Column {
-            // Top Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Vault storage",
-                    fontSize = 13.sp,
-                    fontFamily = BodySansFont,
-                    color = TextDimmed
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Canvas(modifier = Modifier.size(12.dp)) {
-                        drawCircle(
-                            color = AccentTeal,
-                            radius = size.minDimension / 2f - 1.dp.toPx(),
-                            style = Stroke(width = 1.6.dp.toPx())
-                        )
-                    }
-                    Text(
-                        text = "No archive limit",
-                        fontSize = 12.sp,
-                        fontFamily = BodySansFont,
-                        fontWeight = FontWeight.Normal,
-                        color = AccentTeal
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-
-            // Ring + Stats Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(22.dp)
-            ) {
-                // Circular Ring (120dp)
-                Box(
-                    modifier = Modifier.size(120.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val strokePx = 9.dp.toPx()
-                        val diameter = size.minDimension - strokePx
-                        val topLeft = Offset(strokePx / 2f, strokePx / 2f)
-                        val arcSize = Size(diameter, diameter)
-
-                        // Background track
-                        drawArc(
-                            color = SurfaceCardElevated,
-                            startAngle = 0f,
-                            sweepAngle = 360f,
-                            useCenter = false,
-                            topLeft = topLeft,
-                            size = arcSize,
-                            style = Stroke(width = strokePx)
-                        )
-
-                        // Progress gradient arc
-                        if (animatedAngle > 0f) {
-                            drawArc(
-                                brush = Brush.linearGradient(
-                                    colors = listOf(AccentViolet, AccentTeal),
-                                    start = Offset(0f, 0f),
-                                    end = Offset(size.width, size.height)
-                                ),
-                                startAngle = -90f,
-                                sweepAngle = animatedAngle,
-                                useCenter = false,
-                                topLeft = topLeft,
-                                size = arcSize,
-                                style = Stroke(width = strokePx, cap = StrokeCap.Round)
-                            )
-                        }
-                    }
-
-                    // Numeric Monospace Storage Value & Unit
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        AnimatedContent(
-                            targetState = storageValue,
-                            transitionSpec = {
-                                fadeIn(tween(220)) togetherWith fadeOut(tween(180))
-                            },
-                            label = "storage_val_crossfade"
-                        ) { valText ->
-                            Text(
-                                text = valText,
-                                style = MonoStatValueLarge,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = storageUnit,
-                            fontSize = 10.5.sp,
-                            fontFamily = BodySansFont,
-                            color = TextFaint,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-
-                // Vertical Stat List beside ring
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    // Files
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        Text(
-                            text = "Files",
-                            fontSize = 13.sp,
-                            fontFamily = BodySansFont,
-                            color = TextDimmed
-                        )
-                        AnimatedContent(
-                            targetState = stats.fileCount,
-                            transitionSpec = {
-                                fadeIn(tween(220)) togetherWith fadeOut(tween(180))
-                            },
-                            label = "files_count_crossfade"
-                        ) { count ->
-                            Text(
-                                text = "$count",
-                                style = MonoStatValueMedium
-                            )
-                        }
-                    }
-
-                    // Folders
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        Text(
-                            text = "Folders",
-                            fontSize = 13.sp,
-                            fontFamily = BodySansFont,
-                            color = TextDimmed
-                        )
-                        Text(
-                            text = "${stats.folderCount}",
-                            style = MonoStatValueMedium
-                        )
-                    }
-
-                    // Transfers
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = onOpenTransfers),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        Text(
-                            text = "Transfers",
-                            fontSize = 13.sp,
-                            fontFamily = BodySansFont,
-                            color = TextDimmed
-                        )
-                        if (activeTransfersCount > 0) {
-                            Text(
-                                text = "$activeTransfersCount active",
-                                style = MonoStatValueMedium,
-                                color = AccentViolet
-                            )
-                        } else {
-                            Text(
-                                text = "Idle",
-                                fontSize = 14.sp,
-                                fontFamily = BodySansFont,
-                                color = TextFaint
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun splitStorageValueAndUnit(bytes: Long): Pair<String, String> {
-    if (bytes <= 0L) return Pair("0", "bytes used")
-    val kb = 1024.0
-    val mb = kb * 1024.0
-    val gb = mb * 1024.0
-    val tb = gb * 1024.0
-    return when {
-        bytes >= tb -> Pair(String.format(java.util.Locale.US, "%.1f", bytes / tb), "TB used")
-        bytes >= gb -> Pair(String.format(java.util.Locale.US, "%.1f", bytes / gb), "GB used")
-        bytes >= mb -> Pair(String.format(java.util.Locale.US, "%.1f", bytes / mb), "MB used")
-        bytes >= kb -> Pair(String.format(java.util.Locale.US, "%.1f", bytes / kb), "KB used")
-        else -> Pair("$bytes", "bytes used")
-    }
-}
 
 // ==========================================
-// Empty State: Outlined Vault Canvas + Serif Headline + Violet Gradient Button
+// Empty State: Outlined Vault Canvas + Serif Headline + 3D Violet Button
 // ==========================================
 
 @Composable
@@ -1206,6 +936,8 @@ private fun EmptyFolderState(
     isSearch: Boolean,
     onUploadClick: () -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1216,8 +948,8 @@ private fun EmptyFolderState(
         Canvas(modifier = Modifier.size(72.dp)) {
             val scale = size.width / 72f
             val strokeWidth = 2.dp.toPx()
-            val baseColor = Color(0xFF3A4160)
-            val accentColor = AccentViolet
+            val baseColor = colors.line
+            val accentColor = colors.violet
 
             // Body rectangle: x=14, y=10, width=44, height=52, rx=10
             drawRoundRect(
@@ -1245,7 +977,7 @@ private fun EmptyFolderState(
                 cap = StrokeCap.Round
             )
 
-            // Handle arch at top: x=22, y=10, up to y=6, then curve to y=2 at x=26, across to x=46, curve to (50, 6) then (50, 10)
+            // Handle arch at top
             val handlePath = Path().apply {
                 moveTo(22f * scale, 10f * scale)
                 lineTo(22f * scale, 6f * scale)
@@ -1266,7 +998,7 @@ private fun EmptyFolderState(
         // Serif display headline
         Text(
             text = if (isSearch) "No matching files" else "Nothing archived yet",
-            style = EmptyHeadlineStyle,
+            style = EmptyHeadlineStyle.copy(color = colors.text),
             textAlign = TextAlign.Center
         )
 
@@ -1281,7 +1013,7 @@ private fun EmptyFolderState(
             fontSize = 13.5.sp,
             lineHeight = 21.sp,
             fontFamily = BodySansFont,
-            color = TextDimmed,
+            color = colors.textDim,
             textAlign = TextAlign.Center,
             modifier = Modifier.widthIn(max = 270.dp)
         )
@@ -1289,24 +1021,10 @@ private fun EmptyFolderState(
         if (!isSearch) {
             Spacer(modifier = Modifier.height(22.dp))
 
-            // Gradient violet upload button with shadow glow
-            Box(
-                modifier = Modifier
-                    .drawBehind {
-                        drawRoundRect(
-                            color = Color(0x4D8C7CFF),
-                            cornerRadius = CornerRadius(14.dp.toPx(), 14.dp.toPx()),
-                            topLeft = Offset(0f, 6.dp.toPx()),
-                            size = Size(size.width, size.height)
-                        )
-                    }
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(VioletButtonGradient)
-                    .pressScale(0.94f)
-                    .clickable(onClick = onUploadClick)
-                    .padding(horizontal = 22.dp, vertical = 13.dp)
-                    .testTag("empty_upload_button"),
-                contentAlignment = Alignment.Center
+            // 3D Violet Upload Button
+            UploadButton3D(
+                onClick = onUploadClick,
+                modifier = Modifier.testTag("empty_upload_button")
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,

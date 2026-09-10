@@ -48,10 +48,9 @@ import com.example.ui.theme.AppBackgroundOuter
 import com.example.ui.theme.BodySansFont
 import com.example.ui.theme.BorderDivider
 import com.example.ui.theme.LocalReduceMotion
+import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.MotionSpecs
 import com.example.ui.theme.NumericMonoFont
-import com.example.ui.theme.TextFaint
-import com.example.ui.theme.TextPrimary
 import com.example.ui.theme.pressScale
 import com.example.ui.viewmodel.AppScreen
 
@@ -63,29 +62,30 @@ fun TeleVaultBottomNav(
     onTransfersSelected: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalTeleVaultColors.current
     val reduceMotion = LocalReduceMotion.current
     val isVault = currentScreen == AppScreen.VAULT
 
     // Animate tab colors smoothly
     val vaultColor by animateColorAsState(
-        targetValue = if (isVault) TextPrimary else TextFaint,
+        targetValue = if (isVault) colors.text else colors.textFaint,
         animationSpec = tween(durationMillis = 200),
         label = "vault_tab_color"
     )
     val transfersColor by animateColorAsState(
-        targetValue = if (!isVault) TextPrimary else TextFaint,
+        targetValue = if (!isVault) colors.text else colors.textFaint,
         animationSpec = tween(durationMillis = 200),
         label = "transfers_tab_color"
     )
 
     Surface(
-        color = Color(0xEB0B0D14),
+        color = colors.navBg,
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
             .border(
                 width = 1.dp,
-                color = BorderDivider,
+                color = colors.line,
                 shape = RoundedCornerShape(0.dp)
             )
     ) {
@@ -125,7 +125,7 @@ fun TeleVaultBottomNav(
                     .width(indicatorWidth)
                     .height(2.5.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(AccentViolet)
+                    .background(colors.violet)
             )
 
             Row(

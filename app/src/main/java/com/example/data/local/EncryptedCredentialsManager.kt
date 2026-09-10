@@ -34,6 +34,7 @@ class EncryptedCredentialsManager(context: Context) {
         private const val PREF_LAST_SYNCED = "last_synced_timestamp"
         private const val PREF_LAST_INDEX_MSG_ID = "last_vault_index_message_id"
         private const val PREF_DEVICE_ID = "vault_device_id"
+        private const val PREF_THEME_MODE = "app_theme_mode" // "light" or "dark"
         // Telegram Bot API allows uploading up to 50MB via sendDocument, BUT strictly limits
         // downloading to 20MB via getFile. If a chunk exceeds 20MB, getFile returns HTTP 400 'Bad Request: file is too big'.
         // We set CHUNK_SIZE_BYTES globally to 18MB to leave safe headroom for multipart boundary overhead and API limits.
@@ -174,5 +175,13 @@ class EncryptedCredentialsManager(context: Context) {
         val newId = java.util.UUID.randomUUID().toString()
         prefs.edit().putString(PREF_DEVICE_ID, newId).apply()
         return newId
+    }
+
+    fun getThemeMode(): String {
+        return prefs.getString(PREF_THEME_MODE, "light") ?: "light"
+    }
+
+    fun setThemeMode(mode: String) {
+        prefs.edit().putString(PREF_THEME_MODE, mode).apply()
     }
 }

@@ -31,10 +31,41 @@ data class BreadcrumbItem(
     val title: String
 )
 
+data class CategoryStorageBreakdown(
+    val documentsBytes: Long = 0L,
+    val mediaBytes: Long = 0L,
+    val otherBytes: Long = 0L
+)
+
+enum class StorageCategory {
+    DOCUMENTS,
+    MEDIA,
+    OTHER
+}
+
+fun classifyFileCategory(mimeType: String?, fileName: String): StorageCategory {
+    val mime = mimeType?.lowercase() ?: ""
+    val name = fileName.lowercase()
+    val ext = name.substringAfterLast('.', "")
+
+    return when {
+        mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/") ||
+        ext in listOf("mp4", "mkv", "mov", "avi", "webm", "mp3", "wav", "flac", "m4a", "ogg", "aac", "jpg", "jpeg", "png", "gif", "webp", "heic", "svg") -> {
+            StorageCategory.MEDIA
+        }
+        mime.startsWith("text/") || mime.contains("pdf") || mime.contains("document") || mime.contains("sheet") || mime.contains("presentation") ||
+        ext in listOf("pdf", "doc", "docx", "txt", "rtf", "ppt", "pptx", "xls", "xlsx", "csv", "epub", "md") -> {
+            StorageCategory.DOCUMENTS
+        }
+        else -> StorageCategory.OTHER
+    }
+}
+
 data class StorageStats(
     val totalBytesStored: Long = 0L,
     val fileCount: Int = 0,
-    val folderCount: Int = 0
+    val folderCount: Int = 0,
+    val breakdown: CategoryStorageBreakdown = CategoryStorageBreakdown()
 )
 
 data class TransferProgress(
