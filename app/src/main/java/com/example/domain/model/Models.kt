@@ -84,3 +84,12 @@ data class TransferProgress(
     val activeConcurrentChunks: Int = 0,
     val completedChunksCount: Int = 0
 )
+
+data class BotHealthInfo(
+    val token: String,
+    val isChecking: Boolean = false,
+    val isHealthy: Boolean? = null,
+    val username: String? = null,
+    val errorMessage: String? = null,
+    val lastChecked: Long = 0L
+)

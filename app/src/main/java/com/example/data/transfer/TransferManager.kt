@@ -1014,19 +1014,22 @@ class TransferManager private constructor(
                     while (attempt < maxRetries && !chunkSuccess) {
                         attempt++
                         try {
+                            var currentToken = token ?: credentialsManager.getBotToken()
+                                ?: throw IllegalStateException("No Telegram bot token available")
+
                             // If remoteFileId is missing, attempt regeneration from channelId + messageId
                             if (remoteFileId.isNullOrBlank() && !chunkChannelId.isNullOrBlank() && chunkMessageId != null) {
                                 Log.i("TransferManager", "Missing file_id for chunk ${chunk.chunkIndex}. Regenerating via channel $chunkChannelId, message $chunkMessageId...")
-                                val regenResult = repository.regenerateFileId(token, chunkChannelId, chunkMessageId)
+                                val regenResult = repository.regenerateFileId(currentToken, chunkChannelId, chunkMessageId)
                                 if (regenResult.isSuccess) {
-                                    remoteFileId = regenResult.getOrThrow()
-                                    database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, remoteFileId)
+                                    val freshId = regenResult.getOrThrow()
+                                    remoteFileId = freshId
+                                    database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, freshId)
                                 }
                             }
 
-                            if (remoteFileId.isNullOrBlank()) {
-                                throw IllegalStateException("Missing Telegram file_id for chunk ${chunk.chunkIndex} (messageId=$chunkMessageId, channelId=$chunkChannelId)")
-                            }
+                            var activeFileId = remoteFileId
+                                ?: throw IllegalStateException("Missing Telegram file_id for chunk ${chunk.chunkIndex} (messageId=$chunkMessageId, channelId=$chunkChannelId)")
 
                             // Check chunk size against Telegram Bot API's 20MB getFile download limit
                             val telegramGetFileLimit = 20 * 1024 * 1024L
@@ -1036,7 +1039,7 @@ class TransferManager private constructor(
                                 throw IllegalStateException(limitMsg)
                             }
 
-                            var fileInfoResult = repository.getFileInfo(token, remoteFileId)
+                            var fileInfoResult = repository.getFileInfo(currentToken, activeFileId)
 
                             // Ban-resilience check: if getFileInfo fails with a file_id error (wrong file id, bot banned, 400 Bad Request),
                             // or 401 Unauthorized (bot banned/deleted), try regenerating file_id or rotating bot tokens
@@ -1054,31 +1057,37 @@ class TransferManager private constructor(
                                     // If bot is unauthorized or forbidden (token revoked/banned), rotate to next bot token in pool
                                     if (rawMsg.contains("Unauthorized", ignoreCase = true) || (rawEx is TelegramApiException && (rawEx.errorCode == 401 || rawEx.errorCode == 403))) {
                                         val nextToken = credentialsManager.rotateToNextToken()
-                                        if (nextToken != null && nextToken != token) {
+                                        if (nextToken != null && nextToken != currentToken) {
                                             Log.i("TransferManager", "Rotated to next bot token in pool following auth error.")
                                             token = nextToken
+                                            currentToken = nextToken
                                         }
                                     }
 
                                     // Regenerate fresh file_id for currently active bot using forward/copyMessage
                                     if (!chunkChannelId.isNullOrBlank() && chunkMessageId != null) {
-                                        val regenResult = repository.regenerateFileId(token, chunkChannelId, chunkMessageId)
+                                        val regenResult = repository.regenerateFileId(currentToken, chunkChannelId, chunkMessageId)
                                         if (regenResult.isSuccess) {
-                                            remoteFileId = regenResult.getOrThrow()
-                                            database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, remoteFileId)
-                                            Log.i("TransferManager", "Regenerated fresh file_id for chunk ${chunk.chunkIndex}: $remoteFileId. Retrying getFileInfo...")
-                                            fileInfoResult = repository.getFileInfo(token, remoteFileId)
+                                            val freshId = regenResult.getOrThrow()
+                                            remoteFileId = freshId
+                                            activeFileId = freshId
+                                            database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, freshId)
+                                            Log.i("TransferManager", "Regenerated fresh file_id for chunk ${chunk.chunkIndex}: $freshId. Retrying getFileInfo...")
+                                            fileInfoResult = repository.getFileInfo(currentToken, freshId)
                                         } else {
                                             Log.w("TransferManager", "Failed to regenerate file_id: ${regenResult.exceptionOrNull()?.message}")
                                             // Try rotating to another token if pool has more
                                             val rotated = credentialsManager.rotateToNextToken()
-                                            if (rotated != null && rotated != token) {
+                                            if (rotated != null && rotated != currentToken) {
                                                 token = rotated
-                                                val retryRegen = repository.regenerateFileId(token, chunkChannelId, chunkMessageId)
+                                                currentToken = rotated
+                                                val retryRegen = repository.regenerateFileId(currentToken, chunkChannelId, chunkMessageId)
                                                 if (retryRegen.isSuccess) {
-                                                    remoteFileId = retryRegen.getOrThrow()
-                                                    database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, remoteFileId)
-                                                    fileInfoResult = repository.getFileInfo(token, remoteFileId)
+                                                    val freshId = retryRegen.getOrThrow()
+                                                    remoteFileId = freshId
+                                                    activeFileId = freshId
+                                                    database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, freshId)
+                                                    fileInfoResult = repository.getFileInfo(currentToken, freshId)
                                                 }
                                             }
                                         }
@@ -1097,7 +1106,7 @@ class TransferManager private constructor(
                             val remoteFilePath = fileInfoResult.getOrThrow().filePath
                                 ?: throw IllegalStateException("[Download getFile] Telegram returned an empty file_path")
 
-                            val streamResult = repository.downloadFileStream(token, remoteFilePath)
+                            val streamResult = repository.downloadFileStream(currentToken, remoteFilePath)
                             if (streamResult.isFailure) {
                                 val rawEx = streamResult.exceptionOrNull()
                                 throw IllegalStateException("[Download fileStream] ${rawEx?.message}", rawEx)

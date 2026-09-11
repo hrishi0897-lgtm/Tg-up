@@ -128,6 +128,8 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
     val allFolders by viewModel.allFolders.collectAsState()
     val activeTransfers by viewModel.activeTransfers.collectAsState()
     val recentlyCompleted by viewModel.recentlyCompleted.collectAsState()
+    val botPool by viewModel.botPool.collectAsState()
+    val botHealth by viewModel.botHealth.collectAsState()
 
     // File upload picker
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -265,6 +267,13 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         testTransferRunning = uiState.testTransferRunning,
                         testTransferStatus = uiState.testTransferStatus,
                         testTransferSuccess = uiState.testTransferSuccess,
+                        botTokenPool = botPool,
+                        botHealthMap = botHealth,
+                        onAddBotToken = { viewModel.addBotToken(it) },
+                        onRemoveBotToken = { viewModel.removeBotToken(it) },
+                        onSetActiveBotToken = { viewModel.setActiveBotToken(it) },
+                        onCheckBotHealth = { viewModel.checkBotHealth(it) },
+                        onCheckAllBotsHealth = { viewModel.checkAllBotsHealth() },
                         onToggleTheme = { viewModel.toggleTheme() },
                         onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
                         onWifiOnlyChange = { viewModel.setWifiOnly(it) },
@@ -374,6 +383,13 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     testTransferRunning = uiState.testTransferRunning,
                     testTransferStatus = uiState.testTransferStatus,
                     testTransferSuccess = uiState.testTransferSuccess,
+                    botTokenPool = botPool,
+                    botHealthMap = botHealth,
+                    onAddBotToken = { viewModel.addBotToken(it) },
+                    onRemoveBotToken = { viewModel.removeBotToken(it) },
+                    onSetActiveBotToken = { viewModel.setActiveBotToken(it) },
+                    onCheckBotHealth = { viewModel.checkBotHealth(it) },
+                    onCheckAllBotsHealth = { viewModel.checkAllBotsHealth() },
                     onToggleTheme = { viewModel.toggleTheme() },
                     onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
                     onWifiOnlyChange = { viewModel.setWifiOnly(it) },

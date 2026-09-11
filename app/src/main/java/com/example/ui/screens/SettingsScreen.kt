@@ -26,14 +26,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
@@ -46,6 +49,8 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -69,6 +74,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.domain.StorageUtil
+import com.example.domain.model.BotHealthInfo
 import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.pressScale
 
@@ -85,6 +91,13 @@ fun SettingsScreen(
     testTransferRunning: Boolean = false,
     testTransferStatus: String? = null,
     testTransferSuccess: Boolean? = null,
+    botTokenPool: List<String> = emptyList(),
+    botHealthMap: Map<String, BotHealthInfo> = emptyMap(),
+    onAddBotToken: ((String) -> Unit)? = null,
+    onRemoveBotToken: ((String) -> Unit)? = null,
+    onSetActiveBotToken: ((String) -> Unit)? = null,
+    onCheckBotHealth: ((String) -> Unit)? = null,
+    onCheckAllBotsHealth: (() -> Unit)? = null,
     onToggleTheme: (() -> Unit)? = null,
     onChunkSizeChange: (Int) -> Unit,
     onWifiOnlyChange: (Boolean) -> Unit,
@@ -100,6 +113,97 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     var showDisconnectDialog by remember { mutableStateOf(false) }
+    var showAddTokenDialog by remember { mutableStateOf(false) }
+    var newBotTokenInput by remember { mutableStateOf("") }
+
+    // Add Bot Token Dialog
+    if (showAddTokenDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showAddTokenDialog = false
+                newBotTokenInput = ""
+            },
+            containerColor = colors.surface,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(colors.violet.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Security,
+                        contentDescription = null,
+                        tint = colors.violet,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Add Backup Bot Token",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.text
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Enter a token for a backup bot that has been added as an Administrator to your storage channel. If your active bot is banned, TeleVault will automatically rotate to this token and regenerate file access.",
+                        fontSize = 13.sp,
+                        color = colors.textDim,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedTextField(
+                        value = newBotTokenInput,
+                        onValueChange = { newBotTokenInput = it },
+                        placeholder = { Text("123456789:ABCdefGHI...", color = colors.textFaint, fontSize = 13.sp) },
+                        label = { Text("Bot Token", fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("new_bot_token_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.violet,
+                            unfocusedBorderColor = colors.line,
+                            focusedTextColor = colors.text,
+                            unfocusedTextColor = colors.text
+                        )
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val clean = newBotTokenInput.trim()
+                        if (clean.isNotBlank()) {
+                            onAddBotToken?.invoke(clean)
+                        }
+                        showAddTokenDialog = false
+                        newBotTokenInput = ""
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.violet),
+                    enabled = newBotTokenInput.trim().isNotBlank(),
+                    modifier = Modifier.testTag("confirm_add_bot_button")
+                ) {
+                    Text("Add to Pool", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAddTokenDialog = false
+                        newBotTokenInput = ""
+                    }
+                ) {
+                    Text("Cancel", color = colors.textDim)
+                }
+            }
+        )
+    }
 
     // Disconnect confirmation dialog
     if (showDisconnectDialog) {
@@ -342,6 +446,220 @@ fun SettingsScreen(
                                 color = colors.danger
                             )
                         }
+                    }
+                }
+            }
+
+            // Ban-Resilient Bot Pool & Health Check Card
+            SettingsCard(
+                icon = Icons.Default.Security,
+                title = "BOT POOL (BAN RESILIENCE)",
+                colors = colors
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Admin Bot Pool",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.text
+                        )
+                        if (onCheckAllBotsHealth != null && botTokenPool.isNotEmpty()) {
+                            TextButton(
+                                onClick = onCheckAllBotsHealth,
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = colors.violet
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Check All", fontSize = 11.sp, color = colors.violet, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "Telegram limits bot file downloads to the bot that uploaded them unless forwarded. Adding multiple bot tokens (all made admins in your storage channel) ensures automatic failover and regeneration if a bot gets banned or restricted.",
+                        fontSize = 12.sp,
+                        color = colors.textDim,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Bot Tokens List
+                    val displayedTokens = if (botTokenPool.isNotEmpty()) botTokenPool else if (botTokenMasked.isNotBlank()) listOf(botTokenMasked) else emptyList()
+
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        displayedTokens.forEachIndexed { index, token ->
+                            val isCurrentActive = (token == botTokenMasked) || (botTokenMasked.startsWith(token.take(6)) && token.length > 10)
+                            val health = botHealthMap[token]
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(colors.surfaceHi.copy(alpha = 0.6f))
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isCurrentActive) colors.mint.copy(alpha = 0.4f) else colors.line,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(if (isCurrentActive) colors.mint.copy(alpha = 0.15f) else colors.surfaceHi)
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = if (isCurrentActive) "Active" else "Backup #${index + 1}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isCurrentActive) colors.mint else colors.textDim
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(6.dp))
+
+                                        // Health badge
+                                        if (health?.isChecking == true) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(12.dp),
+                                                strokeWidth = 2.dp,
+                                                color = colors.violet
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Testing...", fontSize = 10.sp, color = colors.violet)
+                                        } else if (health?.isHealthy == true) {
+                                            Icon(
+                                                imageVector = Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                tint = colors.mint,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = if (!health.username.isNullOrBlank()) "@${health.username}" else "Healthy",
+                                                fontSize = 10.sp,
+                                                color = colors.mint,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        } else if (health?.isHealthy == false) {
+                                            Icon(
+                                                imageVector = Icons.Default.ErrorOutline,
+                                                contentDescription = null,
+                                                tint = colors.danger,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = "Offline / Banned",
+                                                fontSize = 10.sp,
+                                                color = colors.danger,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    Text(
+                                        text = if (token.length > 8) "${token.take(6)}••••••••••••" else "••••••••••••",
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = colors.textDim
+                                    )
+                                }
+
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Health check button
+                                    IconButton(
+                                        onClick = { onCheckBotHealth?.invoke(token) },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Check Health",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = colors.textDim
+                                        )
+                                    }
+
+                                    // Set as Active button (if not already active)
+                                    if (!isCurrentActive && onSetActiveBotToken != null) {
+                                        TextButton(
+                                            onClick = { onSetActiveBotToken.invoke(token) },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text("Use", fontSize = 11.sp, color = colors.mint)
+                                        }
+                                    }
+
+                                    // Remove button (if pool has more than 1)
+                                    if (displayedTokens.size > 1 && onRemoveBotToken != null) {
+                                        IconButton(
+                                            onClick = { onRemoveBotToken.invoke(token) },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Remove Token",
+                                                modifier = Modifier.size(16.dp),
+                                                tint = colors.danger.copy(alpha = 0.7f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Add Bot Token Button
+                    Button(
+                        onClick = { showAddTokenDialog = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("add_bot_token_button"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.surfaceHi,
+                            contentColor = colors.violet
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(vertical = 10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = colors.violet
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Add Backup Bot Token",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.violet
+                        )
                     }
                 }
             }

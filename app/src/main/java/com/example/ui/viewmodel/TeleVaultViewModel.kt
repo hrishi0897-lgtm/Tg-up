@@ -17,6 +17,7 @@ import com.example.data.remote.TelegramUser
 import com.example.data.sync.VaultSyncManager
 import com.example.data.sync.VaultSyncWorker
 import com.example.data.transfer.TransferManager
+import com.example.domain.model.BotHealthInfo
 import com.example.domain.model.BreadcrumbItem
 import com.example.domain.model.CategoryStorageBreakdown
 import com.example.domain.model.StorageCategory
@@ -109,10 +110,91 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     private val _isDarkTheme = MutableStateFlow(creds.getThemeMode() == "dark")
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
 
+    private val _botPool = MutableStateFlow<List<String>>(creds.getTokenPool())
+    val botPool: StateFlow<List<String>> = _botPool.asStateFlow()
+
+    private val _botHealth = MutableStateFlow<Map<String, BotHealthInfo>>(emptyMap())
+    val botHealth: StateFlow<Map<String, BotHealthInfo>> = _botHealth.asStateFlow()
+
     fun toggleTheme() {
         val next = !_isDarkTheme.value
         _isDarkTheme.value = next
         creds.setThemeMode(if (next) "dark" else "light")
+    }
+
+    fun refreshBotPool() {
+        _botPool.value = creds.getTokenPool()
+    }
+
+    fun addBotToken(token: String) {
+        val clean = token.trim()
+        if (clean.isBlank()) return
+        creds.addBotTokenToPool(clean)
+        _botPool.value = creds.getTokenPool()
+        checkBotHealth(clean)
+    }
+
+    fun removeBotToken(token: String) {
+        creds.removeBotTokenFromPool(token)
+        _botPool.value = creds.getTokenPool()
+        _botHealth.update { it - token }
+    }
+
+    fun setActiveBotToken(token: String) {
+        creds.setActiveBotToken(token)
+        _botPool.value = creds.getTokenPool()
+        checkBotHealth(token)
+    }
+
+    fun checkBotHealth(token: String) {
+        val clean = token.trim()
+        if (clean.isBlank()) return
+        viewModelScope.launch {
+            _botHealth.update { current ->
+                val existing = current[clean] ?: BotHealthInfo(clean)
+                current + (clean to existing.copy(isChecking = true, errorMessage = null))
+            }
+            val result = repo.checkBotHealth(clean, creds.getChatId())
+            val now = System.currentTimeMillis()
+            if (result.isSuccess) {
+                val status = result.getOrThrow()
+                val isHealthy = status.isWorking && (status.hasChatAccess ?: true)
+                val username = status.botUser?.username ?: status.botUser?.firstName
+                val errMsg = if (!status.isWorking) {
+                    if (status.isBanned) "Bot token is banned / unauthorized" else status.error ?: "Bot check failed"
+                } else if (status.hasChatAccess == false) {
+                    "Bot is not an admin in channel"
+                } else null
+
+                _botHealth.update { current ->
+                    current + (clean to BotHealthInfo(
+                        token = clean,
+                        isChecking = false,
+                        isHealthy = isHealthy,
+                        username = username,
+                        errorMessage = errMsg,
+                        lastChecked = now
+                    ))
+                }
+            } else {
+                val err = result.exceptionOrNull()?.message ?: "Health check failed"
+                _botHealth.update { current ->
+                    current + (clean to BotHealthInfo(
+                        token = clean,
+                        isChecking = false,
+                        isHealthy = false,
+                        username = null,
+                        errorMessage = err,
+                        lastChecked = now
+                    ))
+                }
+            }
+        }
+    }
+
+    fun checkAllBotsHealth() {
+        val pool = creds.getTokenPool()
+        pool.forEach { checkBotHealth(it) }
     }
 
     init {
