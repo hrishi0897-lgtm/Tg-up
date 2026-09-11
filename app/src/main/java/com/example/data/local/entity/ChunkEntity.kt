@@ -23,6 +23,7 @@ import androidx.room.Index
 data class ChunkEntity(
     val fileId: String,
     val chunkIndex: Int,
+    val channelId: String? = null,
     val telegramMessageId: Long? = null,
     val telegramFileId: String? = null,
     val checksum: String, // SHA-256 of the chunk

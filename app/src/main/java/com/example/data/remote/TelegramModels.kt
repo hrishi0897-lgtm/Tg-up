@@ -44,6 +44,27 @@ data class TelegramChatFull(
 )
 
 @JsonClass(generateAdapter = true)
+data class TelegramMessageId(
+    @Json(name = "message_id") val messageId: Long
+)
+
+@JsonClass(generateAdapter = true)
+data class TelegramChatMember(
+    @Json(name = "status") val status: String,
+    @Json(name = "user") val user: TelegramUser? = null
+)
+
+data class BotHealthStatus(
+    val token: String,
+    val isWorking: Boolean,
+    val isBanned: Boolean = false,
+    val botUser: TelegramUser? = null,
+    val chatMemberStatus: String? = null,
+    val hasChatAccess: Boolean = true,
+    val error: String? = null
+)
+
+@JsonClass(generateAdapter = true)
 data class TelegramDocument(
     @Json(name = "file_id") val fileId: String,
     @Json(name = "file_unique_id") val fileUniqueId: String,
@@ -88,6 +109,7 @@ data class FileManifest(
     @Json(name = "mimeType") val mimeType: String,
     @Json(name = "overallSha256") val overallSha256: String,
     @Json(name = "folderId") val folderId: String? = null,
+    @Json(name = "channelId") val channelId: String? = null,
     @Json(name = "uploadDate") val uploadDate: Long = System.currentTimeMillis(),
     @Json(name = "chunks") val chunks: List<ManifestChunk>
 )
@@ -118,6 +140,7 @@ data class VaultIndexFile(
     @Json(name = "id") val id: String,
     @Json(name = "name") val name: String,
     @Json(name = "folderId") val folderId: String? = null,
+    @Json(name = "channelId") val channelId: String? = null,
     @Json(name = "size") val size: Long,
     @Json(name = "mimeType") val mimeType: String,
     @Json(name = "uploadDate") val uploadDate: Long = System.currentTimeMillis(),
@@ -131,6 +154,7 @@ data class VaultIndexFile(
 data class ManifestChunk(
     @Json(name = "index") val index: Int,
     @Json(name = "messageId") val messageId: Long,
+    @Json(name = "channelId") val channelId: String? = null,
     @Json(name = "telegramFileId") val telegramFileId: String? = null,
     @Json(name = "sha256") val sha256: String,
     @Json(name = "size") val size: Long

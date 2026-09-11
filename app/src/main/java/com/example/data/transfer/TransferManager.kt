@@ -667,7 +667,8 @@ class TransferManager private constructor(
                                         chunkIndex = chunkIndex,
                                         messageId = uploadedMessage.messageId,
                                         fileIdRemote = remoteFileId,
-                                        checksum = localSha256
+                                        checksum = localSha256,
+                                        channelId = chatId
                                     )
 
                                     inProgressBytesMap.remove(chunkIndex)
@@ -725,6 +726,7 @@ class TransferManager private constructor(
                     ManifestChunk(
                         index = c.chunkIndex,
                         messageId = c.telegramMessageId ?: 0L,
+                        channelId = c.channelId ?: chatId,
                         telegramFileId = c.telegramFileId,
                         sha256 = c.checksum,
                         size = c.size
@@ -738,6 +740,7 @@ class TransferManager private constructor(
                     mimeType = fileEntity.mimeType,
                     overallSha256 = fileEntity.checksum,
                     folderId = fileEntity.folderId,
+                    channelId = chatId,
                     uploadDate = System.currentTimeMillis(),
                     chunks = manifestChunks
                 )
@@ -769,7 +772,7 @@ class TransferManager private constructor(
                 manifestFile.delete()
 
                 val manifestMessage = manifestResult.getOrThrow()
-                database.fileDao().updateManifestId(fileId, manifestMessage.messageId)
+                database.fileDao().updateManifestId(fileId, manifestMessage.messageId, chatId)
                 database.fileDao().updateStatus(fileId, FileStatus.COMPLETED)
 
                 // Debounced auto-publish fresh VaultIndex to Telegram so other devices stay in sync
@@ -821,7 +824,7 @@ class TransferManager private constructor(
     fun startDownload(fileId: String) {
         pauseRequestedFiles.remove(fileId)
         val job = scope.launch {
-            val token = credentialsManager.getBotToken()
+            var token = credentialsManager.getBotToken()
             if (token.isNullOrBlank()) {
                 val err = "Telegram bot token not configured"
                 database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
@@ -996,9 +999,12 @@ class TransferManager private constructor(
                         return@launch
                     }
 
-                    // Obtain Telegram file path and download with up to 3 retries
-                    val remoteFileId = chunk.telegramFileId
-                        ?: throw IllegalStateException("Missing Telegram file_id for chunk ${chunk.chunkIndex}")
+                    // Obtain Telegram file path and download with up to 5 retries.
+                    // Ban-resilient: if file_id fails or is invalidated, attempt to regenerate it using (channelId, messageId)
+                    // via copyMessage/forwardMessage, and rotate through the bot token pool if the bot is banned or fails.
+                    var remoteFileId = chunk.telegramFileId
+                    val chunkMessageId = chunk.telegramMessageId
+                    val chunkChannelId = chunk.channelId ?: fileEntity.channelId ?: credentialsManager.getChatId()
 
                     val maxRetries = 5
                     var attempt = 0
@@ -1008,6 +1014,20 @@ class TransferManager private constructor(
                     while (attempt < maxRetries && !chunkSuccess) {
                         attempt++
                         try {
+                            // If remoteFileId is missing, attempt regeneration from channelId + messageId
+                            if (remoteFileId.isNullOrBlank() && !chunkChannelId.isNullOrBlank() && chunkMessageId != null) {
+                                Log.i("TransferManager", "Missing file_id for chunk ${chunk.chunkIndex}. Regenerating via channel $chunkChannelId, message $chunkMessageId...")
+                                val regenResult = repository.regenerateFileId(token, chunkChannelId, chunkMessageId)
+                                if (regenResult.isSuccess) {
+                                    remoteFileId = regenResult.getOrThrow()
+                                    database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, remoteFileId)
+                                }
+                            }
+
+                            if (remoteFileId.isNullOrBlank()) {
+                                throw IllegalStateException("Missing Telegram file_id for chunk ${chunk.chunkIndex} (messageId=$chunkMessageId, channelId=$chunkChannelId)")
+                            }
+
                             // Check chunk size against Telegram Bot API's 20MB getFile download limit
                             val telegramGetFileLimit = 20 * 1024 * 1024L
                             if (chunk.size > telegramGetFileLimit) {
@@ -1016,7 +1036,56 @@ class TransferManager private constructor(
                                 throw IllegalStateException(limitMsg)
                             }
 
-                            val fileInfoResult = repository.getFileInfo(token, remoteFileId)
+                            var fileInfoResult = repository.getFileInfo(token, remoteFileId)
+
+                            // Ban-resilience check: if getFileInfo fails with a file_id error (wrong file id, bot banned, 400 Bad Request),
+                            // or 401 Unauthorized (bot banned/deleted), try regenerating file_id or rotating bot tokens
+                            if (fileInfoResult.isFailure) {
+                                val rawEx = fileInfoResult.exceptionOrNull()
+                                val rawMsg = rawEx?.message ?: "Unknown error"
+                                val isAuthOrFileIdError = rawMsg.contains("file_id", ignoreCase = true) ||
+                                        rawMsg.contains("FILE_ID_INVALID", ignoreCase = true) ||
+                                        rawMsg.contains("Unauthorized", ignoreCase = true) ||
+                                        (rawEx is TelegramApiException && (rawEx.errorCode == 400 || rawEx.errorCode == 401 || rawEx.errorCode == 403))
+
+                                if (isAuthOrFileIdError) {
+                                    Log.w("TransferManager", "Download getFileInfo error ($rawMsg). Triggering ban-resilient recovery for chunk ${chunk.chunkIndex}...")
+
+                                    // If bot is unauthorized or forbidden (token revoked/banned), rotate to next bot token in pool
+                                    if (rawMsg.contains("Unauthorized", ignoreCase = true) || (rawEx is TelegramApiException && (rawEx.errorCode == 401 || rawEx.errorCode == 403))) {
+                                        val nextToken = credentialsManager.rotateToNextToken()
+                                        if (nextToken != null && nextToken != token) {
+                                            Log.i("TransferManager", "Rotated to next bot token in pool following auth error.")
+                                            token = nextToken
+                                        }
+                                    }
+
+                                    // Regenerate fresh file_id for currently active bot using forward/copyMessage
+                                    if (!chunkChannelId.isNullOrBlank() && chunkMessageId != null) {
+                                        val regenResult = repository.regenerateFileId(token, chunkChannelId, chunkMessageId)
+                                        if (regenResult.isSuccess) {
+                                            remoteFileId = regenResult.getOrThrow()
+                                            database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, remoteFileId)
+                                            Log.i("TransferManager", "Regenerated fresh file_id for chunk ${chunk.chunkIndex}: $remoteFileId. Retrying getFileInfo...")
+                                            fileInfoResult = repository.getFileInfo(token, remoteFileId)
+                                        } else {
+                                            Log.w("TransferManager", "Failed to regenerate file_id: ${regenResult.exceptionOrNull()?.message}")
+                                            // Try rotating to another token if pool has more
+                                            val rotated = credentialsManager.rotateToNextToken()
+                                            if (rotated != null && rotated != token) {
+                                                token = rotated
+                                                val retryRegen = repository.regenerateFileId(token, chunkChannelId, chunkMessageId)
+                                                if (retryRegen.isSuccess) {
+                                                    remoteFileId = retryRegen.getOrThrow()
+                                                    database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, remoteFileId)
+                                                    fileInfoResult = repository.getFileInfo(token, remoteFileId)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             if (fileInfoResult.isFailure) {
                                 val rawEx = fileInfoResult.exceptionOrNull()
                                 val rawMsg = rawEx?.message ?: "Unknown error"

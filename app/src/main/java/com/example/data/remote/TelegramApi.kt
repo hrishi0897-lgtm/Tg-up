@@ -44,6 +44,31 @@ interface TelegramApi {
         @Query("file_id") fileId: String
     ): Response<TelegramResponse<TelegramRemoteFile>>
 
+    @FormUrlEncoded
+    @POST
+    suspend fun copyMessage(
+        @Url url: String,
+        @Field("chat_id") chatId: String,
+        @Field("from_chat_id") fromChatId: String,
+        @Field("message_id") messageId: Long
+    ): Response<TelegramResponse<TelegramMessageId>>
+
+    @FormUrlEncoded
+    @POST
+    suspend fun forwardMessage(
+        @Url url: String,
+        @Field("chat_id") chatId: String,
+        @Field("from_chat_id") fromChatId: String,
+        @Field("message_id") messageId: Long
+    ): Response<TelegramResponse<TelegramMessage>>
+
+    @GET
+    suspend fun getChatMember(
+        @Url url: String,
+        @Query("chat_id") chatId: String,
+        @Query("user_id") userId: Long
+    ): Response<TelegramResponse<TelegramChatMember>>
+
     @Streaming
     @GET
     suspend fun downloadFile(

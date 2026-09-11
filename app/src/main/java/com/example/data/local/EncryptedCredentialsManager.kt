@@ -28,6 +28,8 @@ class EncryptedCredentialsManager(context: Context) {
         private const val GCM_TAG_LENGTH = 128
 
         private const val PREF_TOKEN = "encrypted_bot_token"
+        private const val PREF_TOKEN_POOL = "encrypted_bot_token_pool"
+        private const val POOL_DELIMITER = "|||"
         private const val PREF_CHAT_ID = "encrypted_chat_id"
         private const val PREF_CHUNK_SIZE_MB = "chunk_size_mb"
         private const val PREF_WIFI_ONLY = "wifi_only_transfers"
@@ -106,10 +108,21 @@ class EncryptedCredentialsManager(context: Context) {
     }
 
     fun saveCredentials(botToken: String, chatId: String) {
-        val encryptedToken = encrypt(botToken.trim())
+        val cleanToken = botToken.trim()
+        val encryptedToken = encrypt(cleanToken)
         val encryptedChatId = encrypt(chatId.trim())
+        
+        // Also ensure this token is added to the pool if not already present
+        val currentPool = getTokenPool().toMutableList()
+        if (!currentPool.contains(cleanToken)) {
+            currentPool.add(0, cleanToken) // active token at index 0
+        }
+        val poolSerialized = currentPool.joinToString(POOL_DELIMITER)
+        val encryptedPool = encrypt(poolSerialized)
+
         prefs.edit()
             .putString(PREF_TOKEN, encryptedToken)
+            .putString(PREF_TOKEN_POOL, encryptedPool)
             .putString(PREF_CHAT_ID, encryptedChatId)
             .apply()
     }
@@ -117,6 +130,98 @@ class EncryptedCredentialsManager(context: Context) {
     fun getBotToken(): String? {
         val encrypted = prefs.getString(PREF_TOKEN, null) ?: return null
         return decrypt(encrypted)
+    }
+
+    /**
+     * Returns the full pool of configured bot tokens (primary token first).
+     */
+    fun getTokenPool(): List<String> {
+        val encryptedPool = prefs.getString(PREF_TOKEN_POOL, null)
+        val pool = if (!encryptedPool.isNullOrBlank()) {
+            val decrypted = decrypt(encryptedPool)
+            decrypted?.split(POOL_DELIMITER)?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+        } else {
+            emptyList()
+        }
+
+        val primaryToken = getBotToken()
+        return if (primaryToken != null && !pool.contains(primaryToken)) {
+            listOf(primaryToken) + pool
+        } else if (pool.isNotEmpty()) {
+            pool
+        } else if (primaryToken != null) {
+            listOf(primaryToken)
+        } else {
+            emptyList()
+        }
+    }
+
+    /**
+     * Adds a new bot token to the fallback pool.
+     */
+    fun addBotTokenToPool(token: String) {
+        val clean = token.trim()
+        if (clean.isBlank()) return
+        val current = getTokenPool().toMutableList()
+        if (!current.contains(clean)) {
+            current.add(clean)
+            val poolSerialized = current.joinToString(POOL_DELIMITER)
+            prefs.edit().putString(PREF_TOKEN_POOL, encrypt(poolSerialized)).apply()
+        }
+    }
+
+    /**
+     * Removes a bot token from the pool.
+     */
+    fun removeBotTokenFromPool(token: String) {
+        val clean = token.trim()
+        val current = getTokenPool().toMutableList()
+        current.remove(clean)
+        val poolSerialized = current.joinToString(POOL_DELIMITER)
+        val editor = prefs.edit().putString(PREF_TOKEN_POOL, encrypt(poolSerialized))
+
+        // If the removed token was the active token, rotate to the next available token
+        val active = getBotToken()
+        if (active == clean) {
+            val next = current.firstOrNull()
+            if (next != null) {
+                editor.putString(PREF_TOKEN, encrypt(next))
+            } else {
+                editor.remove(PREF_TOKEN)
+            }
+        }
+        editor.apply()
+    }
+
+    /**
+     * Rotates to the next working bot token in the pool when the current token is banned or fails.
+     * Returns the newly activated token, or null if no other tokens are in the pool.
+     */
+    @Synchronized
+    fun rotateToNextToken(failedToken: String? = null): String? {
+        val pool = getTokenPool()
+        if (pool.size <= 1) return null
+
+        val current = failedToken ?: getBotToken() ?: pool.first()
+        val currentIndex = pool.indexOf(current)
+        val nextIndex = if (currentIndex != -1) (currentIndex + 1) % pool.size else 0
+        val nextToken = pool[nextIndex]
+
+        if (nextToken != current) {
+            prefs.edit().putString(PREF_TOKEN, encrypt(nextToken)).apply()
+            return nextToken
+        }
+        return null
+    }
+
+    /**
+     * Sets the active bot token to a specific token from the pool.
+     */
+    fun setActiveBotToken(token: String) {
+        val clean = token.trim()
+        if (clean.isBlank()) return
+        addBotTokenToPool(clean)
+        prefs.edit().putString(PREF_TOKEN, encrypt(clean)).apply()
     }
 
     fun getChatId(): String? {
@@ -131,7 +236,11 @@ class EncryptedCredentialsManager(context: Context) {
     }
 
     fun clearCredentials() {
-        prefs.edit().remove(PREF_TOKEN).remove(PREF_CHAT_ID).apply()
+        prefs.edit()
+            .remove(PREF_TOKEN)
+            .remove(PREF_TOKEN_POOL)
+            .remove(PREF_CHAT_ID)
+            .apply()
     }
 
     fun getChunkSizeMb(): Int {

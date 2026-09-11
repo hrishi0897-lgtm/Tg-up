@@ -76,8 +76,8 @@ interface FileDao {
     @Query("UPDATE files SET completedChunks = :completed, status = :status WHERE id = :fileId")
     suspend fun updateProgress(fileId: String, completed: Int, status: FileStatus)
 
-    @Query("UPDATE files SET manifestMessageId = :manifestMessageId WHERE id = :fileId")
-    suspend fun updateManifestId(fileId: String, manifestMessageId: Long)
+    @Query("UPDATE files SET manifestMessageId = :manifestMessageId, channelId = COALESCE(:channelId, channelId) WHERE id = :fileId")
+    suspend fun updateManifestId(fileId: String, manifestMessageId: Long, channelId: String? = null)
 
     @Query("UPDATE files SET localPath = :localPath, localUri = :localUri, status = 'COMPLETED' WHERE id = :fileId")
     suspend fun markDownloaded(fileId: String, localPath: String, localUri: String? = localPath)

@@ -502,6 +502,148 @@ class TelegramRepository(
     }
 
     /**
+     * Copies a message within the storage chat/channel or to another chat.
+     * Generates a new message ID containing the document copy.
+     */
+    suspend fun copyMessage(
+        token: String,
+        chatId: String,
+        fromChatId: String,
+        messageId: Long
+    ): Result<TelegramMessageId> {
+        return executeWithRetry("Copying message $messageId") {
+            api.copyMessage(botUrl(token, "copyMessage"), chatId, fromChatId, messageId)
+        }
+    }
+
+    /**
+     * Forwards a message from the storage channel/chat to obtain the fresh document and file_id.
+     */
+    suspend fun forwardMessage(
+        token: String,
+        chatId: String,
+        fromChatId: String,
+        messageId: Long
+    ): Result<TelegramMessage> {
+        return executeWithRetry("Forwarding message $messageId") {
+            api.forwardMessage(botUrl(token, "forwardMessage"), chatId, fromChatId, messageId)
+        }
+    }
+
+    /**
+     * Ban-resilient file_id regeneration:
+     * Given channel_id and message_id, pulls the file using copyMessage or forwardMessage
+     * to obtain a fresh, valid file_id for the current active bot token.
+     * If copyMessage is used, forwards or fetches the message to read document.file_id, then cleans up temporary message.
+     */
+    suspend fun regenerateFileId(
+        token: String,
+        channelId: String,
+        messageId: Long
+    ): Result<String> {
+        return try {
+            Log.i("TelegramRepo", ">>> [regenerateFileId] Regenerating file_id for channel=$channelId, messageId=$messageId...")
+            // Method 1: Use forwardMessage to the channel/chat.
+            // When forwarded, Telegram returns the full TelegramMessage including document.file_id bound to the active bot!
+            val forwardResult = forwardMessage(token, chatId = channelId, fromChatId = channelId, messageId = messageId)
+            if (forwardResult.isSuccess) {
+                val fwdMsg = forwardResult.getOrThrow()
+                val doc = fwdMsg.document
+                val newFileId = doc?.fileId
+                val tempMsgId = fwdMsg.messageId
+                // Clean up the forwarded temporary message in the background
+                try {
+                    deleteMessage(token, channelId, tempMsgId)
+                } catch (delEx: Exception) {
+                    Log.w("TelegramRepo", "Non-critical: Failed to delete temporary forwarded message $tempMsgId: ${delEx.message}")
+                }
+                if (!newFileId.isNullOrBlank()) {
+                    Log.i("TelegramRepo", ">>> [regenerateFileId] Successfully regenerated file_id via forwardMessage: $newFileId")
+                    return Result.success(newFileId)
+                }
+            }
+
+            // Method 2: Fallback to copyMessage
+            val copyResult = copyMessage(token, chatId = channelId, fromChatId = channelId, messageId = messageId)
+            if (copyResult.isSuccess) {
+                val copiedMsgId = copyResult.getOrThrow().messageId
+                // Clean up the copied temporary message
+                try {
+                    deleteMessage(token, channelId, copiedMsgId)
+                } catch (_: Exception) {}
+            }
+
+            val err = forwardResult.exceptionOrNull()?.message ?: "Failed to extract file_id from forwarded/copied message"
+            Result.failure(Exception(err))
+        } catch (e: Exception) {
+            Log.e("TelegramRepo", "regenerateFileId error: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Health check to detect whether a specific bot token is working, banned, or has chat access.
+     */
+    suspend fun checkBotHealth(token: String, chatId: String? = null): Result<BotHealthStatus> {
+        return try {
+            val meResult = executeWithRetry("Checking bot status via getMe") {
+                api.getMe(botUrl(token, "getMe"))
+            }
+            if (meResult.isFailure) {
+                val ex = meResult.exceptionOrNull()
+                val isBanned = ex is TelegramApiException && (ex.errorCode == 401 || ex.errorCode == 403 || ex.message?.contains("Unauthorized", ignoreCase = true) == true)
+                return Result.success(
+                    BotHealthStatus(
+                        token = token,
+                        isWorking = false,
+                        isBanned = isBanned,
+                        botUser = null,
+                        error = ex?.message ?: "Unknown error"
+                    )
+                )
+            }
+            val user = meResult.getOrThrow()
+
+            // If chatId is provided, verify admin or member permissions in the channel
+            var hasChatAccess = true
+            var chatMemberStatus: String? = null
+            if (!chatId.isNullOrBlank()) {
+                try {
+                    val memberResponse = api.getChatMember(botUrl(token, "getChatMember"), chatId, user.id)
+                    if (memberResponse.isSuccessful && memberResponse.body()?.ok == true) {
+                        chatMemberStatus = memberResponse.body()?.result?.status
+                        hasChatAccess = chatMemberStatus in listOf("creator", "administrator", "member")
+                    }
+                } catch (e: Exception) {
+                    Log.w("TelegramRepo", "Chat access check non-fatal error: ${e.message}")
+                }
+            }
+
+            Result.success(
+                BotHealthStatus(
+                    token = token,
+                    isWorking = true,
+                    isBanned = false,
+                    botUser = user,
+                    chatMemberStatus = chatMemberStatus,
+                    hasChatAccess = hasChatAccess,
+                    error = null
+                )
+            )
+        } catch (e: Exception) {
+            Result.success(
+                BotHealthStatus(
+                    token = token,
+                    isWorking = false,
+                    isBanned = false,
+                    botUser = null,
+                    error = e.message
+                )
+            )
+        }
+    }
+
+    /**
      * Deletes a Telegram message by ID.
      */
     suspend fun deleteMessage(token: String, chatId: String, messageId: Long): Result<Boolean> {

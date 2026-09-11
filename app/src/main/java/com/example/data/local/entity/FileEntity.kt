@@ -33,6 +33,7 @@ data class FileEntity(
     val checksum: String, // SHA-256
     val totalChunks: Int = 1,
     val completedChunks: Int = 0,
+    val channelId: String? = null, // Storage channel ID where file/chunks live
     val manifestMessageId: Long? = null, // Telegram message ID of manifest
     val localPath: String? = null, // Local cached path if downloaded
     val localUri: String? = null, // MediaStore or local content URI

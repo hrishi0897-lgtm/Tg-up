@@ -137,6 +137,7 @@ class VaultSyncManager private constructor(private val context: Context) {
                     ManifestChunk(
                         index = chunk.chunkIndex,
                         messageId = chunk.telegramMessageId ?: 0L,
+                        channelId = chunk.channelId ?: file.channelId ?: chatId,
                         telegramFileId = chunk.telegramFileId,
                         sha256 = chunk.checksum,
                         size = chunk.size
@@ -147,6 +148,7 @@ class VaultSyncManager private constructor(private val context: Context) {
                     id = file.id,
                     name = file.name,
                     folderId = file.folderId,
+                    channelId = file.channelId ?: chatId,
                     size = file.size,
                     mimeType = file.mimeType,
                     uploadDate = file.uploadDate,
@@ -276,10 +278,12 @@ class VaultSyncManager private constructor(private val context: Context) {
                     val existing = database.fileDao().getById(remoteFile.id)
                     if (existing == null) {
                         // Fast metadata-only import: file appears in vault ready to download on demand
+                        val fileChannelId = remoteFile.channelId ?: chatId
                         val newEntity = FileEntity(
                             id = remoteFile.id,
                             name = remoteFile.name,
                             folderId = remoteFile.folderId,
+                            channelId = fileChannelId,
                             size = remoteFile.size,
                             mimeType = remoteFile.mimeType,
                             uploadDate = remoteFile.uploadDate,
@@ -298,6 +302,7 @@ class VaultSyncManager private constructor(private val context: Context) {
                             ChunkEntity(
                                 fileId = remoteFile.id,
                                 chunkIndex = mc.index,
+                                channelId = mc.channelId ?: fileChannelId,
                                 telegramMessageId = mc.messageId,
                                 telegramFileId = mc.telegramFileId,
                                 checksum = mc.sha256,
@@ -312,12 +317,14 @@ class VaultSyncManager private constructor(private val context: Context) {
                         newDiscoveredFiles++
                     } else {
                         // File already exists locally: update name & folderId if changed remotely
-                        if (existing.name != remoteFile.name || existing.folderId != remoteFile.folderId) {
+                        val fileChannelId = remoteFile.channelId ?: existing.channelId ?: chatId
+                        if (existing.name != remoteFile.name || existing.folderId != remoteFile.folderId || existing.channelId != fileChannelId) {
                             Log.i(TAG, "Rebuilding local database: Updating file placement: ${existing.name} -> ${remoteFile.name} (folder: ${remoteFile.folderId})")
                             database.fileDao().update(
                                 existing.copy(
                                     name = remoteFile.name,
-                                    folderId = remoteFile.folderId
+                                    folderId = remoteFile.folderId,
+                                    channelId = fileChannelId
                                 )
                             )
                         }
@@ -329,6 +336,7 @@ class VaultSyncManager private constructor(private val context: Context) {
                                 ChunkEntity(
                                     fileId = remoteFile.id,
                                     chunkIndex = mc.index,
+                                    channelId = mc.channelId ?: fileChannelId,
                                     telegramMessageId = mc.messageId,
                                     telegramFileId = mc.telegramFileId,
                                     checksum = mc.sha256,
