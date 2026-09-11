@@ -159,15 +159,17 @@ fun FolderManagementScreen(
         }
     }
 
-    // Filter subfolders and files based on search query
+    // Real-time filtering for subfolders and files based on search query
     val filteredSubfolders = remember(subfolders, searchQuery) {
-        if (searchQuery.isBlank()) subfolders
-        else subfolders.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        val query = searchQuery.trim()
+        if (query.isBlank()) subfolders
+        else subfolders.filter { it.name.contains(query, ignoreCase = true) }
     }
 
     val filteredFiles = remember(files, searchQuery) {
-        if (searchQuery.isBlank()) files
-        else files.filter { it.name.contains(searchQuery, ignoreCase = true) }
+        val query = searchQuery.trim()
+        if (query.isBlank()) files
+        else files.filter { it.name.contains(query, ignoreCase = true) }
     }
 
     FolderManagementContent(
@@ -323,7 +325,92 @@ fun FolderManagementScreen(
 }
 
 /**
- * Core UI rendering for FolderManagementScreen.
+ * FileManagementScreen alias composables to support both File and Folder management naming conventions.
+ */
+@Composable
+fun FileManagementScreen(
+    folderDao: FolderDao,
+    fileDao: FileDao? = null,
+    initialFolderId: String? = null,
+    onBack: () -> Unit,
+    onFileClick: ((FileEntity) -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    FolderManagementScreen(
+        folderDao = folderDao,
+        fileDao = fileDao,
+        initialFolderId = initialFolderId,
+        onBack = onBack,
+        onFileClick = onFileClick,
+        modifier = modifier
+    )
+}
+
+@Composable
+fun FileManagementScreen(
+    viewModel: TeleVaultViewModel,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    FolderManagementScreen(
+        viewModel = viewModel,
+        onBack = onBack,
+        modifier = modifier
+    )
+}
+
+/**
+ * FileManagementContent alias for FolderManagementContent.
+ */
+@Composable
+fun FileManagementContent(
+    currentFolder: FolderEntity?,
+    subfolders: List<FolderEntity>,
+    files: List<FileEntity>,
+    breadcrumbs: List<BreadcrumbItem>,
+    allFolders: List<FolderEntity>,
+    searchQuery: String,
+    isGridView: Boolean,
+    onSearchQueryChange: (String) -> Unit,
+    onToggleViewMode: () -> Unit,
+    onNavigateToSubfolder: (FolderEntity) -> Unit,
+    onNavigateToBreadcrumb: (String?) -> Unit,
+    onNavigateUp: () -> Unit,
+    onCreateFolderClick: () -> Unit,
+    onRenameFolderClick: (FolderEntity) -> Unit,
+    onDeleteFolderClick: (FolderEntity) -> Unit,
+    onMoveFolderClick: (FolderEntity) -> Unit,
+    onMoveFileClick: (FileEntity) -> Unit,
+    onFileClick: (FileEntity) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    FolderManagementContent(
+        currentFolder = currentFolder,
+        subfolders = subfolders,
+        files = files,
+        breadcrumbs = breadcrumbs,
+        allFolders = allFolders,
+        searchQuery = searchQuery,
+        isGridView = isGridView,
+        onSearchQueryChange = onSearchQueryChange,
+        onToggleViewMode = onToggleViewMode,
+        onNavigateToSubfolder = onNavigateToSubfolder,
+        onNavigateToBreadcrumb = onNavigateToBreadcrumb,
+        onNavigateUp = onNavigateUp,
+        onCreateFolderClick = onCreateFolderClick,
+        onRenameFolderClick = onRenameFolderClick,
+        onDeleteFolderClick = onDeleteFolderClick,
+        onMoveFolderClick = onMoveFolderClick,
+        onMoveFileClick = onMoveFileClick,
+        onFileClick = onFileClick,
+        onBack = onBack,
+        modifier = modifier
+    )
+}
+
+/**
+ * Core UI rendering for FolderManagementScreen and FileManagementScreen.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -350,7 +437,6 @@ fun FolderManagementContent(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTeleVaultColors.current
-    var isSearchExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -391,20 +477,21 @@ fun FolderManagementContent(
                     }
                 },
                 actions = {
-                    // Search toggle button
+                    // Search toggle / clear button
                     IconButton(
                         onClick = {
-                            isSearchExpanded = !isSearchExpanded
-                            if (!isSearchExpanded) onSearchQueryChange("")
+                            if (searchQuery.isNotEmpty()) {
+                                onSearchQueryChange("")
+                            }
                         },
                         modifier = Modifier
                             .testTag("folder_mgmt_search_toggle")
                             .pressScale(0.92f)
                     ) {
                         Icon(
-                            imageVector = if (isSearchExpanded) Icons.Default.Clear else Icons.Default.Search,
-                            contentDescription = "Search in Directory",
-                            tint = if (isSearchExpanded || searchQuery.isNotBlank()) colors.teal else colors.textDim
+                            imageVector = if (searchQuery.isNotEmpty()) Icons.Default.Clear else Icons.Default.Search,
+                            contentDescription = if (searchQuery.isNotEmpty()) "Clear search" else "Search in Directory",
+                            tint = if (searchQuery.isNotEmpty()) colors.teal else colors.textDim
                         )
                     }
 
@@ -448,47 +535,92 @@ fun FolderManagementContent(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Search Bar (Expandable)
-            AnimatedVisibility(
-                visible = isSearchExpanded,
-                enter = fadeIn() + slideInVertically(),
-                exit = fadeOut() + slideOutVertically()
+            // Prominent Real-time Search Bar at top of Screen
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.surface)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .testTag("file_management_search_bar")
             ) {
-                Box(
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    placeholder = {
+                        Text(
+                            text = "Search files & folders by name…",
+                            color = colors.textFaint,
+                            fontSize = 13.sp,
+                            fontFamily = BodySansFont
+                        )
+                    },
+                    singleLine = true,
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search icon",
+                            tint = if (searchQuery.isNotBlank()) colors.teal else colors.textDim,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = { onSearchQueryChange("") },
+                                modifier = Modifier.testTag("search_clear_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "Clear search",
+                                    tint = colors.textDim,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = colors.teal,
+                        unfocusedBorderColor = colors.line,
+                        focusedTextColor = colors.text,
+                        unfocusedTextColor = colors.text,
+                        cursorColor = colors.teal,
+                        focusedContainerColor = colors.surfaceHi,
+                        unfocusedContainerColor = colors.surfaceHi
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("folder_mgmt_search_input")
+                )
+            }
+
+            // Real-time filter result indicator
+            if (searchQuery.isNotBlank()) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(colors.surface)
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .border(1.dp, colors.line.copy(alpha = 0.5f))
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = onSearchQueryChange,
-                        placeholder = { Text("Filter current directory…", color = colors.textFaint, fontSize = 13.sp) },
-                        singleLine = true,
-                        leadingIcon = {
-                            Icon(Icons.Default.Search, contentDescription = null, tint = colors.textDim, modifier = Modifier.size(18.dp))
-                        },
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { onSearchQueryChange("") }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear", tint = colors.textDim, modifier = Modifier.size(16.dp))
-                                }
-                            }
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = colors.teal,
-                            unfocusedBorderColor = colors.line,
-                            focusedTextColor = colors.text,
-                            unfocusedTextColor = colors.text,
-                            cursorColor = colors.teal,
-                            focusedContainerColor = colors.surfaceHi,
-                            unfocusedContainerColor = colors.surfaceHi
-                        ),
-                        shape = RoundedCornerShape(12.dp),
+                    Text(
+                        text = "Filtered by \"$searchQuery\": ${subfolders.size} folder(s), ${files.size} file(s) found",
+                        fontSize = 11.5.sp,
+                        fontFamily = NumericMonoFont,
+                        color = colors.teal
+                    )
+                    Text(
+                        text = "Clear filter",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.danger,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("folder_mgmt_search_input")
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable { onSearchQueryChange("") }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
                     )
                 }
             }
@@ -977,7 +1109,7 @@ private fun FileRowItem(
             .testTag("file_item_${file.name}"),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val categoryColor = resolveCategoryColor(file.mimeType, file.name)
+        val categoryColor = remember(file.mimeType, file.name) { resolveCategoryColor(file.mimeType, file.name) }
         Box(
             modifier = Modifier
                 .size(40.dp)
@@ -1077,7 +1209,6 @@ private fun FolderGridItem(
         border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
         modifier = Modifier
             .fillMaxWidth()
-            .pressScale(0.97f)
             .clickable(onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -1144,7 +1275,8 @@ private fun FileGridItem(
     onMove: () -> Unit
 ) {
     val colors = LocalTeleVaultColors.current
-    val categoryColor = resolveCategoryColor(file.mimeType, file.name)
+    val categoryColor = remember(file.mimeType, file.name) { resolveCategoryColor(file.mimeType, file.name) }
+    val formattedSize = remember(file.size) { ChecksumUtil.formatBytes(file.size) }
     var showMenu by remember { mutableStateOf(false) }
 
     Card(
@@ -1153,7 +1285,6 @@ private fun FileGridItem(
         border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
         modifier = Modifier
             .fillMaxWidth()
-            .pressScale(0.97f)
             .clickable(onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -1202,7 +1333,7 @@ private fun FileGridItem(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = ChecksumUtil.formatBytes(file.size),
+                text = formattedSize,
                 fontSize = 10.sp,
                 fontFamily = NumericMonoFont,
                 color = colors.textDim

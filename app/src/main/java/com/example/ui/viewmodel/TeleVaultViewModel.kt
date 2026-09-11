@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -392,6 +393,22 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         SharingStarted.WhileSubscribed(5000),
         emptyList()
     )
+
+    // Distinct count of active transfers to prevent high-frequency byte updates from recomposing Home screen
+    val activeTransfersCount: StateFlow<Int> = activeTransfers
+        .map { list ->
+            list.count {
+                it.status == FileStatus.UPLOADING ||
+                it.status == FileStatus.DOWNLOADING ||
+                it.status == FileStatus.PENDING
+            }
+        }
+        .distinctUntilChanged()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            0
+        )
 
     val recentlyCompleted: StateFlow<List<TransferProgress>> = transferManager.recentlyCompleted
         .stateIn(

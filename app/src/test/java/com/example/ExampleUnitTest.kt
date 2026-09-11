@@ -199,4 +199,41 @@ class ExampleUnitTest {
       tempDir.deleteRecursively()
     }
   }
+
+  @Test
+  fun realTimeSearchFilter_matchesFilesAndFoldersByNameCaseInsensitive() {
+    val folders = listOf(
+      com.example.data.local.entity.FolderEntity("1", "Documents", null, 1000L),
+      com.example.data.local.entity.FolderEntity("2", "Photos 2026", null, 2000L),
+      com.example.data.local.entity.FolderEntity("3", "Work In Progress", null, 3000L)
+    )
+    val files = listOf(
+      com.example.data.local.entity.FileEntity(id = "f1", name = "tax_return.pdf", folderId = "1", size = 5000L, mimeType = "application/pdf", checksum = "hash1"),
+      com.example.data.local.entity.FileEntity(id = "f2", name = "vacation_photo.jpg", folderId = "2", size = 15000L, mimeType = "image/jpeg", checksum = "hash2"),
+      com.example.data.local.entity.FileEntity(id = "f3", name = "budget_work.xlsx", folderId = "3", size = 8000L, mimeType = "application/excel", checksum = "hash3")
+    )
+
+    fun filterFolders(list: List<com.example.data.local.entity.FolderEntity>, query: String) =
+      if (query.isBlank()) list else list.filter { it.name.contains(query.trim(), ignoreCase = true) }
+
+    fun filterFiles(list: List<com.example.data.local.entity.FileEntity>, query: String) =
+      if (query.isBlank()) list else list.filter { it.name.contains(query.trim(), ignoreCase = true) }
+
+    // Case-insensitive folder match
+    val docMatch = filterFolders(folders, "doc")
+    assertEquals(1, docMatch.size)
+    assertEquals("Documents", docMatch[0].name)
+
+    // Match across files & folders
+    val workFolderMatch = filterFolders(folders, "WORK")
+    val workFileMatch = filterFiles(files, "WORK")
+    assertEquals(1, workFolderMatch.size)
+    assertEquals("Work In Progress", workFolderMatch[0].name)
+    assertEquals(1, workFileMatch.size)
+    assertEquals("budget_work.xlsx", workFileMatch[0].name)
+
+    // Blank query returns full lists
+    assertEquals(3, filterFolders(folders, "   ").size)
+    assertEquals(3, filterFiles(files, "").size)
+  }
 }

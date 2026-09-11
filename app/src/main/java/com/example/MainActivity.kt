@@ -128,6 +128,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
     val files by viewModel.currentFiles.collectAsState()
     val allFolders by viewModel.allFolders.collectAsState()
     val activeTransfers by viewModel.activeTransfers.collectAsState()
+    val activeTransfersCount by viewModel.activeTransfersCount.collectAsState()
     val recentlyCompleted by viewModel.recentlyCompleted.collectAsState()
     val botPool by viewModel.botPool.collectAsState()
     val botHealth by viewModel.botHealth.collectAsState()
@@ -305,7 +306,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         sortBy = uiState.sortBy,
                         sortAscending = uiState.sortAscending,
                         isGridView = uiState.isGridView,
-                        activeTransfers = activeTransfers,
+                        activeTransfersCount = activeTransfersCount,
                         isResyncing = uiState.isResyncing,
                         resyncMessage = uiState.resyncMessage,
                         lastSyncedTime = uiState.lastSyncedTime,

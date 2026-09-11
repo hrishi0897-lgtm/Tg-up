@@ -111,6 +111,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -163,7 +164,10 @@ fun HomeScreen(
     sortBy: SortBy,
     sortAscending: Boolean,
     isGridView: Boolean,
-    activeTransfers: List<TransferProgress>,
+    activeTransfers: List<TransferProgress> = emptyList(),
+    activeTransfersCount: Int = activeTransfers.count {
+        it.status == FileStatus.UPLOADING || it.status == FileStatus.DOWNLOADING
+    },
     isResyncing: Boolean,
     resyncMessage: String?,
     lastSyncedTime: Long = 0L,
@@ -192,9 +196,7 @@ fun HomeScreen(
     var showFabMenu by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
 
-    val activeCount = activeTransfers.count {
-        it.status == FileStatus.UPLOADING || it.status == FileStatus.DOWNLOADING
-    }
+    val activeCount = activeTransfersCount
 
     Scaffold(
         modifier = modifier
@@ -311,7 +313,7 @@ fun HomeScreen(
                         tint = Color(0xFF05060A),
                         modifier = Modifier
                             .size(24.dp)
-                            .rotate(fabRotation)
+                            .graphicsLayer { rotationZ = fabRotation }
                     )
                 }
             }
@@ -325,6 +327,8 @@ fun HomeScreen(
             )
         }
     ) { innerPadding ->
+        val filePairs = remember(files) { files.chunked(2) }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -332,17 +336,23 @@ fun HomeScreen(
             contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 6.dp, bottom = 96.dp)
         ) {
             // 1. Status Badge: "Backend connected" with pulsing mint dot
-            item {
-                val infinitePulse = rememberInfiniteTransition(label = "badge_pulse")
-                val dotAlpha by infinitePulse.animateFloat(
-                    initialValue = 0.35f,
-                    targetValue = 1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(900, easing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "pulse_dot_alpha"
-                )
+            item(key = "status_badge") {
+                val reduceMotion = LocalReduceMotion.current
+                val dotAlpha = if (reduceMotion) {
+                    1f
+                } else {
+                    val infinitePulse = rememberInfiniteTransition(label = "badge_pulse")
+                    val alpha by infinitePulse.animateFloat(
+                        initialValue = 0.35f,
+                        targetValue = 1f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(900, easing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "pulse_dot_alpha"
+                    )
+                    alpha
+                }
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -357,7 +367,8 @@ fun HomeScreen(
                         modifier = Modifier
                             .size(7.dp)
                             .clip(CircleShape)
-                            .background(colors.mint.copy(alpha = dotAlpha))
+                            .graphicsLayer { this.alpha = dotAlpha }
+                            .background(colors.mint)
                     )
                     Text(
                         text = "Backend connected",
@@ -611,7 +622,7 @@ fun HomeScreen(
                             tint = colors.textDim,
                             modifier = Modifier
                                 .size(16.dp)
-                                .rotate(viewToggleRot)
+                                .graphicsLayer { rotationZ = viewToggleRot }
                         )
                     }
                 }
@@ -728,18 +739,23 @@ fun HomeScreen(
                     }
                 }
             } else if (isGridView) {
-                item(key = "grid_view_container") {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
-                        modifier = Modifier.height((((files.size + 1) / 2) * 144).dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        userScrollEnabled = false
+                items(filePairs, key = { pair -> "grid_pair_${pair.first().id}" }) { pair ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(files, key = { it.id }) { file ->
-                            FileGridCard(file = file, onClick = { onFileClick(file) })
+                        Box(modifier = Modifier.weight(1f)) {
+                            FileGridCard(file = pair[0], onClick = { onFileClick(pair[0]) })
+                        }
+                        if (pair.size > 1) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                FileGridCard(file = pair[1], onClick = { onFileClick(pair[1]) })
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
+                    Spacer(modifier = Modifier.height(10.dp))
                 }
             } else {
                 items(files, key = { it.id }) { file ->
@@ -883,16 +899,21 @@ private fun HomeTopBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val infiniteTransition = rememberInfiniteTransition(label = "resync_infinite")
-            val spinAngle by infiniteTransition.animateFloat(
-                initialValue = 0f,
-                targetValue = 360f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(850, easing = LinearEasing),
-                    repeatMode = RepeatMode.Restart
-                ),
-                label = "resync_angle"
-            )
+            val spinAngle = if (isResyncing) {
+                val infiniteTransition = rememberInfiniteTransition(label = "resync_infinite")
+                val angle by infiniteTransition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 360f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(850, easing = LinearEasing),
+                        repeatMode = RepeatMode.Restart
+                    ),
+                    label = "resync_angle"
+                )
+                angle
+            } else {
+                0f
+            }
 
             // Theme toggle 3D icon button (sun when dark, moon when light)
             IconButton3D(
@@ -919,7 +940,7 @@ private fun HomeTopBar(
                     tint = if (isResyncing) colors.violet else colors.textDim,
                     modifier = Modifier
                         .size(17.dp)
-                        .rotate(if (isResyncing) spinAngle else 0f)
+                        .graphicsLayer { rotationZ = if (isResyncing) spinAngle else 0f }
                 )
             }
 

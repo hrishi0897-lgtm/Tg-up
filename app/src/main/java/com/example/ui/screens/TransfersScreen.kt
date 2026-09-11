@@ -342,7 +342,6 @@ private fun TransferRowCard(
         ),
         modifier = Modifier
             .fillMaxWidth()
-            .pressScale(0.98f)
             .clickable(enabled = isFailed, onClick = onRetry)
             .testTag("transfer_item_${transfer.fileId}")
     ) {
@@ -409,7 +408,6 @@ private fun TransferRowCard(
                             onClick = onPause,
                             modifier = Modifier
                                 .size(48.dp)
-                                .pressScale(0.88f)
                                 .testTag("btn_pause_${transfer.fileId}")
                         ) {
                             Icon(
@@ -423,7 +421,6 @@ private fun TransferRowCard(
                             onClick = onCancel,
                             modifier = Modifier
                                 .size(48.dp)
-                                .pressScale(0.88f)
                                 .testTag("btn_cancel_${transfer.fileId}")
                         ) {
                             Icon(
@@ -439,7 +436,6 @@ private fun TransferRowCard(
                             onClick = onResume,
                             modifier = Modifier
                                 .size(48.dp)
-                                .pressScale(0.88f)
                                 .testTag("btn_resume_${transfer.fileId}")
                         ) {
                             Icon(
@@ -453,7 +449,6 @@ private fun TransferRowCard(
                             onClick = onCancel,
                             modifier = Modifier
                                 .size(48.dp)
-                                .pressScale(0.88f)
                                 .testTag("btn_cancel_${transfer.fileId}")
                         ) {
                             Icon(
@@ -469,7 +464,6 @@ private fun TransferRowCard(
                             onClick = onRetry,
                             modifier = Modifier
                                 .size(48.dp)
-                                .pressScale(0.88f)
                                 .testTag("btn_retry_${transfer.fileId}")
                         ) {
                             Icon(
@@ -483,7 +477,6 @@ private fun TransferRowCard(
                             onClick = onCancel,
                             modifier = Modifier
                                 .size(48.dp)
-                                .pressScale(0.88f)
                                 .testTag("btn_cancel_${transfer.fileId}")
                         ) {
                             Icon(
