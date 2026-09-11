@@ -58,16 +58,10 @@ fun QuickStatsBar(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            AnimatedContent(
-                targetState = filesCount,
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                label = "qs_files"
-            ) { count ->
-                Text(
-                    text = "$count",
-                    style = MonoStatValueLarge.copy(color = colors.text, fontSize = 15.sp)
-                )
-            }
+            Text(
+                text = "$filesCount",
+                style = MonoStatValueLarge.copy(color = colors.text, fontSize = 15.sp)
+            )
             Text(
                 text = "Files",
                 fontSize = 11.sp,
@@ -90,16 +84,10 @@ fun QuickStatsBar(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            AnimatedContent(
-                targetState = foldersCount,
-                transitionSpec = { fadeIn() togetherWith fadeOut() },
-                label = "qs_folders"
-            ) { count ->
-                Text(
-                    text = "$count",
-                    style = MonoStatValueLarge.copy(color = colors.text, fontSize = 15.sp)
-                )
-            }
+            Text(
+                text = "$foldersCount",
+                style = MonoStatValueLarge.copy(color = colors.text, fontSize = 15.sp)
+            )
             Text(
                 text = "Folders",
                 fontSize = 11.sp,

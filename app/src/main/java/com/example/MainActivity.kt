@@ -34,6 +34,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import com.example.data.local.entity.FileEntity
+import com.example.data.local.entity.FolderEntity
+import com.example.ui.viewmodel.SortBy
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
@@ -126,12 +130,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
     val storageStats by viewModel.storageStats.collectAsState()
     val folders by viewModel.currentFolders.collectAsState()
     val files by viewModel.currentFiles.collectAsState()
-    val allFolders by viewModel.allFolders.collectAsState()
-    val activeTransfers by viewModel.activeTransfers.collectAsState()
     val activeTransfersCount by viewModel.activeTransfersCount.collectAsState()
-    val recentlyCompleted by viewModel.recentlyCompleted.collectAsState()
-    val botPool by viewModel.botPool.collectAsState()
-    val botHealth by viewModel.botHealth.collectAsState()
 
     // File upload picker
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -141,6 +140,25 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
             viewModel.uploadFile(uri)
         }
     }
+
+    // Memoized callbacks for HomeScreen to avoid unnecessary recompositions
+    val onToggleTheme = remember(viewModel) { { viewModel.toggleTheme() } }
+    val onSearchChange = remember(viewModel) { { query: String -> viewModel.setSearchQuery(query) } }
+    val onSortChange = remember(viewModel) { { sort: SortBy -> viewModel.setSortBy(sort) } }
+    val onToggleViewMode = remember(viewModel) { { viewModel.toggleViewMode() } }
+    val onFolderClick = remember(viewModel) { { folder: FolderEntity -> viewModel.openFolder(folder) } }
+    val onBreadcrumbClick = remember(viewModel) { { index: Int -> viewModel.navigateToBreadcrumb(index) } }
+    val onFileClick = remember(viewModel) { { file: FileEntity -> viewModel.inspectFile(file) } }
+    val onRenameFolder = remember(viewModel) { { folder: FolderEntity -> viewModel.setFolderToRename(folder) } }
+    val onDeleteFolder = remember(viewModel) { { folder: FolderEntity -> viewModel.deleteFolder(folder) } }
+    val onCreateFolderClick = remember(viewModel) { { viewModel.setShowCreateFolderDialog(true) } }
+    val onUploadFileClick = remember(filePickerLauncher) { { filePickerLauncher.launch("*/*") } }
+    val onOpenTransfers = remember(viewModel) { { viewModel.navigateToTransfersScreen() } }
+    val onOpenSettings = remember(viewModel) { { viewModel.navigateToSettingsScreen() } }
+    val onOpenFolderManagement = remember(viewModel) { { viewModel.navigateToFolderManagementScreen() } }
+    val onResync = remember(viewModel) { { viewModel.manualSyncFromHeader() } }
+    val onDismissResyncMsg = remember(viewModel) { { viewModel.clearResyncMessage() } }
+    val onDismissTransferError = remember(viewModel) { { viewModel.dismissTransferError() } }
 
     val context = LocalContext.current
     LaunchedEffect(uiState.transferErrorMessage) {
@@ -252,44 +270,12 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         }
                     )
                 } else if (currentScreen == AppScreen.TRANSFERS) {
-                    TransfersScreen(
-                        transfers = activeTransfers,
-                        recentlyCompleted = recentlyCompleted,
-                        onBack = { viewModel.navigateToVaultScreen() },
-                        onPause = { viewModel.pauseTransfer(it) },
-                        onResume = { id, isUpload -> viewModel.resumeTransfer(id, isUpload) },
-                        onCancel = { viewModel.cancelTransfer(it) },
-                        onRetry = { viewModel.retryTransfer(it) },
-                        onPauseAll = { viewModel.pauseAllTransfers() },
-                        onResumeAll = { viewModel.resumeAllTransfers() },
-                        onClearCompleted = { viewModel.clearRecentlyCompleted() },
-                        onNavigateToVault = { viewModel.navigateToVaultScreen() }
-                    )
+                    TransfersScreenContainer(viewModel = viewModel)
                 } else if (currentScreen == AppScreen.SETTINGS) {
-                    val (token, chatId) = viewModel.getCredentials()
-                    SettingsScreen(
-                        botTokenMasked = token,
-                        chatId = chatId,
-                        chunkSizeMb = uiState.chunkSizeMb,
-                        isWifiOnly = uiState.isWifiOnly,
+                    SettingsScreenContainer(
+                        viewModel = viewModel,
                         isDarkTheme = isDarkTheme,
-                        testTransferRunning = uiState.testTransferRunning,
-                        testTransferStatus = uiState.testTransferStatus,
-                        testTransferSuccess = uiState.testTransferSuccess,
-                        botTokenPool = botPool,
-                        botHealthMap = botHealth,
-                        onAddBotToken = { viewModel.addBotToken(it) },
-                        onRemoveBotToken = { viewModel.removeBotToken(it) },
-                        onSetActiveBotToken = { viewModel.setActiveBotToken(it) },
-                        onCheckBotHealth = { viewModel.checkBotHealth(it) },
-                        onCheckAllBotsHealth = { viewModel.checkAllBotsHealth() },
-                        onToggleTheme = { viewModel.toggleTheme() },
-                        onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
-                        onWifiOnlyChange = { viewModel.setWifiOnly(it) },
-                        onDisconnect = { viewModel.disconnect() },
-                        onDismiss = { viewModel.navigateToVaultScreen() },
-                        onStartTestTransfer = { viewModel.startSyntheticTestTransfer() },
-                        onDismissTestStatus = { viewModel.resetTestTransferStatus() }
+                        onDismiss = { viewModel.navigateToVaultScreen() }
                     )
                 } else if (currentScreen == AppScreen.FOLDER_MANAGEMENT) {
                     FolderManagementScreen(
@@ -311,24 +297,24 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         resyncMessage = uiState.resyncMessage,
                         lastSyncedTime = uiState.lastSyncedTime,
                         isDarkTheme = isDarkTheme,
-                        onToggleTheme = { viewModel.toggleTheme() },
-                        onSearchChange = { viewModel.setSearchQuery(it) },
-                        onSortChange = { viewModel.setSortBy(it) },
-                        onToggleViewMode = { viewModel.toggleViewMode() },
-                        onFolderClick = { viewModel.openFolder(it) },
-                        onBreadcrumbClick = { viewModel.navigateToBreadcrumb(it) },
-                        onFileClick = { viewModel.inspectFile(it) },
-                        onRenameFolder = { viewModel.setFolderToRename(it) },
-                        onDeleteFolder = { viewModel.deleteFolder(it) },
-                        onCreateFolderClick = { viewModel.setShowCreateFolderDialog(true) },
-                        onUploadFileClick = { filePickerLauncher.launch("*/*") },
-                        onOpenTransfers = { viewModel.navigateToTransfersScreen() },
-                        onOpenSettings = { viewModel.navigateToSettingsScreen() },
-                        onOpenFolderManagement = { viewModel.navigateToFolderManagementScreen() },
-                        onResync = { viewModel.manualSyncFromHeader() },
-                        onDismissResyncMsg = { viewModel.clearResyncMessage() },
+                        onToggleTheme = onToggleTheme,
+                        onSearchChange = onSearchChange,
+                        onSortChange = onSortChange,
+                        onToggleViewMode = onToggleViewMode,
+                        onFolderClick = onFolderClick,
+                        onBreadcrumbClick = onBreadcrumbClick,
+                        onFileClick = onFileClick,
+                        onRenameFolder = onRenameFolder,
+                        onDeleteFolder = onDeleteFolder,
+                        onCreateFolderClick = onCreateFolderClick,
+                        onUploadFileClick = onUploadFileClick,
+                        onOpenTransfers = onOpenTransfers,
+                        onOpenSettings = onOpenSettings,
+                        onOpenFolderManagement = onOpenFolderManagement,
+                        onResync = onResync,
+                        onDismissResyncMsg = onDismissResyncMsg,
                         transferErrorMessage = uiState.transferErrorMessage,
-                        onDismissTransferError = { viewModel.dismissTransferError() }
+                        onDismissTransferError = onDismissTransferError
                     )
                 }
             }
@@ -376,43 +362,15 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
 
             // Active Transfers Sheet
             if (uiState.showTransfersSheet) {
-                TransfersSheet(
-                    transfers = activeTransfers,
-                    onDismiss = { viewModel.setShowTransfersSheet(false) },
-                    onPause = { viewModel.pauseTransfer(it) },
-                    onResume = { id, isUpload -> viewModel.resumeTransfer(id, isUpload) },
-                    onCancel = { viewModel.cancelTransfer(it) },
-                    onRetry = { viewModel.retryTransfer(it) }
-                )
+                TransfersSheetContainer(viewModel = viewModel)
             }
 
             // Settings Sheet
             if (uiState.showSettingsSheet) {
-                val (token, chatId) = viewModel.getCredentials()
-                SettingsScreen(
-                    botTokenMasked = token,
-                    chatId = chatId,
-                    chunkSizeMb = uiState.chunkSizeMb,
-                    isWifiOnly = uiState.isWifiOnly,
+                SettingsScreenContainer(
+                    viewModel = viewModel,
                     isDarkTheme = isDarkTheme,
-                    testTransferRunning = uiState.testTransferRunning,
-                    testTransferStatus = uiState.testTransferStatus,
-                    testTransferSuccess = uiState.testTransferSuccess,
-                    botTokenPool = botPool,
-                    botHealthMap = botHealth,
-                    onAddBotToken = { viewModel.addBotToken(it) },
-                    onRemoveBotToken = { viewModel.removeBotToken(it) },
-                    onSetActiveBotToken = { viewModel.setActiveBotToken(it) },
-                    onCheckBotHealth = { viewModel.checkBotHealth(it) },
-                    onCheckAllBotsHealth = { viewModel.checkAllBotsHealth() },
-                    onToggleTheme = { viewModel.toggleTheme() },
-                    onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
-                    onWifiOnlyChange = { viewModel.setWifiOnly(it) },
-                    onResyncClick = { viewModel.resyncFromTelegram() },
-                    onDisconnect = { viewModel.disconnect() },
-                    onDismiss = { viewModel.setShowSettingsSheet(false) },
-                    onStartTestTransfer = { viewModel.startSyntheticTestTransfer() },
-                    onDismissTestStatus = { viewModel.resetTestTransferStatus() }
+                    onDismiss = { viewModel.setShowSettingsSheet(false) }
                 )
             }
 
@@ -447,12 +405,9 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
             // Move File Dialog
             if (uiState.itemToMove != null) {
                 val file = uiState.itemToMove!!
-                MoveFileDialog(
-                    fileName = file.name,
-                    folders = allFolders,
-                    currentFolderId = file.folderId,
-                    onDismiss = { viewModel.setItemToMove(null) },
-                    onSelectDestination = { targetFolderId -> viewModel.moveFile(file.id, targetFolderId) }
+                MoveFileDialogContainer(
+                    viewModel = viewModel,
+                    file = file
                 )
             }
 
@@ -469,4 +424,88 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
             }
         }
     }
+}
+
+@Composable
+private fun TransfersScreenContainer(viewModel: TeleVaultViewModel) {
+    val activeTransfers by viewModel.activeTransfers.collectAsState()
+    val recentlyCompleted by viewModel.recentlyCompleted.collectAsState()
+    TransfersScreen(
+        transfers = activeTransfers,
+        recentlyCompleted = recentlyCompleted,
+        onBack = { viewModel.navigateToVaultScreen() },
+        onPause = { viewModel.pauseTransfer(it) },
+        onResume = { id, isUpload -> viewModel.resumeTransfer(id, isUpload) },
+        onCancel = { viewModel.cancelTransfer(it) },
+        onRetry = { viewModel.retryTransfer(it) },
+        onPauseAll = { viewModel.pauseAllTransfers() },
+        onResumeAll = { viewModel.resumeAllTransfers() },
+        onClearCompleted = { viewModel.clearRecentlyCompleted() },
+        onNavigateToVault = { viewModel.navigateToVaultScreen() }
+    )
+}
+
+@Composable
+private fun TransfersSheetContainer(viewModel: TeleVaultViewModel) {
+    val activeTransfers by viewModel.activeTransfers.collectAsState()
+    TransfersSheet(
+        transfers = activeTransfers,
+        onDismiss = { viewModel.setShowTransfersSheet(false) },
+        onPause = { viewModel.pauseTransfer(it) },
+        onResume = { id, isUpload -> viewModel.resumeTransfer(id, isUpload) },
+        onCancel = { viewModel.cancelTransfer(it) },
+        onRetry = { viewModel.retryTransfer(it) }
+    )
+}
+
+@Composable
+private fun SettingsScreenContainer(
+    viewModel: TeleVaultViewModel,
+    isDarkTheme: Boolean,
+    onDismiss: () -> Unit
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    val botPool by viewModel.botPool.collectAsState()
+    val botHealth by viewModel.botHealth.collectAsState()
+    val (token, chatId) = viewModel.getCredentials()
+    SettingsScreen(
+        botTokenMasked = token,
+        chatId = chatId,
+        chunkSizeMb = uiState.chunkSizeMb,
+        isWifiOnly = uiState.isWifiOnly,
+        isDarkTheme = isDarkTheme,
+        testTransferRunning = uiState.testTransferRunning,
+        testTransferStatus = uiState.testTransferStatus,
+        testTransferSuccess = uiState.testTransferSuccess,
+        botTokenPool = botPool,
+        botHealthMap = botHealth,
+        onAddBotToken = { viewModel.addBotToken(it) },
+        onRemoveBotToken = { viewModel.removeBotToken(it) },
+        onSetActiveBotToken = { viewModel.setActiveBotToken(it) },
+        onCheckBotHealth = { viewModel.checkBotHealth(it) },
+        onCheckAllBotsHealth = { viewModel.checkAllBotsHealth() },
+        onToggleTheme = { viewModel.toggleTheme() },
+        onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
+        onWifiOnlyChange = { viewModel.setWifiOnly(it) },
+        onResyncClick = { viewModel.resyncFromTelegram() },
+        onDisconnect = { viewModel.disconnect() },
+        onDismiss = onDismiss,
+        onStartTestTransfer = { viewModel.startSyntheticTestTransfer() },
+        onDismissTestStatus = { viewModel.resetTestTransferStatus() }
+    )
+}
+
+@Composable
+private fun MoveFileDialogContainer(
+    viewModel: TeleVaultViewModel,
+    file: FileEntity
+) {
+    val allFolders by viewModel.allFolders.collectAsState()
+    MoveFileDialog(
+        fileName = file.name,
+        folders = allFolders,
+        currentFolderId = file.folderId,
+        onDismiss = { viewModel.setItemToMove(null) },
+        onSelectDestination = { targetFolderId -> viewModel.moveFile(file.id, targetFolderId) }
+    )
 }

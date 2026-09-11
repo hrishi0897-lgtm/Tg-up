@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -114,13 +115,16 @@ fun Modifier.pressScale(
     val isPressed by actualSource.collectIsPressedAsState()
     val reduceMotion = LocalReduceMotion.current
 
-    val scale by animateFloatAsState(
+    val scaleState = animateFloatAsState(
         targetValue = if (isPressed && !reduceMotion) pressedScale else 1f,
         animationSpec = if (reduceMotion) snap() else MotionSpecs.PlayfulSpring,
         label = "press_scale_anim"
     )
 
-    return this.scale(scale)
+    return this.graphicsLayer {
+        scaleX = scaleState.value
+        scaleY = scaleState.value
+    }
 }
 
 /**

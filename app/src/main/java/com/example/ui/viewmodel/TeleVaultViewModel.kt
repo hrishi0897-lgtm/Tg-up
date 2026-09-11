@@ -284,7 +284,8 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 otherBytes = otherBytes
             )
         )
-    }.stateIn(
+    }.distinctUntilChanged()
+    .stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         StorageStats()
@@ -293,9 +294,11 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     // Current folder's subfolders
     val currentFolders: StateFlow<List<FolderEntity>> = _uiState
         .map { it.currentFolderId }
+        .distinctUntilChanged()
         .flatMapLatest { folderId ->
             db.folderDao().observeSubfolders(folderId)
         }
+        .distinctUntilChanged()
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
@@ -304,13 +307,14 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     // Current folder's files (supports active search filtering & sorting)
     val currentFiles: StateFlow<List<FileEntity>> = combine(
-        _uiState.map { it.currentFolderId },
-        _uiState.map { it.searchQuery },
-        _uiState.map { it.sortBy },
-        _uiState.map { it.sortAscending }
+        _uiState.map { it.currentFolderId }.distinctUntilChanged(),
+        _uiState.map { it.searchQuery }.distinctUntilChanged(),
+        _uiState.map { it.sortBy }.distinctUntilChanged(),
+        _uiState.map { it.sortAscending }.distinctUntilChanged()
     ) { folderId, query, sortBy, ascending ->
         Params(folderId, query, sortBy, ascending)
-    }.flatMapLatest { params ->
+    }.distinctUntilChanged()
+    .flatMapLatest { params ->
         if (params.query.isNotBlank()) {
             db.fileDao().searchFiles(params.query.trim())
         } else {
@@ -323,7 +327,8 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             }
             if (params.ascending) sorted else sorted.reversed()
         }
-    }.stateIn(
+    }.distinctUntilChanged()
+    .stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         emptyList()

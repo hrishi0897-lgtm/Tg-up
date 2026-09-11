@@ -338,21 +338,16 @@ fun HomeScreen(
             // 1. Status Badge: "Backend connected" with pulsing mint dot
             item(key = "status_badge") {
                 val reduceMotion = LocalReduceMotion.current
-                val dotAlpha = if (reduceMotion) {
-                    1f
-                } else {
-                    val infinitePulse = rememberInfiniteTransition(label = "badge_pulse")
-                    val alpha by infinitePulse.animateFloat(
-                        initialValue = 0.35f,
-                        targetValue = 1f,
-                        animationSpec = infiniteRepeatable(
-                            animation = tween(900, easing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)),
-                            repeatMode = RepeatMode.Reverse
-                        ),
-                        label = "pulse_dot_alpha"
-                    )
-                    alpha
-                }
+                val infinitePulse = rememberInfiniteTransition(label = "badge_pulse")
+                val pulseAlphaState = infinitePulse.animateFloat(
+                    initialValue = 0.35f,
+                    targetValue = 1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(900, easing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "pulse_dot_alpha"
+                )
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -367,7 +362,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .size(7.dp)
                             .clip(CircleShape)
-                            .graphicsLayer { this.alpha = dotAlpha }
+                            .graphicsLayer { this.alpha = if (reduceMotion) 1f else pulseAlphaState.value }
                             .background(colors.mint)
                     )
                     Text(
@@ -383,7 +378,7 @@ fun HomeScreen(
 
             // Transfer error banner if present
             if (transferErrorMessage != null) {
-                item {
+                item(key = "transfer_error_banner") {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -441,7 +436,7 @@ fun HomeScreen(
 
             // Resync notification banner if present
             if (resyncMessage != null) {
-                item {
+                item(key = "resync_banner") {
                     val isError = resyncMessage.contains("error", ignoreCase = true) ||
                             resyncMessage.contains("failed", ignoreCase = true) ||
                             resyncMessage.contains("No Vault Index", ignoreCase = true)
@@ -489,7 +484,7 @@ fun HomeScreen(
             }
 
             // 2. Hero: 3-segment Storage Ring Donut Card + Quick Stats Bar
-            item {
+            item(key = "hero_storage_card") {
                 StorageDonutRingCard(stats = storageStats)
                 Spacer(modifier = Modifier.height(12.dp))
                 QuickStatsBar(
@@ -502,7 +497,7 @@ fun HomeScreen(
             }
 
             // 3. Search & Filter Row: Search Box + 3D Sort Button + 3D View Toggle Button
-            item {
+            item(key = "search_and_filter_row") {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -631,7 +626,7 @@ fun HomeScreen(
 
             // 4. Breadcrumbs (if inside a subfolder)
             if (breadcrumbs.size > 1) {
-                item {
+                item(key = "breadcrumbs_bar") {
                     BreadcrumbBar(
                         breadcrumbs = breadcrumbs,
                         onBreadcrumbClick = onBreadcrumbClick
@@ -643,44 +638,42 @@ fun HomeScreen(
             // 5. Folders Section (if any and not searching)
             if (folders.isNotEmpty() && searchQuery.isBlank()) {
                 item(key = "folders_header") {
-                    Box(modifier = Modifier.animateItem()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Folders",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = BodySansFont,
+                            color = colors.textDim
+                        )
                         Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable(onClick = onOpenFolderManagement)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .testTag("btn_manage_folders")
                         ) {
                             Text(
-                                text = "Folders",
-                                fontSize = 13.sp,
+                                text = "Manage Folders",
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = BodySansFont,
-                                color = colors.textDim
+                                color = colors.teal
                             )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable(onClick = onOpenFolderManagement)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    .testTag("btn_manage_folders")
-                            ) {
-                                Text(
-                                    text = "Manage Folders",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontFamily = BodySansFont,
-                                    color = colors.teal
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                    contentDescription = null,
-                                    tint = colors.teal,
-                                    modifier = Modifier.size(10.dp)
-                                )
-                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                contentDescription = null,
+                                tint = colors.teal,
+                                modifier = Modifier.size(10.dp)
+                            )
                         }
                     }
                 }
@@ -702,28 +695,26 @@ fun HomeScreen(
 
             // 6. Section Head: "Vault files" + Item Count in Numeric Monospace Font
             item(key = "vault_files_header") {
-                Box(modifier = Modifier.animateItem()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp, bottom = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (searchQuery.isNotBlank()) "Search results" else "Vault files",
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            fontFamily = BodySansFont,
-                            color = colors.text
-                        )
-                        Text(
-                            text = "${files.size} items",
-                            fontSize = 12.5.sp,
-                            fontFamily = NumericMonoFont,
-                            color = colors.textFaint
-                        )
-                    }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (searchQuery.isNotBlank()) "Search results" else "Vault files",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        fontFamily = BodySansFont,
+                        color = colors.text
+                    )
+                    Text(
+                        text = "${files.size} items",
+                        fontSize = 12.5.sp,
+                        fontFamily = NumericMonoFont,
+                        color = colors.textFaint
+                    )
                 }
                 Spacer(modifier = Modifier.height(10.dp))
             }
@@ -731,12 +722,10 @@ fun HomeScreen(
             // 7. Content: Empty State or File List/Grid
             if (files.isEmpty() && folders.isEmpty()) {
                 item(key = "empty_state") {
-                    Box(modifier = Modifier.animateItem()) {
-                        EmptyFolderState(
-                            isSearch = searchQuery.isNotBlank(),
-                            onUploadClick = onUploadFileClick
-                        )
-                    }
+                    EmptyFolderState(
+                        isSearch = searchQuery.isNotBlank(),
+                        onUploadClick = onUploadFileClick
+                    )
                 }
             } else if (isGridView) {
                 items(filePairs, key = { pair -> "grid_pair_${pair.first().id}" }) { pair ->
@@ -812,18 +801,18 @@ private fun HomeTopBar(
                 contentAlignment = Alignment.Center
             ) {
                 // Geometric vault icon
+                val outerPath = remember { Path() }
                 Canvas(modifier = Modifier.size(22.dp)) {
                     val w = size.width
                     val h = size.height
-                    val outerPath = Path().apply {
-                        moveTo(w * 0.5f, h * 0.125f)
-                        lineTo(w * 0.833f, h * 0.333f)
-                        lineTo(w * 0.833f, h * 0.667f)
-                        lineTo(w * 0.5f, h * 0.875f)
-                        lineTo(w * 0.167f, h * 0.667f)
-                        lineTo(w * 0.167f, h * 0.333f)
-                        close()
-                    }
+                    outerPath.reset()
+                    outerPath.moveTo(w * 0.5f, h * 0.125f)
+                    outerPath.lineTo(w * 0.833f, h * 0.333f)
+                    outerPath.lineTo(w * 0.833f, h * 0.667f)
+                    outerPath.lineTo(w * 0.5f, h * 0.875f)
+                    outerPath.lineTo(w * 0.167f, h * 0.667f)
+                    outerPath.lineTo(w * 0.167f, h * 0.333f)
+                    outerPath.close()
                     drawPath(
                         path = outerPath,
                         color = Color.White,
@@ -899,21 +888,16 @@ private fun HomeTopBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val spinAngle = if (isResyncing) {
-                val infiniteTransition = rememberInfiniteTransition(label = "resync_infinite")
-                val angle by infiniteTransition.animateFloat(
-                    initialValue = 0f,
-                    targetValue = 360f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(850, easing = LinearEasing),
-                        repeatMode = RepeatMode.Restart
-                    ),
-                    label = "resync_angle"
-                )
-                angle
-            } else {
-                0f
-            }
+            val infiniteTransition = rememberInfiniteTransition(label = "resync_infinite")
+            val spinAngleState = infiniteTransition.animateFloat(
+                initialValue = 0f,
+                targetValue = 360f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(850, easing = LinearEasing),
+                    repeatMode = RepeatMode.Restart
+                ),
+                label = "resync_angle"
+            )
 
             // Theme toggle 3D icon button (sun when dark, moon when light)
             IconButton3D(
@@ -940,7 +924,7 @@ private fun HomeTopBar(
                     tint = if (isResyncing) colors.violet else colors.textDim,
                     modifier = Modifier
                         .size(17.dp)
-                        .graphicsLayer { rotationZ = if (isResyncing) spinAngle else 0f }
+                        .graphicsLayer { rotationZ = if (isResyncing) spinAngleState.value else 0f }
                 )
             }
 
@@ -982,6 +966,7 @@ private fun EmptyFolderState(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Outlined vault icon illustration
+        val handlePath = remember { Path() }
         Canvas(modifier = Modifier.size(72.dp)) {
             val scale = size.width / 72f
             val strokeWidth = 2.dp.toPx()
@@ -1015,14 +1000,13 @@ private fun EmptyFolderState(
             )
 
             // Handle arch at top
-            val handlePath = Path().apply {
-                moveTo(22f * scale, 10f * scale)
-                lineTo(22f * scale, 6f * scale)
-                quadraticTo(22f * scale, 2f * scale, 26f * scale, 2f * scale)
-                lineTo(46f * scale, 2f * scale)
-                quadraticTo(50f * scale, 2f * scale, 50f * scale, 6f * scale)
-                lineTo(50f * scale, 10f * scale)
-            }
+            handlePath.reset()
+            handlePath.moveTo(22f * scale, 10f * scale)
+            handlePath.lineTo(22f * scale, 6f * scale)
+            handlePath.quadraticTo(22f * scale, 2f * scale, 26f * scale, 2f * scale)
+            handlePath.lineTo(46f * scale, 2f * scale)
+            handlePath.quadraticTo(50f * scale, 2f * scale, 50f * scale, 6f * scale)
+            handlePath.lineTo(50f * scale, 10f * scale)
             drawPath(
                 path = handlePath,
                 color = baseColor,
