@@ -62,6 +62,11 @@ import com.example.ui.screens.TransfersScreen
 import com.example.ui.screens.TransfersSheet
 import com.example.ui.theme.TeleVaultTheme
 import com.example.ui.theme.OledBlack
+import android.content.Context
+import android.hardware.display.DisplayManager
+import android.view.Display
+import android.view.Surface
+import android.view.WindowManager
 import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.TeleVaultViewModel
 
@@ -71,6 +76,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        unlockMaximumRefreshRate()
         handleIntent(intent)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
@@ -105,7 +111,82 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        unlockMaximumRefreshRate()
         viewModel.onAppForeground()
+    }
+
+    /**
+     * Unlocks the maximum display refresh rate (e.g., 90Hz, 120Hz, 144Hz) supported
+     * by the device hardware, enabling ultra-smooth fluid scrolling and animations.
+     */
+    private fun unlockMaximumRefreshRate() {
+        try {
+            val win = window ?: return
+
+            // 1. Query display and find the highest available refresh rate mode
+            val currentDisplay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                display ?: (getSystemService(Context.DISPLAY_SERVICE) as? DisplayManager)?.getDisplay(Display.DEFAULT_DISPLAY)
+            } else {
+                @Suppress("DEPRECATION")
+                windowManager?.defaultDisplay
+            }
+
+            val modes = currentDisplay?.supportedModes ?: emptyArray()
+            val maxMode = modes.maxByOrNull { it.refreshRate }
+            val highestRefreshRate = maxMode?.refreshRate ?: currentDisplay?.refreshRate ?: 60f
+
+            val layoutParams = win.attributes
+            var updated = false
+
+            if (maxMode != null && maxMode.modeId > 0) {
+                layoutParams.preferredDisplayModeId = maxMode.modeId
+                updated = true
+            }
+
+            if (highestRefreshRate > 60f) {
+                @Suppress("DEPRECATION")
+                layoutParams.preferredRefreshRate = highestRefreshRate
+                updated = true
+            }
+
+            if (updated) {
+                win.attributes = layoutParams
+            }
+
+            // 2. Reduce post-processing latency if available (API 30+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                win.setPreferMinimalPostProcessing(true)
+            }
+
+            // 3. Request high frame rate category on the decor view if supported (Android 14+)
+            if (Build.VERSION.SDK_INT >= 34) {
+                win.decorView.post {
+                    try {
+                        val setCategoryMethod = win.decorView.javaClass.getMethod("setFrameRateCategory", Int::class.javaPrimitiveType)
+                        val highCategory = try {
+                            val surfaceClass = Class.forName("android.view.Surface")
+                            surfaceClass.getField("FRAME_RATE_CATEGORY_HIGH").getInt(null)
+                        } catch (_: Throwable) {
+                            1 // FRAME_RATE_CATEGORY_HIGH constant value
+                        }
+                        setCategoryMethod.invoke(win.decorView, highCategory)
+                    } catch (_: Throwable) {}
+
+                    try {
+                        if (highestRefreshRate > 60f) {
+                            val setFrameRateMethod = win.decorView.javaClass.getMethod(
+                                "setFrameRate",
+                                Float::class.javaPrimitiveType,
+                                Int::class.javaPrimitiveType
+                            )
+                            setFrameRateMethod.invoke(win.decorView, highestRefreshRate, 0)
+                        }
+                    } catch (_: Throwable) {}
+                }
+            }
+        } catch (_: Throwable) {
+            // Graceful fallback on devices that do not expose custom display modes
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
