@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
 import com.example.data.local.EncryptedCredentialsManager
+import com.example.data.local.entity.ChannelEntity
 import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
@@ -24,6 +25,7 @@ import com.example.domain.model.StorageCategory
 import com.example.domain.model.StorageStats
 import com.example.domain.model.TransferProgress
 import com.example.domain.model.classifyFileCategory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -223,6 +225,23 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         if (creds.hasCredentials()) {
             VaultSyncWorker.schedule(application)
             syncVault(onlyIfNewer = true, isManual = false)
+
+            viewModelScope.launch(Dispatchers.IO) {
+                val chatId = creds.getChatId()?.trim()
+                if (!chatId.isNullOrEmpty()) {
+                    val channelDao = db.channelDao()
+                    if (channelDao.getActiveChannel() == null) {
+                        channelDao.insert(
+                            ChannelEntity(
+                                channelId = chatId,
+                                displayName = "My Vault",
+                                addedDate = System.currentTimeMillis(),
+                                isActive = true
+                            )
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -398,7 +417,18 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             val result = repo.validateCredentials(token.trim(), chatId.trim())
             if (result.isSuccess) {
                 val user = result.getOrThrow()
-                creds.saveCredentials(token.trim(), chatId.trim())
+                val cleanChatId = chatId.trim()
+                creds.saveCredentials(token.trim(), cleanChatId)
+                viewModelScope.launch(Dispatchers.IO) {
+                    db.channelDao().insert(
+                        ChannelEntity(
+                            channelId = cleanChatId,
+                            displayName = "My Vault",
+                            addedDate = System.currentTimeMillis(),
+                            isActive = true
+                        )
+                    )
+                }
                 _uiState.update {
                     it.copy(
                         isValidating = false,

@@ -55,4 +55,7 @@ interface ChunkDao {
 
     @Query("DELETE FROM chunks")
     suspend fun clearAll()
+
+    @Query("SELECT * FROM chunks WHERE channelId = :channelId")
+    suspend fun getChunksByChannel(channelId: String): List<ChunkEntity>
 }
