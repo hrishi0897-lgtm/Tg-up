@@ -44,6 +44,7 @@ import com.example.data.transfer.TransferService
 import com.example.data.transfer.TransferWorker
 import com.example.ui.screens.CreateFolderDialog
 import com.example.ui.screens.FileDetailSheet
+import com.example.ui.screens.FolderManagementScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LargeFileConfirmationDialog
 import com.example.ui.screens.MoveFileDialog
@@ -177,6 +178,11 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         viewModel.navigateToVaultScreen()
     }
 
+    // Handle back button for folder management screen
+    BackHandler(enabled = uiState.currentScreen == AppScreen.FOLDER_MANAGEMENT) {
+        viewModel.navigateToVaultScreen()
+    }
+
     // Handle back button for folder hierarchy navigation
     BackHandler(enabled = uiState.currentScreen == AppScreen.VAULT && uiState.breadcrumbs.size > 1) {
         viewModel.navigateUp()
@@ -204,11 +210,13 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                                 AppScreen.VAULT -> 0
                                 AppScreen.TRANSFERS -> 1
                                 AppScreen.SETTINGS -> 2
+                                AppScreen.FOLDER_MANAGEMENT -> 3
                             }
                             val targetOrder = when (targetScreen) {
                                 AppScreen.VAULT -> 0
                                 AppScreen.TRANSFERS -> 1
                                 AppScreen.SETTINGS -> 2
+                                AppScreen.FOLDER_MANAGEMENT -> 3
                             }
                             if (targetOrder >= initialOrder) {
                                 (slideInHorizontally(
@@ -282,6 +290,11 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         onStartTestTransfer = { viewModel.startSyntheticTestTransfer() },
                         onDismissTestStatus = { viewModel.resetTestTransferStatus() }
                     )
+                } else if (currentScreen == AppScreen.FOLDER_MANAGEMENT) {
+                    FolderManagementScreen(
+                        viewModel = viewModel,
+                        onBack = { viewModel.navigateToVaultScreen() }
+                    )
                 } else {
                     HomeScreen(
                         storageStats = storageStats,
@@ -310,6 +323,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         onUploadFileClick = { filePickerLauncher.launch("*/*") },
                         onOpenTransfers = { viewModel.navigateToTransfersScreen() },
                         onOpenSettings = { viewModel.navigateToSettingsScreen() },
+                        onOpenFolderManagement = { viewModel.navigateToFolderManagementScreen() },
                         onResync = { viewModel.manualSyncFromHeader() },
                         onDismissResyncMsg = { viewModel.clearResyncMessage() },
                         transferErrorMessage = uiState.transferErrorMessage,

@@ -18,6 +18,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import com.example.ui.components.Fab3D
@@ -179,6 +181,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onResync: () -> Unit,
     onDismissResyncMsg: () -> Unit,
+    onOpenFolderManagement: () -> Unit = {},
     transferErrorMessage: String? = null,
     onDismissTransferError: () -> Unit = {},
     isDarkTheme: Boolean = false,
@@ -630,7 +633,13 @@ fun HomeScreen(
             if (folders.isNotEmpty() && searchQuery.isBlank()) {
                 item(key = "folders_header") {
                     Box(modifier = Modifier.animateItem()) {
-                        Column {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
                                 text = "Folders",
                                 fontSize = 13.sp,
@@ -638,20 +647,40 @@ fun HomeScreen(
                                 fontFamily = BodySansFont,
                                 color = colors.textDim
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable(onClick = onOpenFolderManagement)
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .testTag("btn_manage_folders")
+                            ) {
+                                Text(
+                                    text = "Manage Folders",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontFamily = BodySansFont,
+                                    color = colors.teal
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                    contentDescription = null,
+                                    tint = colors.teal,
+                                    modifier = Modifier.size(10.dp)
+                                )
+                            }
                         }
                     }
                 }
 
-                items(folders, key = { "folder_${it.id}" }) { folder ->
-                    Box(modifier = Modifier.animateItem()) {
-                        FolderItemRow(
-                            folder = folder,
-                            onClick = { onFolderClick(folder) },
-                            onRename = { onRenameFolder(folder) },
-                            onDelete = { onDeleteFolder(folder) }
-                        )
-                    }
+                items(folders, key = { it.id }) { folder ->
+                    FolderItemRow(
+                        folder = folder,
+                        onClick = { onFolderClick(folder) },
+                        onRename = { onRenameFolder(folder) },
+                        onDelete = { onDeleteFolder(folder) }
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
@@ -707,18 +736,14 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         userScrollEnabled = false
                     ) {
-                        items(files, key = { "grid_${it.id}" }) { file ->
-                            Box(modifier = Modifier.animateItem()) {
-                                FileGridCard(file = file, onClick = { onFileClick(file) })
-                            }
+                        items(files, key = { it.id }) { file ->
+                            FileGridCard(file = file, onClick = { onFileClick(file) })
                         }
                     }
                 }
             } else {
-                items(files, key = { "file_${it.id}" }) { file ->
-                    Box(modifier = Modifier.animateItem()) {
-                        FileListItem(file = file, onClick = { onFileClick(file) })
-                    }
+                items(files, key = { it.id }) { file ->
+                    FileListItem(file = file, onClick = { onFileClick(file) })
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
@@ -1197,6 +1222,40 @@ private fun BreadcrumbBar(
     }
 }
 
+private val StaticItemCornerShape = RoundedCornerShape(14.dp)
+private val StaticIconCornerShape = RoundedCornerShape(10.dp)
+
+@Immutable
+private data class FileIconTheme(
+    val icon: ImageVector,
+    val tint: Color,
+    val bg: Color,
+    val border: Color
+)
+
+private val iconThemeCache = java.util.concurrent.ConcurrentHashMap<String, FileIconTheme>()
+
+private fun resolveFileIconTheme(mimeType: String): FileIconTheme {
+    return iconThemeCache.getOrPut(mimeType) {
+        val (icon, tint) = when {
+            mimeType.startsWith("image/") -> Pair(Icons.Default.Image, FileColorImage)
+            mimeType.startsWith("video/") -> Pair(Icons.Default.Movie, FileColorVideo)
+            mimeType.startsWith("audio/") -> Pair(Icons.Default.AudioFile, FileColorAudio)
+            mimeType.contains("pdf") || mimeType.contains("document") || mimeType.contains("text") ->
+                Pair(Icons.Default.Description, FileColorDoc)
+            mimeType.contains("zip") || mimeType.contains("tar") || mimeType.contains("rar") ->
+                Pair(Icons.Default.FolderZip, FileColorArchive)
+            else -> Pair(Icons.AutoMirrored.Filled.InsertDriveFile, FileColorGeneric)
+        }
+        FileIconTheme(
+            icon = icon,
+            tint = tint,
+            bg = tint.copy(alpha = 0.14f),
+            border = tint.copy(alpha = 0.28f)
+        )
+    }
+}
+
 @Composable
 private fun FolderItemRow(
     folder: FolderEntity,
@@ -1206,14 +1265,14 @@ private fun FolderItemRow(
 ) {
     val colors = LocalTeleVaultColors.current
     var showMenu by remember { mutableStateOf(false) }
+    val formattedDate = remember(folder.createdDate) { ChecksumUtil.formatDate(folder.createdDate) }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(StaticItemCornerShape)
             .background(colors.surface)
-            .border(1.dp, colors.line, RoundedCornerShape(14.dp))
-            .pressScale(0.98f)
+            .border(1.dp, colors.line, StaticItemCornerShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1221,9 +1280,9 @@ private fun FolderItemRow(
         Box(
             modifier = Modifier
                 .size(42.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(StaticIconCornerShape)
                 .background(colors.surfaceHi)
-                .border(1.dp, colors.line, RoundedCornerShape(10.dp)),
+                .border(1.dp, colors.line, StaticIconCornerShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -1246,7 +1305,7 @@ private fun FolderItemRow(
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
-                text = "Folder · ${ChecksumUtil.formatDate(folder.createdDate)}",
+                text = "Folder · $formattedDate",
                 fontSize = 11.sp,
                 fontFamily = NumericMonoFont,
                 color = colors.textFaint
@@ -1300,13 +1359,15 @@ private fun FileListItem(
     onClick: () -> Unit
 ) {
     val colors = LocalTeleVaultColors.current
+    val formattedSize = remember(file.size) { ChecksumUtil.formatFileSize(file.size) }
+    val formattedDate = remember(file.uploadDate) { ChecksumUtil.formatDate(file.uploadDate) }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(StaticItemCornerShape)
             .background(colors.surface)
-            .border(1.dp, colors.line, RoundedCornerShape(14.dp))
-            .pressScale(0.98f)
+            .border(1.dp, colors.line, StaticItemCornerShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -1326,7 +1387,7 @@ private fun FileListItem(
             Spacer(modifier = Modifier.height(3.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = ChecksumUtil.formatFileSize(file.size),
+                    text = formattedSize,
                     fontSize = 11.sp,
                     fontFamily = NumericMonoFont,
                     color = colors.textDim
@@ -1337,7 +1398,7 @@ private fun FileListItem(
                     color = colors.textFaint
                 )
                 Text(
-                    text = ChecksumUtil.formatDate(file.uploadDate),
+                    text = formattedDate,
                     fontSize = 11.sp,
                     fontFamily = NumericMonoFont,
                     color = colors.textFaint
@@ -1356,14 +1417,15 @@ private fun FileGridCard(
     onClick: () -> Unit
 ) {
     val colors = LocalTeleVaultColors.current
+    val formattedSize = remember(file.size) { ChecksumUtil.formatFileSize(file.size) }
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(140.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(StaticItemCornerShape)
             .background(colors.surface)
-            .border(1.dp, colors.line, RoundedCornerShape(14.dp))
-            .pressScale(0.98f)
+            .border(1.dp, colors.line, StaticItemCornerShape)
             .clickable(onClick = onClick)
             .padding(14.dp)
     ) {
@@ -1392,7 +1454,7 @@ private fun FileGridCard(
                 )
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    text = ChecksumUtil.formatFileSize(file.size),
+                    text = formattedSize,
                     fontSize = 10.5.sp,
                     fontFamily = NumericMonoFont,
                     color = colors.textDim
@@ -1404,29 +1466,20 @@ private fun FileGridCard(
 
 @Composable
 fun FileIcon(mimeType: String, size: androidx.compose.ui.unit.Dp) {
-    val (icon, tint) = when {
-        mimeType.startsWith("image/") -> Pair(Icons.Default.Image, FileColorImage)
-        mimeType.startsWith("video/") -> Pair(Icons.Default.Movie, FileColorVideo)
-        mimeType.startsWith("audio/") -> Pair(Icons.Default.AudioFile, FileColorAudio)
-        mimeType.contains("pdf") || mimeType.contains("document") || mimeType.contains("text") ->
-            Pair(Icons.Default.Description, FileColorDoc)
-        mimeType.contains("zip") || mimeType.contains("tar") || mimeType.contains("rar") ->
-            Pair(Icons.Default.FolderZip, FileColorArchive)
-        else -> Pair(Icons.AutoMirrored.Filled.InsertDriveFile, FileColorGeneric)
-    }
+    val theme = remember(mimeType) { resolveFileIconTheme(mimeType) }
 
     Box(
         modifier = Modifier
             .size(size + 14.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(tint.copy(alpha = 0.14f))
-            .border(1.dp, tint.copy(alpha = 0.28f), RoundedCornerShape(10.dp)),
+            .clip(StaticIconCornerShape)
+            .background(theme.bg)
+            .border(1.dp, theme.border, StaticIconCornerShape),
         contentAlignment = Alignment.Center
     ) {
         Icon(
-            imageVector = icon,
+            imageVector = theme.icon,
             contentDescription = null,
-            tint = tint,
+            tint = theme.tint,
             modifier = Modifier.size(size)
         )
     }

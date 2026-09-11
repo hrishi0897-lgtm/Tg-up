@@ -45,7 +45,8 @@ enum class SortBy {
 enum class AppScreen {
     VAULT,
     TRANSFERS,
-    SETTINGS
+    SETTINGS,
+    FOLDER_MANAGEMENT
 }
 
 data class PendingUploadWarning(
@@ -721,6 +722,10 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun navigateToSettingsScreen() {
         _uiState.update { it.copy(currentScreen = AppScreen.SETTINGS) }
+    }
+
+    fun navigateToFolderManagementScreen() {
+        _uiState.update { it.copy(currentScreen = AppScreen.FOLDER_MANAGEMENT) }
     }
 
     fun setFolderToDelete(folder: FolderEntity?) {

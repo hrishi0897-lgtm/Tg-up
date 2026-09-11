@@ -74,16 +74,25 @@ object ChecksumUtil {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
+    private val dateFormatterThreadLocal = object : ThreadLocal<SimpleDateFormat>() {
+        override fun initialValue(): SimpleDateFormat {
+            return SimpleDateFormat("MMM dd, yyyy · HH:mm", Locale.getDefault())
+        }
+    }
+
     /**
-     * Formats bytes to human-readable string (e.g. 1.25 GB, 45.2 MB)
+     * Formats bytes to human-readable string (e.g. 1.25 GB, 45.2 MB).
+     * Uses efficient threshold branches to avoid heavy log/pow math per composition.
      */
     fun formatFileSize(bytes: Long): String {
         if (bytes <= 0) return "0 B"
-        val units = arrayOf("B", "KB", "MB", "GB", "TB")
-        val digitGroups = (ln(bytes.toDouble()) / ln(1024.0)).toInt().coerceIn(0, units.size - 1)
-        if (digitGroups == 0) return "$bytes B"
-        val formatted = bytes / 1024.0.pow(digitGroups.toDouble())
-        return String.format(Locale.US, "%.1f %s", formatted, units[digitGroups])
+        return when {
+            bytes < 1024L -> "$bytes B"
+            bytes < 1024L * 1024L -> String.format(Locale.US, "%.1f KB", bytes / 1024.0)
+            bytes < 1024L * 1024L * 1024L -> String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024.0))
+            bytes < 1024L * 1024L * 1024L * 1024L -> String.format(Locale.US, "%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+            else -> String.format(Locale.US, "%.1f TB", bytes / (1024.0 * 1024.0 * 1024.0 * 1024.0))
+        }
     }
 
     fun formatBytes(bytes: Long): String = formatFileSize(bytes)
@@ -114,9 +123,10 @@ object ChecksumUtil {
 
     /**
      * Formats timestamp into clean date string.
+     * Reuses ThreadLocal SimpleDateFormat to avoid heavy object allocation and pattern parsing per item.
      */
     fun formatDate(timestamp: Long): String {
-        val sdf = SimpleDateFormat("MMM dd, yyyy · HH:mm", Locale.getDefault())
+        val sdf = dateFormatterThreadLocal.get() ?: SimpleDateFormat("MMM dd, yyyy · HH:mm", Locale.getDefault())
         return sdf.format(Date(timestamp))
     }
 }
