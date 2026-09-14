@@ -43,8 +43,16 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Wifi
+import com.example.domain.model.BotRevocationAlert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,6 +61,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -77,10 +86,15 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.local.entity.StandbyBotEntity
+import com.example.data.transfer.StandbyRecoveryState
 import com.example.domain.StorageUtil
 import com.example.domain.model.BotHealthInfo
 import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.pressScale
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun SettingsScreen(
@@ -97,6 +111,16 @@ fun SettingsScreen(
     testTransferSuccess: Boolean? = null,
     botTokenPool: List<String> = emptyList(),
     botHealthMap: Map<String, BotHealthInfo> = emptyMap(),
+    standbyBots: List<StandbyBotEntity> = emptyList(),
+    verifiedStandbyBotsCount: Int = 0,
+    recoveryState: StandbyRecoveryState = StandbyRecoveryState(),
+    onAddStandbyBot: ((token: String, label: String, onResult: (Boolean, String?) -> Unit) -> Unit)? = null,
+    onVerifyStandbyBot: ((StandbyBotEntity, onResult: (Boolean, String) -> Unit) -> Unit)? = null,
+    onVerifyAllStandbyBots: (() -> Unit)? = null,
+    onDeleteStandbyBot: ((StandbyBotEntity) -> Unit)? = null,
+    onStartStandbyRecovery: ((StandbyBotEntity) -> Unit)? = null,
+    onCancelStandbyRecovery: (() -> Unit)? = null,
+    onResetStandbyRecoveryState: (() -> Unit)? = null,
     onAddBotToken: ((String) -> Unit)? = null,
     onRemoveBotToken: ((String) -> Unit)? = null,
     onSetActiveBotToken: ((String) -> Unit)? = null,
@@ -109,6 +133,10 @@ fun SettingsScreen(
     onPublishClick: (() -> Unit)? = null,
     onDismissResyncMessage: (() -> Unit)? = null,
     onDismissTestStatus: (() -> Unit)? = null,
+    primaryBotAlert: BotRevocationAlert? = null,
+    onDismissPrimaryBotAlert: (() -> Unit)? = null,
+    botHealthLogs: List<String> = emptyList(),
+    onCheckPrimaryBotHealth: (() -> Unit)? = null,
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit,
     onStartTestTransfer: (() -> Unit)? = null
@@ -119,6 +147,17 @@ fun SettingsScreen(
     var showDisconnectDialog by remember { mutableStateOf(false) }
     var showAddTokenDialog by remember { mutableStateOf(false) }
     var newBotTokenInput by remember { mutableStateOf("") }
+    var showBotHealthLogs by remember { mutableStateOf(false) }
+
+    // Standby bot management states
+    var showAddStandbyBotDialog by remember { mutableStateOf(false) }
+    var standbyBotTokenInput by remember { mutableStateOf("") }
+    var standbyBotLabelInput by remember { mutableStateOf("") }
+    var addStandbyBotError by remember { mutableStateOf<String?>(null) }
+    var isAddingStandbyBot by remember { mutableStateOf(false) }
+    var botToRecover by remember { mutableStateOf<StandbyBotEntity?>(null) }
+    var verifyingBotId by remember { mutableStateOf<String?>(null) }
+    var verifyFeedbackMessage by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
 
     // Add Bot Token Dialog
     if (showAddTokenDialog) {
@@ -272,6 +311,525 @@ fun SettingsScreen(
         )
     }
 
+    // Add Standby Bot Dialog
+    if (showAddStandbyBotDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isAddingStandbyBot) {
+                    showAddStandbyBotDialog = false
+                    standbyBotTokenInput = ""
+                    standbyBotLabelInput = ""
+                    addStandbyBotError = null
+                }
+            },
+            containerColor = colors.surface,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(colors.violet.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Shield,
+                        contentDescription = null,
+                        tint = colors.violet,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Add Standby Bot",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.text
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Standby bots enable instant zero-bandwidth chunk recovery via Telegram copyMessage if your primary bot gets banned.",
+                        fontSize = 13.sp,
+                        color = colors.textDim,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Step by step instructions
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(colors.surfaceHi.copy(alpha = 0.6f))
+                            .padding(10.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "Setup Steps in Telegram:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.violet
+                            )
+                            Text(
+                                text = "1. Create a bot with @BotFather in Telegram.",
+                                fontSize = 11.sp,
+                                color = colors.textDim
+                            )
+                            Text(
+                                text = "2. Open your Telegram storage channel > Administrators > Add Administrator, and add this bot (bots cannot add other bots via API).",
+                                fontSize = 11.sp,
+                                color = colors.textDim
+                            )
+                            Text(
+                                text = "3. Enter the bot token below to register & verify.",
+                                fontSize = 11.sp,
+                                color = colors.textDim
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    OutlinedTextField(
+                        value = standbyBotLabelInput,
+                        onValueChange = { standbyBotLabelInput = it },
+                        placeholder = { Text("e.g. Backup Bot #1", color = colors.textFaint, fontSize = 13.sp) },
+                        label = { Text("Bot Label / Name", fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("standby_bot_label_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.violet,
+                            unfocusedBorderColor = colors.line,
+                            focusedTextColor = colors.text,
+                            unfocusedTextColor = colors.text
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = standbyBotTokenInput,
+                        onValueChange = {
+                            standbyBotTokenInput = it
+                            addStandbyBotError = null
+                        },
+                        placeholder = { Text("123456789:ABCdefGHI...", color = colors.textFaint, fontSize = 13.sp) },
+                        label = { Text("Bot Token", fontSize = 12.sp) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("standby_bot_token_input"),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.violet,
+                            unfocusedBorderColor = colors.line,
+                            focusedTextColor = colors.text,
+                            unfocusedTextColor = colors.text
+                        )
+                    )
+
+                    if (addStandbyBotError != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = addStandbyBotError ?: "",
+                            fontSize = 12.sp,
+                            color = colors.danger,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cleanToken = standbyBotTokenInput.trim()
+                        val cleanLabel = standbyBotLabelInput.trim().ifBlank { "Standby Bot" }
+                        if (cleanToken.isNotBlank()) {
+                            isAddingStandbyBot = true
+                            addStandbyBotError = null
+                            onAddStandbyBot?.invoke(cleanToken, cleanLabel) { success, errorMsg ->
+                                isAddingStandbyBot = false
+                                if (success) {
+                                    showAddStandbyBotDialog = false
+                                    standbyBotTokenInput = ""
+                                    standbyBotLabelInput = ""
+                                    addStandbyBotError = null
+                                    verifyFeedbackMessage = Pair(true, "Standby bot registered securely! Token encrypted in local KeyStore.")
+                                } else {
+                                    addStandbyBotError = errorMsg ?: "Failed to validate bot token"
+                                }
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.violet),
+                    enabled = standbyBotTokenInput.trim().isNotBlank() && !isAddingStandbyBot,
+                    modifier = Modifier.testTag("confirm_add_standby_bot_button")
+                ) {
+                    if (isAddingStandbyBot) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Checking...", fontWeight = FontWeight.Bold)
+                    } else {
+                        Text("Add & Verify", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAddStandbyBotDialog = false
+                        standbyBotTokenInput = ""
+                        standbyBotLabelInput = ""
+                        addStandbyBotError = null
+                    },
+                    enabled = !isAddingStandbyBot
+                ) {
+                    Text("Cancel", color = colors.textDim)
+                }
+            }
+        )
+    }
+
+    // Confirm Recovery Dialog (Manual "Switch to standby bot" flow)
+    if (botToRecover != null) {
+        val bot = botToRecover!!
+        AlertDialog(
+            onDismissRequest = { botToRecover = null },
+            containerColor = colors.surface,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(colors.violet.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.SwapHoriz,
+                        contentDescription = null,
+                        tint = colors.violet,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Switch Vault to ${bot.label}?",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.text
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "This recovery flow is designed for when your primary bot is banned or restricted by Telegram.",
+                        fontSize = 13.sp,
+                        color = colors.text,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(colors.surfaceHi.copy(alpha = 0.6f))
+                            .padding(10.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(
+                                text = "How copyMessage Recovery Works:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.violet
+                            )
+                            Text(
+                                text = "• 0 MB mobile data: Telegram copies messages server-side inside Telegram's cloud.",
+                                fontSize = 11.sp,
+                                color = colors.textDim
+                            )
+                            Text(
+                                text = "• Generates fresh file_ids and binds chunks to ${bot.label}.",
+                                fontSize = 11.sp,
+                                color = colors.textDim
+                            )
+                            Text(
+                                text = "• Updates your active credentials to use this standby bot going forward.",
+                                fontSize = 11.sp,
+                                color = colors.textDim
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Note: Recovery runs per-chunk and reports real-time progress. Standby bots cost zero bandwidth during normal operation.",
+                        fontSize = 12.sp,
+                        color = colors.textFaint
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val targetBot = bot
+                        botToRecover = null
+                        onStartStandbyRecovery?.invoke(targetBot)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.violet),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("confirm_standby_recovery_button")
+                ) {
+                    Text("Start Recovery", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { botToRecover = null }) {
+                    Text("Cancel", color = colors.textDim)
+                }
+            }
+        )
+    }
+
+    // Active Recovery Progress Dialog
+    if (recoveryState.isRecovering) {
+        AlertDialog(
+            onDismissRequest = { /* Non-dismissible while recovering */ },
+            containerColor = colors.surface,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(colors.violet.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(26.dp),
+                        strokeWidth = 3.dp,
+                        color = colors.violet
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Recovering Vault Chunks",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.text
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = if (recoveryState.totalChunks > 0) {
+                            "Recovering chunk ${recoveryState.currentChunk} of ${recoveryState.totalChunks}"
+                        } else {
+                            "Preparing recovery..."
+                        },
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.text
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = recoveryState.statusMessage,
+                        fontSize = 12.sp,
+                        color = colors.textDim,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    LinearProgressIndicator(
+                        progress = { recoveryState.progressFraction },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = colors.violet,
+                        trackColor = colors.surfaceHi
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(colors.mint.copy(alpha = 0.1f))
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = colors.mint,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Server-side copyMessage • 0 MB mobile data used",
+                            fontSize = 11.sp,
+                            color = colors.mint,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { onCancelStandbyRecovery?.invoke() }
+                ) {
+                    Text("Cancel Recovery", color = colors.danger)
+                }
+            }
+        )
+    }
+
+    // Recovery Completed Dialog
+    if (recoveryState.isCompleted) {
+        AlertDialog(
+            onDismissRequest = { onResetStandbyRecoveryState?.invoke() },
+            containerColor = colors.surface,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(colors.mint.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        tint = colors.mint,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Vault Successfully Recovered!",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.text
+                )
+            },
+            text = {
+                Column {
+                    Text(
+                        text = recoveryState.statusMessage,
+                        fontSize = 13.sp,
+                        color = colors.textDim,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "Your files are now linked to ${recoveryState.standbyBotLabel}. You can continue uploading and downloading as normal.",
+                        fontSize = 12.sp,
+                        color = colors.mint,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onResetStandbyRecoveryState?.invoke() },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.mint),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Done", fontWeight = FontWeight.Bold, color = colors.bg)
+                }
+            }
+        )
+    }
+
+    // Recovery Error Dialog
+    if (recoveryState.errorMessage != null && !recoveryState.isRecovering) {
+        AlertDialog(
+            onDismissRequest = { onResetStandbyRecoveryState?.invoke() },
+            containerColor = colors.surface,
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(colors.danger.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ErrorOutline,
+                        contentDescription = null,
+                        tint = colors.danger,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Recovery Error",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.text
+                )
+            },
+            text = {
+                Text(
+                    text = recoveryState.errorMessage ?: "An unexpected error occurred during vault recovery.",
+                    fontSize = 13.sp,
+                    color = colors.textDim,
+                    lineHeight = 18.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onResetStandbyRecoveryState?.invoke() },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.danger),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Dismiss", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+        )
+    }
+
+    // Verification Feedback Dialog
+    if (verifyFeedbackMessage != null) {
+        val (isSuccess, message) = verifyFeedbackMessage!!
+        AlertDialog(
+            onDismissRequest = { verifyFeedbackMessage = null },
+            containerColor = colors.surface,
+            icon = {
+                Icon(
+                    imageVector = if (isSuccess) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (isSuccess) colors.mint else colors.amber,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = if (isSuccess) "Verification Success" else "Membership Verification",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.text
+                )
+            },
+            text = {
+                Text(
+                    text = message,
+                    fontSize = 13.sp,
+                    color = colors.textDim,
+                    lineHeight = 18.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { verifyFeedbackMessage = null }) {
+                    Text("OK", color = colors.violet, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
@@ -341,6 +899,122 @@ fun SettingsScreen(
                 .padding(bottom = 40.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // Bot Revocation Prominent Alert Banner (if active)
+            if (primaryBotAlert != null) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .border(1.5.dp, colors.danger.copy(alpha = 0.8f), RoundedCornerShape(16.dp))
+                        .testTag("settings_bot_revocation_banner"),
+                    color = colors.danger.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(colors.danger.copy(alpha = 0.2f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = "Bot Token Alert",
+                                    tint = colors.danger,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "BOT TOKEN INVALID OR REVOKED",
+                                    color = colors.danger,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Text(
+                                    text = "HTTP ${primaryBotAlert.errorCode ?: "401/403"} • Checked at ${primaryBotAlert.formattedTime}",
+                                    color = colors.textDim,
+                                    fontSize = 11.5.sp,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            if (onDismissPrimaryBotAlert != null) {
+                                IconButton(
+                                    onClick = onDismissPrimaryBotAlert,
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Dismiss",
+                                        tint = colors.textDim,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        Text(
+                            text = "Your bot token appears to be invalid or revoked — switch to a standby bot in Settings",
+                            color = colors.text,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            lineHeight = 19.sp
+                        )
+
+                        if (primaryBotAlert.errorMessage.isNotBlank() && !primaryBotAlert.errorMessage.contains("Your bot token appears")) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Details: ${primaryBotAlert.errorMessage}",
+                                color = colors.textDim,
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+
+                        if (standbyBots.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            val bestBot = standbyBots.firstOrNull { it.isVerifiedMember } ?: standbyBots.first()
+                            Button(
+                                onClick = { botToRecover = bestBot },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = colors.violet,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("settings_switch_to_standby_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SwapHoriz,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Switch Vault to ${bestBot.label}",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // 1. Connected Bot Account Panel
             SettingsCard(
                 icon = Icons.Default.Key,
@@ -454,27 +1128,169 @@ fun SettingsScreen(
                 }
             }
 
-            // Ban-Resilient Bot Pool & Health Check Card
+            // Bot Health Monitoring & History Log Panel
+            SettingsCard(
+                icon = Icons.Default.History,
+                title = "BOT HEALTH MONITORING & HISTORY",
+                colors = colors
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Status Overview Row
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(colors.surfaceHi.copy(alpha = 0.6f))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(if (primaryBotAlert != null) colors.danger else colors.mint)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (primaryBotAlert != null) "Bot Token Revoked / Invalid" else "Primary Bot Token Healthy",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (primaryBotAlert != null) colors.danger else colors.mint
+                            )
+                            Text(
+                                text = "Polled every 15 min & on app foreground via getMe",
+                                fontSize = 11.5.sp,
+                                color = colors.textDim
+                            )
+                        }
+
+                        if (onCheckPrimaryBotHealth != null) {
+                            TextButton(
+                                onClick = onCheckPrimaryBotHealth,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.testTag("check_bot_health_now_btn")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    tint = colors.violet,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Check Now",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = colors.violet
+                                )
+                            }
+                        }
+                    }
+
+                    // Expandable Logs Header
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { showBotHealthLogs = !showBotHealthLogs }
+                            .background(colors.surfaceHi.copy(alpha = 0.4f))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = null,
+                                tint = colors.textDim,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Bot Health Check History (${botHealthLogs.size} logs)",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = colors.text
+                            )
+                        }
+                        Icon(
+                            imageVector = if (showBotHealthLogs) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = if (showBotHealthLogs) "Collapse" else "Expand",
+                            tint = colors.textDim,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // Expanded Log Entries
+                    if (showBotHealthLogs) {
+                        if (botHealthLogs.isEmpty()) {
+                            Text(
+                                text = "No health check events logged yet. Background checks run every 15 minutes.",
+                                fontSize = 12.sp,
+                                color = colors.textFaint,
+                                modifier = Modifier.padding(start = 4.dp, top = 2.dp)
+                            )
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(colors.surfaceHi.copy(alpha = 0.5f))
+                                    .padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                botHealthLogs.forEach { logLine ->
+                                    val isRevocation = logLine.contains("REVOKED") || logLine.contains("401") || logLine.contains("403")
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(6.dp)
+                                                .clip(CircleShape)
+                                                .background(if (isRevocation) colors.danger else colors.mint)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = logLine,
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = if (isRevocation) colors.danger else colors.textDim,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Ban-Resilient Standby Bots & copyMessage Recovery Card
             SettingsCard(
                 icon = Icons.Default.Security,
-                title = "BOT POOL (BAN RESILIENCE)",
+                title = "STANDBY BOTS (MULTI-BOT RESILIENCE)",
                 colors = colors
             ) {
                 Column {
+                    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Admin Bot Pool",
+                            text = "Zero-Bandwidth Vault Recovery",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = colors.text
                         )
-                        if (onCheckAllBotsHealth != null && botTokenPool.isNotEmpty()) {
+                        if (standbyBots.isNotEmpty() && onVerifyAllStandbyBots != null) {
                             TextButton(
-                                onClick = onCheckAllBotsHealth,
+                                onClick = onVerifyAllStandbyBots,
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                             ) {
                                 Icon(
@@ -484,166 +1300,331 @@ fun SettingsScreen(
                                     tint = colors.violet
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Check All", fontSize = 11.sp, color = colors.violet, fontWeight = FontWeight.SemiBold)
+                                Text("Verify All", fontSize = 11.sp, color = colors.violet, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = "Telegram limits bot file downloads to the bot that uploaded them unless forwarded. Adding multiple bot tokens (all made admins in your storage channel) ensures automatic failover and regeneration if a bot gets banned or restricted.",
+                        text = "Telegram limits file downloads to the bot that uploaded them unless copied. Standby bots use copyMessage to recover chunk access server-side with zero data usage if your primary bot is banned.",
                         fontSize = 12.sp,
                         color = colors.textDim,
                         lineHeight = 16.sp
                     )
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    // Bot Tokens List
-                    val displayedTokens = if (botTokenPool.isNotEmpty()) botTokenPool else if (botTokenMasked.isNotBlank()) listOf(botTokenMasked) else emptyList()
-
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        displayedTokens.forEachIndexed { index, token ->
-                            val isCurrentActive = (token == botTokenMasked) || (botTokenMasked.startsWith(token.take(6)) && token.length > 10)
-                            val health = botHealthMap[token]
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(colors.surfaceHi.copy(alpha = 0.6f))
-                                    .border(
-                                        width = 1.dp,
-                                        color = if (isCurrentActive) colors.mint.copy(alpha = 0.4f) else colors.line,
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(if (isCurrentActive) colors.mint.copy(alpha = 0.15f) else colors.surfaceHi)
-                                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                                        ) {
-                                            Text(
-                                                text = if (isCurrentActive) "Active" else "Backup #${index + 1}",
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = if (isCurrentActive) colors.mint else colors.textDim
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.width(6.dp))
-
-                                        // Health badge
-                                        if (health?.isChecking == true) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(12.dp),
-                                                strokeWidth = 2.dp,
-                                                color = colors.violet
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Testing...", fontSize = 10.sp, color = colors.violet)
-                                        } else if (health?.isHealthy == true) {
-                                            Icon(
-                                                imageVector = Icons.Default.CheckCircle,
-                                                contentDescription = null,
-                                                tint = colors.mint,
-                                                modifier = Modifier.size(13.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(3.dp))
-                                            Text(
-                                                text = if (!health.username.isNullOrBlank()) "@${health.username}" else "Healthy",
-                                                fontSize = 10.sp,
-                                                color = colors.mint,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        } else if (health?.isHealthy == false) {
-                                            Icon(
-                                                imageVector = Icons.Default.ErrorOutline,
-                                                contentDescription = null,
-                                                tint = colors.danger,
-                                                modifier = Modifier.size(13.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(3.dp))
-                                            Text(
-                                                text = "Offline / Banned",
-                                                fontSize = 10.sp,
-                                                color = colors.danger,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.height(4.dp))
-
+                    // 1. Persistent Honest Protection Level Indicator
+                    if (verifiedStandbyBotsCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.mint.copy(alpha = 0.12f))
+                                .border(1.dp, colors.mint.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = null,
+                                    tint = colors.mint,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
                                     Text(
-                                        text = if (token.length > 8) "${token.take(6)}••••••••••••" else "••••••••••••",
+                                        text = "Protected: $verifiedStandbyBotsCount standby bot(s) verified",
                                         fontSize = 12.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = colors.textDim
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.mint
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "If your primary bot is banned, file access can be recovered server-side via copyMessage with 0 MB mobile data usage.",
+                                        fontSize = 11.sp,
+                                        color = colors.textDim,
+                                        lineHeight = 15.sp
                                     )
                                 }
-
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Health check button
-                                    IconButton(
-                                        onClick = { onCheckBotHealth?.invoke(token) },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Refresh,
-                                            contentDescription = "Check Health",
-                                            modifier = Modifier.size(16.dp),
-                                            tint = colors.textDim
-                                        )
-                                    }
-
-                                    // Set as Active button (if not already active)
-                                    if (!isCurrentActive && onSetActiveBotToken != null) {
-                                        TextButton(
-                                            onClick = { onSetActiveBotToken.invoke(token) },
-                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                                        ) {
-                                            Text("Use", fontSize = 11.sp, color = colors.mint)
-                                        }
-                                    }
-
-                                    // Remove button (if pool has more than 1)
-                                    if (displayedTokens.size > 1 && onRemoveBotToken != null) {
-                                        IconButton(
-                                            onClick = { onRemoveBotToken.invoke(token) },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete,
-                                                contentDescription = "Remove Token",
-                                                modifier = Modifier.size(16.dp),
-                                                tint = colors.danger.copy(alpha = 0.7f)
-                                            )
-                                        }
-                                    }
+                            }
+                        }
+                    } else if (standbyBots.isNotEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.amber.copy(alpha = 0.12f))
+                                .border(1.dp, colors.amber.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = colors.amber,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Action Required: Standby bots unverified",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.amber
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${standbyBots.size} standby bot(s) added, but channel membership has not been verified yet. Tap 'Verify Membership' below.",
+                                        fontSize = 11.sp,
+                                        color = colors.textDim,
+                                        lineHeight = 15.sp
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.danger.copy(alpha = 0.08f))
+                                .border(1.dp, colors.danger.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.Top) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = colors.danger,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "No standby bots configured",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.danger
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Files are only accessible through your primary bot. If Telegram bans your bot, chunks cannot be recovered without manual re-upload.",
+                                        fontSize = 11.sp,
+                                        color = colors.textDim,
+                                        lineHeight = 15.sp
+                                    )
                                 }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    // Add Bot Token Button
-                    Button(
-                        onClick = { showAddTokenDialog = true },
+                    // Honest limitation notice
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .testTag("add_bot_token_button"),
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(colors.surfaceHi.copy(alpha = 0.4f))
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = "ℹ Limitation Notice: Standby bots protect against individual bot bans by maintaining channel membership beforehand. They cannot protect if the Telegram channel itself is deleted or if all registered bots are banned simultaneously.",
+                            fontSize = 10.sp,
+                            color = colors.textFaint,
+                            lineHeight = 14.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // 2. Standby Bots List
+                    if (standbyBots.isNotEmpty()) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            standbyBots.forEach { bot ->
+                                val isVerifying = verifyingBotId == bot.id
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(colors.surfaceHi.copy(alpha = 0.6f))
+                                        .border(
+                                            width = 1.dp,
+                                            color = if (bot.isVerifiedMember) colors.mint.copy(alpha = 0.3f) else colors.line,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(10.dp)
+                                ) {
+                                    Column {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text = bot.label,
+                                                        fontSize = 13.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = colors.text
+                                                    )
+                                                    if (!bot.username.isNullOrBlank()) {
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(
+                                                            text = "@${bot.username}",
+                                                            fontSize = 11.sp,
+                                                            color = colors.violet
+                                                        )
+                                                    }
+                                                }
+
+                                                Spacer(modifier = Modifier.height(2.dp))
+
+                                                val addedText = try {
+                                                    dateFormat.format(Date(bot.addedDate))
+                                                } catch (e: Exception) {
+                                                    ""
+                                                }
+                                                Text(
+                                                    text = "Added $addedText",
+                                                    fontSize = 10.sp,
+                                                    color = colors.textFaint
+                                                )
+                                            }
+
+                                            // Status Badge
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(
+                                                        if (bot.isVerifiedMember) colors.mint.copy(alpha = 0.15f)
+                                                        else colors.amber.copy(alpha = 0.15f)
+                                                    )
+                                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(
+                                                        imageVector = if (bot.isVerifiedMember) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                                        contentDescription = null,
+                                                        tint = if (bot.isVerifiedMember) colors.mint else colors.amber,
+                                                        modifier = Modifier.size(11.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(
+                                                        text = if (bot.isVerifiedMember) "Verified Member" else "Unverified",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (bot.isVerifiedMember) colors.mint else colors.amber
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(8.dp))
+
+                                        // Actions Row
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                // Verify Membership Button
+                                                TextButton(
+                                                    onClick = {
+                                                        verifyingBotId = bot.id
+                                                        onVerifyStandbyBot?.invoke(bot) { success, msg ->
+                                                            verifyingBotId = null
+                                                            verifyFeedbackMessage = Pair(success, msg)
+                                                        }
+                                                    },
+                                                    enabled = !isVerifying,
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                                ) {
+                                                    if (isVerifying) {
+                                                        CircularProgressIndicator(
+                                                            modifier = Modifier.size(12.dp),
+                                                            strokeWidth = 2.dp,
+                                                            color = colors.violet
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Verifying...", fontSize = 11.sp, color = colors.violet)
+                                                    } else {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Refresh,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(13.dp),
+                                                            tint = colors.violet
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Text("Verify Membership", fontSize = 11.sp, color = colors.violet, fontWeight = FontWeight.SemiBold)
+                                                    }
+                                                }
+
+                                                // Switch & Recover Button
+                                                Button(
+                                                    onClick = { botToRecover = bot },
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = colors.violet.copy(alpha = 0.15f),
+                                                        contentColor = colors.violet
+                                                    ),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                    shape = RoundedCornerShape(6.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.SwapHoriz,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(13.dp),
+                                                        tint = colors.violet
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Switch & Recover", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+
+                                            // Delete Button
+                                            IconButton(
+                                                onClick = { onDeleteStandbyBot?.invoke(bot) },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Delete,
+                                                    contentDescription = "Delete Standby Bot",
+                                                    modifier = Modifier.size(15.dp),
+                                                    tint = colors.danger.copy(alpha = 0.7f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "No standby bots registered. Add a bot to enable zero-bandwidth recovery in case of primary bot bans.",
+                            fontSize = 12.sp,
+                            color = colors.textFaint,
+                            lineHeight = 16.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Add Standby Bot Button
+                    Button(
+                        onClick = {
+                            standbyBotTokenInput = ""
+                            standbyBotLabelInput = ""
+                            addStandbyBotError = null
+                            showAddStandbyBotDialog = true
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("add_standby_bot_button"),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = colors.surfaceHi,
                             contentColor = colors.violet
@@ -659,7 +1640,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Add Backup Bot Token",
+                            text = "Add Standby Bot (Resilience)",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = colors.violet

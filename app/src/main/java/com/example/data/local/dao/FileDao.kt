@@ -82,6 +82,9 @@ interface FileDao {
     @Query("UPDATE files SET localPath = :localPath, localUri = :localUri, status = 'COMPLETED' WHERE id = :fileId")
     suspend fun markDownloaded(fileId: String, localPath: String, localUri: String? = localPath)
 
+    @Query("UPDATE files SET channelId = :channelId WHERE status = 'COMPLETED'")
+    suspend fun updateChannelForCompletedFiles(channelId: String)
+
     @Query("DELETE FROM files")
     suspend fun clearAll()
 }

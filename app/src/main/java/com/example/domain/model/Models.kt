@@ -93,3 +93,13 @@ data class BotHealthInfo(
     val errorMessage: String? = null,
     val lastChecked: Long = 0L
 )
+
+/**
+ * Surface data for critical primary bot token revocation/invalidation alerts.
+ */
+data class BotRevocationAlert(
+    val errorCode: Int?,
+    val errorMessage: String,
+    val timestamp: Long,
+    val formattedTime: String
+)

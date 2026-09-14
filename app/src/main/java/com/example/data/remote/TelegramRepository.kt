@@ -64,6 +64,15 @@ class TelegramRepository(
         private const val MAX_RETRIES = 3
         private const val BASE_BACKOFF_MS = 1000L
 
+        @Volatile
+        private var INSTANCE: TelegramRepository? = null
+
+        fun getInstance(): TelegramRepository {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: TelegramRepository().also { INSTANCE = it }
+            }
+        }
+
         /**
          * Shared connection pool with 5 idle connections max and 30-second keep-alive.
          * Shorter keep-alive prevents silently dead TCP sockets from lingering on mobile networks.
@@ -640,6 +649,108 @@ class TelegramRepository(
                     error = e.message
                 )
             )
+        }
+    }
+
+    /**
+     * Validates a bot token via getMe. Returns the TelegramUser if valid.
+     */
+    suspend fun validateBotToken(token: String): Result<TelegramUser> {
+        return executeWithRetry("Validating bot token via getMe") {
+            api.getMe(botUrl(token, "getMe"))
+        }
+    }
+
+    /**
+     * Verifies that the specified bot token has access to the given channel/chat.
+     * Uses a lightweight getChat call (and optionally getChatMember) to confirm
+     * that the bot is an active member or administrator.
+     */
+    suspend fun verifyChatMembership(token: String, chatId: String): Result<Boolean> {
+        return try {
+            val getChatResult = executeWithRetry("Checking channel access via getChat") {
+                api.getChat(botUrl(token, "getChat"), chatId)
+            }
+            if (getChatResult.isSuccess) {
+                return Result.success(true)
+            }
+
+            // If getChat returned an error, check if getMe + getChatMember can resolve
+            val userResult = api.getMe(botUrl(token, "getMe"))
+            val botUser = userResult.body()?.result
+            if (botUser != null) {
+                val memberResponse = api.getChatMember(botUrl(token, "getChatMember"), chatId, botUser.id)
+                if (memberResponse.isSuccessful && memberResponse.body()?.ok == true) {
+                    val status = memberResponse.body()?.result?.status
+                    if (status in listOf("creator", "administrator", "member")) {
+                        return Result.success(true)
+                    }
+                }
+            }
+
+            val err = getChatResult.exceptionOrNull()?.message ?: "Bot is not a member of channel $chatId"
+            Result.failure(Exception(err))
+        } catch (e: Exception) {
+            Log.e("TelegramRepo", "verifyChatMembership error: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Recovers a chunk using Telegram server-side copyMessage.
+     * Zero bytes pass through the user's connection.
+     * Captures the new message_id and attempts to obtain the new file_id for fast-path downloads.
+     */
+    suspend fun recoverChunkViaCopyMessage(
+        standbyToken: String,
+        targetChatId: String,
+        fromChatId: String,
+        storedMessageId: Long
+    ): Result<RecoveredChunkResult> {
+        return try {
+            Log.i("TelegramRepo", ">>> [recoverChunkViaCopyMessage] Copying chunk message $storedMessageId from $fromChatId to $targetChatId via standby bot...")
+            val copyResult = copyMessage(
+                token = standbyToken,
+                chatId = targetChatId,
+                fromChatId = fromChatId,
+                messageId = storedMessageId
+            )
+
+            if (copyResult.isFailure) {
+                val copyErr = copyResult.exceptionOrNull()?.message ?: "Telegram copyMessage failed"
+                Log.e("TelegramRepo", "copyMessage error for message $storedMessageId: $copyErr")
+                return Result.failure(Exception(copyErr))
+            }
+
+            val newMessageId = copyResult.getOrThrow().messageId
+            Log.i("TelegramRepo", ">>> [recoverChunkViaCopyMessage] Server-side copy succeeded: new messageId=$newMessageId")
+
+            // Attempt to obtain fresh file_id bound to this bot for fast-path downloads.
+            // We can forward the copied message to read the full TelegramMessage payload with document.file_id.
+            var newFileId: String? = null
+            try {
+                val fwdResult = forwardMessage(
+                    token = standbyToken,
+                    chatId = targetChatId,
+                    fromChatId = targetChatId,
+                    messageId = newMessageId
+                )
+                if (fwdResult.isSuccess) {
+                    val fwdMsg = fwdResult.getOrThrow()
+                    newFileId = fwdMsg.document?.fileId
+                    // Clean up temporary forward so storage chat is clean
+                    try {
+                        deleteMessage(standbyToken, targetChatId, fwdMsg.messageId)
+                    } catch (_: Exception) {}
+                }
+            } catch (e: Exception) {
+                Log.w("TelegramRepo", "Non-critical: fast-path file_id extraction failed for recovered message $newMessageId: ${e.message}")
+            }
+
+            Result.success(RecoveredChunkResult(newMessageId = newMessageId, newFileId = newFileId))
+        } catch (e: Exception) {
+            Log.e("TelegramRepo", "recoverChunkViaCopyMessage error: ${e.message}", e)
+            Result.failure(e)
         }
     }
 

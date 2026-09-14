@@ -13,12 +13,16 @@ import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
 import com.example.data.local.entity.FolderEntity
+import com.example.data.local.entity.StandbyBotEntity
 import com.example.data.remote.TelegramRepository
 import com.example.data.remote.TelegramUser
 import com.example.data.sync.VaultSyncManager
 import com.example.data.sync.VaultSyncWorker
+import com.example.data.transfer.StandbyRecoveryManager
+import com.example.data.transfer.StandbyRecoveryState
 import com.example.data.transfer.TransferManager
 import com.example.domain.model.BotHealthInfo
+import com.example.domain.model.BotRevocationAlert
 import com.example.domain.model.BreadcrumbItem
 import com.example.domain.model.CategoryStorageBreakdown
 import com.example.domain.model.StorageCategory
@@ -90,7 +94,9 @@ data class UiState(
     val transferNotificationMessage: String? = null,
     val testTransferRunning: Boolean = false,
     val testTransferStatus: String? = null,
-    val testTransferSuccess: Boolean? = null
+    val testTransferSuccess: Boolean? = null,
+    val primaryBotAlert: BotRevocationAlert? = null,
+    val standbyBotToRecover: StandbyBotEntity? = null
 )
 
 class TeleVaultViewModel(application: Application) : AndroidViewModel(application) {
@@ -119,6 +125,167 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _botHealth = MutableStateFlow<Map<String, BotHealthInfo>>(emptyMap())
     val botHealth: StateFlow<Map<String, BotHealthInfo>> = _botHealth.asStateFlow()
+
+    private val standbyRecoveryManager = StandbyRecoveryManager.getInstance(application)
+
+    val standbyBots: StateFlow<List<StandbyBotEntity>> = db.standbyBotDao()
+        .getAllStandbyBots()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val verifiedStandbyBotsCount: StateFlow<Int> = db.standbyBotDao()
+        .getVerifiedBotsCountFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val recoveryState: StateFlow<StandbyRecoveryState> = standbyRecoveryManager.recoveryState
+
+    fun addStandbyBot(
+        token: String,
+        label: String,
+        onResult: ((Boolean, String?) -> Unit)? = null
+    ) {
+        val cleanToken = token.trim()
+        val cleanLabel = label.trim().ifBlank { "Standby Bot" }
+        if (cleanToken.isBlank()) {
+            onResult?.invoke(false, "Bot token cannot be empty")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Step 1: Validate bot token via getMe
+                val validationResult = repo.validateBotToken(cleanToken)
+                if (validationResult.isFailure) {
+                    val err = validationResult.exceptionOrNull()?.message ?: "Invalid Telegram bot token"
+                    onResult?.invoke(false, err)
+                    return@launch
+                }
+
+                val botUser = validationResult.getOrThrow()
+                val username = botUser.username ?: botUser.firstName
+
+                // Step 2: Encrypt token for safe database storage
+                val encryptedToken = creds.encryptToken(cleanToken)
+
+                // Step 3: Check chat membership if chatId is configured
+                val currentChatId = creds.getChatId()?.trim()
+                var isVerified = false
+                var lastVerified: Long? = null
+                if (!currentChatId.isNullOrEmpty()) {
+                    val membershipResult = repo.verifyChatMembership(cleanToken, currentChatId)
+                    if (membershipResult.isSuccess) {
+                        isVerified = true
+                        lastVerified = System.currentTimeMillis()
+                    }
+                }
+
+                val standbyBot = StandbyBotEntity(
+                    id = UUID.randomUUID().toString(),
+                    encryptedToken = encryptedToken,
+                    label = cleanLabel,
+                    username = username,
+                    addedDate = System.currentTimeMillis(),
+                    isVerifiedMember = isVerified,
+                    lastVerifiedDate = lastVerified,
+                    channelId = if (isVerified) currentChatId else null
+                )
+
+                db.standbyBotDao().insert(standbyBot)
+                onResult?.invoke(true, null)
+            } catch (e: Exception) {
+                Log.e("TeleVaultVM", "Failed to add standby bot: ${e.message}", e)
+                onResult?.invoke(false, e.message ?: "Failed to add standby bot")
+            }
+        }
+    }
+
+    fun verifyStandbyBot(
+        bot: StandbyBotEntity,
+        onResult: ((Boolean, String) -> Unit)? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val token = creds.decryptToken(bot.encryptedToken)
+            if (token.isNullOrBlank()) {
+                onResult?.invoke(false, "Failed to decrypt bot token")
+                return@launch
+            }
+            val chatId = creds.getChatId()?.trim()
+            if (chatId.isNullOrEmpty()) {
+                onResult?.invoke(false, "Vault channel ID is not configured")
+                return@launch
+            }
+
+            val result = repo.verifyChatMembership(token, chatId)
+            val now = System.currentTimeMillis()
+            if (result.isSuccess) {
+                val meResult = repo.validateBotToken(token)
+                val uname = meResult.getOrNull()?.username ?: bot.username
+                db.standbyBotDao().updateVerification(bot.id, true, now, chatId, uname)
+                onResult?.invoke(true, "Bot successfully verified as an active channel member!")
+            } else {
+                db.standbyBotDao().updateVerification(bot.id, false, now, chatId)
+                val err = result.exceptionOrNull()?.message ?: "Bot is not a member of your channel. Please add it in Telegram."
+                onResult?.invoke(false, err)
+            }
+        }
+    }
+
+    fun verifyAllStandbyBots() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val bots = db.standbyBotDao().getStandbyBotsList()
+            bots.forEach { verifyStandbyBot(it) }
+        }
+    }
+
+    fun deleteStandbyBot(bot: StandbyBotEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.standbyBotDao().delete(bot)
+        }
+    }
+
+    fun startStandbyRecovery(bot: StandbyBotEntity) {
+        standbyRecoveryManager.startRecovery(bot)
+    }
+
+    fun cancelStandbyRecovery() {
+        standbyRecoveryManager.cancelRecovery()
+    }
+
+    fun resetStandbyRecoveryState() {
+        standbyRecoveryManager.resetState()
+    }
+
+    val primaryBotAlert: StateFlow<BotRevocationAlert?> = vaultSyncManager.primaryBotAlert
+
+    fun dismissBotRevocationAlert() {
+        vaultSyncManager.clearPrimaryBotAlert()
+        _uiState.update { it.copy(primaryBotAlert = null) }
+    }
+
+    fun triggerRecoveryFromAlert() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val bots = db.standbyBotDao().getStandbyBotsList()
+            val bestBot = bots.firstOrNull { it.isVerifiedMember } ?: bots.firstOrNull()
+            if (bestBot != null) {
+                _uiState.update { it.copy(standbyBotToRecover = bestBot) }
+            } else {
+                navigateToSettingsScreen()
+            }
+        }
+    }
+
+    fun setStandbyBotToRecover(bot: StandbyBotEntity?) {
+        _uiState.update { it.copy(standbyBotToRecover = bot) }
+    }
+
+    fun getBotHealthHistoryLogs(): List<String> {
+        return creds.getBotHealthLogs()
+    }
+
+    fun checkPrimaryBotHealth() {
+        viewModelScope.launch {
+            vaultSyncManager.checkPrimaryBotHealth()
+        }
+    }
 
     fun toggleTheme() {
         val next = !_isDarkTheme.value
@@ -222,10 +389,18 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 _uiState.update { it.copy(lastSyncedTime = syncedTime) }
             }
         }
+        viewModelScope.launch {
+            vaultSyncManager.primaryBotAlert.collect { alert ->
+                _uiState.update { it.copy(primaryBotAlert = alert) }
+            }
+        }
 
         // On app start with existing credentials, schedule periodic worker and trigger background check
         if (creds.hasCredentials()) {
             VaultSyncWorker.schedule(application)
+            viewModelScope.launch {
+                vaultSyncManager.checkPrimaryBotHealth()
+            }
             syncVault(onlyIfNewer = true, isManual = false)
 
             viewModelScope.launch(Dispatchers.IO) {
@@ -849,6 +1024,17 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         }
         viewModelScope.launch {
             val result = vaultSyncManager.syncVault(onlyIfNewer = onlyIfNewer, isManual = isManual)
+            val currentBotAlert = vaultSyncManager.primaryBotAlert.value
+            if (currentBotAlert != null) {
+                _uiState.update {
+                    it.copy(
+                        isResyncing = false,
+                        primaryBotAlert = currentBotAlert,
+                        resyncMessage = if (isManual) "Bot token invalid or revoked. Check alert banner above." else it.resyncMessage
+                    )
+                }
+                return@launch
+            }
             if (result.isSuccess) {
                 val syncData = result.getOrThrow()
                 val showMessage = isManual || syncData.newFilesCount > 0
@@ -888,11 +1074,14 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     /**
      * Triggered on app open or when brought to foreground (onResume).
-     * Only updates if remote index timestamp is newer than local lastSyncedTime.
+     * Actively checks primary bot health via getMe and only updates if remote index timestamp is newer.
      * Silent when up to date.
      */
     fun onAppForeground() {
         if (creds.hasCredentials()) {
+            viewModelScope.launch {
+                vaultSyncManager.checkPrimaryBotHealth()
+            }
             syncVault(onlyIfNewer = true, isManual = false)
         }
     }

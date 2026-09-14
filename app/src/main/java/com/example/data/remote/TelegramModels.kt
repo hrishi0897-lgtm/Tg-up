@@ -64,6 +64,11 @@ data class BotHealthStatus(
     val error: String? = null
 )
 
+data class RecoveredChunkResult(
+    val newMessageId: Long,
+    val newFileId: String?
+)
+
 @JsonClass(generateAdapter = true)
 data class TelegramDocument(
     @Json(name = "file_id") val fileId: String,

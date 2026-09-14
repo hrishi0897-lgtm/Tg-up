@@ -89,8 +89,13 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -132,6 +137,7 @@ import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
 import com.example.data.local.entity.FolderEntity
 import com.example.domain.ChecksumUtil
+import com.example.domain.model.BotRevocationAlert
 import com.example.domain.model.BreadcrumbItem
 import com.example.domain.model.StorageStats
 import com.example.domain.model.TransferProgress
@@ -188,6 +194,10 @@ fun HomeScreen(
     onOpenFolderManagement: () -> Unit = {},
     transferErrorMessage: String? = null,
     onDismissTransferError: () -> Unit = {},
+    botRevocationAlert: BotRevocationAlert? = null,
+    onDismissBotRevocationAlert: () -> Unit = {},
+    onTriggerRecoveryFromAlert: () -> Unit = {},
+    hasStandbyBots: Boolean = false,
     isDarkTheme: Boolean = false,
     onToggleTheme: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -335,7 +345,21 @@ fun HomeScreen(
                 .padding(innerPadding),
             contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 6.dp, bottom = 96.dp)
         ) {
-            // 1. Status Badge: "Backend connected" with pulsing mint dot
+            // 0. Bot Revocation Alert Banner (High priority, hard-to-miss alert)
+            if (botRevocationAlert != null) {
+                item(key = "bot_revocation_alert") {
+                    BotRevocationAlertBanner(
+                        alert = botRevocationAlert,
+                        hasStandbyBots = hasStandbyBots,
+                        onTriggerRecovery = onTriggerRecoveryFromAlert,
+                        onOpenSettings = onOpenSettings,
+                        onDismiss = onDismissBotRevocationAlert,
+                        modifier = Modifier.padding(bottom = 14.dp)
+                    )
+                }
+            }
+
+            // 1. Status Badge: "Backend connected" or "Bot token revoked"
             item(key = "status_badge") {
                 val reduceMotion = LocalReduceMotion.current
                 val infinitePulse = rememberInfiniteTransition(label = "badge_pulse")
@@ -349,29 +373,56 @@ fun HomeScreen(
                     label = "pulse_dot_alpha"
                 )
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(100.dp))
-                        .background(colors.mint.copy(alpha = 0.12f))
-                        .border(1.dp, colors.mint.copy(alpha = 0.35f), RoundedCornerShape(100.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Box(
+                if (botRevocationAlert != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
                         modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .graphicsLayer { this.alpha = if (reduceMotion) 1f else pulseAlphaState.value }
-                            .background(colors.mint)
-                    )
-                    Text(
-                        text = "Backend connected",
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        fontFamily = BodySansFont,
-                        color = colors.mint
-                    )
+                            .clip(RoundedCornerShape(100.dp))
+                            .background(colors.danger.copy(alpha = 0.15f))
+                            .border(1.dp, colors.danger.copy(alpha = 0.45f), RoundedCornerShape(100.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .graphicsLayer { this.alpha = if (reduceMotion) 1f else pulseAlphaState.value }
+                                .background(colors.danger)
+                        )
+                        Text(
+                            text = "Bot token revoked / invalid",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = BodySansFont,
+                            color = colors.danger
+                        )
+                    }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(100.dp))
+                            .background(colors.mint.copy(alpha = 0.12f))
+                            .border(1.dp, colors.mint.copy(alpha = 0.35f), RoundedCornerShape(100.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .graphicsLayer { this.alpha = if (reduceMotion) 1f else pulseAlphaState.value }
+                                .background(colors.mint)
+                        )
+                        Text(
+                            text = "Backend connected",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            fontFamily = BodySansFont,
+                            color = colors.mint
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(14.dp))
             }
@@ -1536,3 +1587,194 @@ private fun FileStatusIndicator(status: FileStatus) {
         }
     }
 }
+
+@Composable
+fun BotRevocationAlertBanner(
+    alert: BotRevocationAlert,
+    hasStandbyBots: Boolean,
+    onTriggerRecovery: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTeleVaultColors.current
+    val reduceMotion = LocalReduceMotion.current
+    val infiniteTransition = rememberInfiniteTransition(label = "alert_pulse")
+    val borderAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "border_pulse"
+    )
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .border(
+                width = 1.5.dp,
+                color = colors.danger.copy(alpha = if (reduceMotion) 0.85f else borderAlpha),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .testTag("bot_revocation_alert_banner"),
+        color = colors.danger.copy(alpha = 0.12f),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            // Top Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(colors.danger.copy(alpha = 0.22f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Bot Token Alert",
+                        tint = colors.danger,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "BOT TOKEN INVALID OR REVOKED",
+                        color = colors.danger,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = BodySansFont,
+                        letterSpacing = 0.5.sp
+                    )
+                    Text(
+                        text = "HTTP ${alert.errorCode ?: "401/403"} • Checked at ${alert.formattedTime}",
+                        color = colors.textDim,
+                        fontSize = 11.5.sp,
+                        fontFamily = NumericMonoFont
+                    )
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .testTag("dismiss_bot_alert_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss Alert",
+                        tint = colors.textDim,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Exact Alert Message requested by user
+            Text(
+                text = "Your bot token appears to be invalid or revoked — switch to a standby bot in Settings",
+                color = colors.text,
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontFamily = BodySansFont,
+                lineHeight = 19.sp
+            )
+
+            if (alert.errorMessage.isNotBlank() && !alert.errorMessage.contains("Your bot token appears")) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Details: ${alert.errorMessage}",
+                    color = colors.textDim,
+                    fontSize = 12.sp,
+                    fontFamily = BodySansFont,
+                    lineHeight = 16.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (hasStandbyBots) {
+                    Button(
+                        onClick = onTriggerRecovery,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.violet,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("alert_switch_to_standby_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SwapHoriz,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Switch to Standby Bot",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = onOpenSettings,
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.text),
+                        modifier = Modifier.testTag("alert_settings_button")
+                    ) {
+                        Text(
+                            text = "Settings",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = onOpenSettings,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.danger,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("alert_open_settings_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Configure Standby Bot in Settings",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+

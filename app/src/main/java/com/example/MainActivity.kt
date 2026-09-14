@@ -62,6 +62,34 @@ import com.example.ui.screens.TransfersScreen
 import com.example.ui.screens.TransfersSheet
 import com.example.ui.theme.TeleVaultTheme
 import com.example.ui.theme.OledBlack
+import com.example.ui.theme.LocalTeleVaultColors
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import android.content.Context
 import android.hardware.display.DisplayManager
 import android.view.Display
@@ -212,6 +240,8 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
     val folders by viewModel.currentFolders.collectAsState()
     val files by viewModel.currentFiles.collectAsState()
     val activeTransfersCount by viewModel.activeTransfersCount.collectAsState()
+    val standbyBots by viewModel.standbyBots.collectAsState()
+    val recoveryState by viewModel.recoveryState.collectAsState()
 
     // File upload picker
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -395,7 +425,11 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         onResync = onResync,
                         onDismissResyncMsg = onDismissResyncMsg,
                         transferErrorMessage = uiState.transferErrorMessage,
-                        onDismissTransferError = onDismissTransferError
+                        onDismissTransferError = onDismissTransferError,
+                        botRevocationAlert = uiState.primaryBotAlert,
+                        onDismissBotRevocationAlert = { viewModel.dismissBotRevocationAlert() },
+                        onTriggerRecoveryFromAlert = { viewModel.triggerRecoveryFromAlert() },
+                        hasStandbyBots = standbyBots.isNotEmpty()
                     )
                 }
             }
@@ -503,6 +537,170 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     onDismiss = { viewModel.dismissUploadWarning() }
                 )
             }
+
+            // Standby Bot Recovery Confirmation Dialog (from alert or home screen)
+            if (uiState.standbyBotToRecover != null) {
+                val bot = uiState.standbyBotToRecover!!
+                val colors = LocalTeleVaultColors.current
+                AlertDialog(
+                    onDismissRequest = { viewModel.setStandbyBotToRecover(null) },
+                    containerColor = colors.surface,
+                    icon = {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(colors.violet.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SwapHoriz,
+                                contentDescription = null,
+                                tint = colors.violet,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    },
+                    title = {
+                        Text(
+                            text = "Switch Vault to ${bot.label}?",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.text
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = "Your primary bot was revoked or restricted. This recovery flow safely migrates all file chunks to ${bot.label} using server-side copyMessage.",
+                                fontSize = 13.sp,
+                                color = colors.text,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(colors.surfaceHi.copy(alpha = 0.6f))
+                                    .padding(10.dp)
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        text = "• 0 MB data: Telegram server-side copyMessage",
+                                        fontSize = 11.sp,
+                                        color = colors.textDim
+                                    )
+                                    Text(
+                                        text = "• Generates fresh file_ids and binds chunks to ${bot.label}",
+                                        fontSize = 11.sp,
+                                        color = colors.textDim
+                                    )
+                                    Text(
+                                        text = "• Sets ${bot.label} as active bot credentials",
+                                        fontSize = 11.sp,
+                                        color = colors.textDim
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val targetBot = bot
+                                viewModel.setStandbyBotToRecover(null)
+                                viewModel.startStandbyRecovery(targetBot)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.violet),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Start Recovery", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { viewModel.setStandbyBotToRecover(null) }) {
+                            Text("Cancel", color = colors.textDim)
+                        }
+                    }
+                )
+            }
+
+            // Standby Recovery Global Progress Dialog
+            if (recoveryState.isRecovering) {
+                val colors = LocalTeleVaultColors.current
+                AlertDialog(
+                    onDismissRequest = { /* Non-dismissible while recovering */ },
+                    containerColor = colors.surface,
+                    icon = {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .background(colors.violet.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(26.dp),
+                                strokeWidth = 3.dp,
+                                color = colors.violet
+                            )
+                        }
+                    },
+                    title = {
+                        Text(
+                            text = "Recovering Vault Chunks...",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.text
+                        )
+                    },
+                    text = {
+                        Column {
+                            Text(
+                                text = recoveryState.statusMessage,
+                                fontSize = 13.sp,
+                                color = colors.textDim
+                            )
+                            Spacer(modifier = Modifier.height(14.dp))
+                            LinearProgressIndicator(
+                                progress = { recoveryState.progressFraction },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(8.dp)
+                                    .clip(RoundedCornerShape(4.dp)),
+                                color = colors.violet,
+                                trackColor = colors.surfaceHi
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "${recoveryState.currentChunk} / ${recoveryState.totalChunks} chunks",
+                                    fontSize = 11.sp,
+                                    color = colors.textDim,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                                Text(
+                                    text = "${(recoveryState.progressFraction * 100).toInt()}%",
+                                    fontSize = 11.sp,
+                                    color = colors.violet,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = { viewModel.cancelStandbyRecovery() }
+                        ) {
+                            Text("Cancel", color = colors.danger)
+                        }
+                    }
+                )
+            }
         }
     }
 }
@@ -548,6 +746,9 @@ private fun SettingsScreenContainer(
     val uiState by viewModel.uiState.collectAsState()
     val botPool by viewModel.botPool.collectAsState()
     val botHealth by viewModel.botHealth.collectAsState()
+    val standbyBots by viewModel.standbyBots.collectAsState()
+    val verifiedStandbyBotsCount by viewModel.verifiedStandbyBotsCount.collectAsState()
+    val recoveryState by viewModel.recoveryState.collectAsState()
     val (token, chatId) = viewModel.getCredentials()
     SettingsScreen(
         botTokenMasked = token,
@@ -560,6 +761,20 @@ private fun SettingsScreenContainer(
         testTransferSuccess = uiState.testTransferSuccess,
         botTokenPool = botPool,
         botHealthMap = botHealth,
+        standbyBots = standbyBots,
+        verifiedStandbyBotsCount = verifiedStandbyBotsCount,
+        recoveryState = recoveryState,
+        onAddStandbyBot = { tokenInput, labelInput, onResult ->
+            viewModel.addStandbyBot(tokenInput, labelInput, onResult)
+        },
+        onVerifyStandbyBot = { bot, onResult ->
+            viewModel.verifyStandbyBot(bot, onResult)
+        },
+        onVerifyAllStandbyBots = { viewModel.verifyAllStandbyBots() },
+        onDeleteStandbyBot = { viewModel.deleteStandbyBot(it) },
+        onStartStandbyRecovery = { viewModel.startStandbyRecovery(it) },
+        onCancelStandbyRecovery = { viewModel.cancelStandbyRecovery() },
+        onResetStandbyRecoveryState = { viewModel.resetStandbyRecoveryState() },
         onAddBotToken = { viewModel.addBotToken(it) },
         onRemoveBotToken = { viewModel.removeBotToken(it) },
         onSetActiveBotToken = { viewModel.setActiveBotToken(it) },
@@ -569,6 +784,10 @@ private fun SettingsScreenContainer(
         onChunkSizeChange = { viewModel.setChunkSizeMb(it) },
         onWifiOnlyChange = { viewModel.setWifiOnly(it) },
         onResyncClick = { viewModel.resyncFromTelegram() },
+        primaryBotAlert = uiState.primaryBotAlert,
+        onDismissPrimaryBotAlert = { viewModel.dismissBotRevocationAlert() },
+        botHealthLogs = remember(uiState.primaryBotAlert) { viewModel.getBotHealthHistoryLogs() },
+        onCheckPrimaryBotHealth = { viewModel.checkPrimaryBotHealth() },
         onDisconnect = { viewModel.disconnect() },
         onDismiss = onDismiss,
         onStartTestTransfer = { viewModel.startSyntheticTestTransfer() },

@@ -10,19 +10,22 @@ import com.example.data.local.dao.ChannelDao
 import com.example.data.local.dao.ChunkDao
 import com.example.data.local.dao.FileDao
 import com.example.data.local.dao.FolderDao
+import com.example.data.local.dao.StandbyBotDao
 import com.example.data.local.entity.ChannelEntity
 import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FolderEntity
+import com.example.data.local.entity.StandbyBotEntity
 
 @Database(
     entities = [
         FileEntity::class,
         ChunkEntity::class,
         FolderEntity::class,
-        ChannelEntity::class
+        ChannelEntity::class,
+        StandbyBotEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -31,6 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chunkDao(): ChunkDao
     abstract fun folderDao(): FolderDao
     abstract fun channelDao(): ChannelDao
+    abstract fun standbyBotDao(): StandbyBotDao
 
     companion object {
         @Volatile
@@ -46,6 +50,26 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE files ADD COLUMN channelId TEXT")
                 db.execSQL("ALTER TABLE chunks ADD COLUMN channelId TEXT")
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `standby_bots` (
+                        `id` TEXT NOT NULL,
+                        `encryptedToken` TEXT NOT NULL,
+                        `label` TEXT NOT NULL,
+                        `username` TEXT,
+                        `addedDate` INTEGER NOT NULL,
+                        `isVerifiedMember` INTEGER NOT NULL,
+                        `lastVerifiedDate` INTEGER,
+                        `channelId` TEXT,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
             }
         }
 
@@ -163,7 +187,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "televault_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, Migration3To4(appContext))
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, Migration3To4(appContext), MIGRATION_4_5)
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onOpen(db: SupportSQLiteDatabase) {
                             super.onOpen(db)

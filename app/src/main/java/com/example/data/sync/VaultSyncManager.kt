@@ -9,10 +9,13 @@ import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
 import com.example.data.local.entity.FolderEntity
 import com.example.data.remote.ManifestChunk
+import com.example.data.remote.TelegramApiException
 import com.example.data.remote.TelegramRepository
+import com.example.data.remote.TelegramUser
 import com.example.data.remote.VaultIndex
 import com.example.data.remote.VaultIndexFile
 import com.example.data.remote.VaultIndexFolder
+import com.example.domain.model.BotRevocationAlert
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,6 +55,81 @@ class VaultSyncManager private constructor(private val context: Context) {
 
     private val _lastSyncedTime = MutableStateFlow(credentialsManager.getLastSyncedTime())
     val lastSyncedTime: StateFlow<Long> = _lastSyncedTime.asStateFlow()
+
+    private val _primaryBotAlert = MutableStateFlow<BotRevocationAlert?>(credentialsManager.getLastBotRevocationAlert())
+    val primaryBotAlert: StateFlow<BotRevocationAlert?> = _primaryBotAlert.asStateFlow()
+
+    fun clearPrimaryBotAlert() {
+        _primaryBotAlert.value = null
+        credentialsManager.clearBotRevocationAlert()
+    }
+
+    /**
+     * Active bot-health check: calls getMe for the primary bot.
+     * Logs exact error code and timestamp in Logcat and persistent history.
+     * If 401 Unauthorized, 403 Forbidden, or token revoked/invalid, sets primaryBotAlert.
+     */
+    suspend fun checkPrimaryBotHealth(token: String? = credentialsManager.getBotToken()): Result<TelegramUser> {
+        val activeToken = token ?: credentialsManager.getBotToken()
+        if (activeToken.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("No bot token configured"))
+        }
+
+        val result = repository.validateBotToken(activeToken)
+        val now = System.currentTimeMillis()
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+        val formattedTime = sdf.format(java.util.Date(now))
+
+        if (result.isFailure) {
+            val ex = result.exceptionOrNull()
+            val (errorCode, description) = if (ex is TelegramApiException) {
+                Pair(ex.errorCode, ex.message ?: "Telegram API Exception")
+            } else {
+                val msg = ex?.message ?: "Unknown error"
+                val code = when {
+                    msg.contains("401") || msg.contains("Unauthorized", ignoreCase = true) -> 401
+                    msg.contains("403") || msg.contains("Forbidden", ignoreCase = true) -> 403
+                    else -> null
+                }
+                Pair(code, msg)
+            }
+
+            // Log exact error code and timestamp so pattern is visible in Logcat & history
+            val logEntry = "FAIL | HTTP ${errorCode ?: "ERR"} | $description | $formattedTime"
+            Log.e(TAG, "🚨 [BOT HEALTH MONITOR] Primary bot check FAILED! HTTP ${errorCode ?: "N/A"} - '$description' at timestamp $now ($formattedTime)")
+            credentialsManager.recordBotHealthLog(logEntry)
+
+            val isRevokedOrInvalid = errorCode == 401 || errorCode == 403 ||
+                    description.contains("Unauthorized", ignoreCase = true) ||
+                    description.contains("Forbidden", ignoreCase = true) ||
+                    description.contains("revoked", ignoreCase = true) ||
+                    description.contains("deleted", ignoreCase = true) ||
+                    description.contains("blocked", ignoreCase = true)
+
+            if (isRevokedOrInvalid) {
+                val alert = BotRevocationAlert(
+                    errorCode = errorCode,
+                    errorMessage = description,
+                    timestamp = now,
+                    formattedTime = formattedTime
+                )
+                _primaryBotAlert.value = alert
+                credentialsManager.saveLastBotRevocationAlert(alert)
+                Log.e(TAG, "🚨 [BOT HEALTH MONITOR] Prominent alert surfaced: Your bot token appears to be invalid or revoked — switch to a standby bot in Settings (Code: $errorCode)")
+            }
+
+            return Result.failure(ex ?: Exception(description))
+        } else {
+            val user = result.getOrThrow()
+            Log.i(TAG, "✅ [BOT HEALTH MONITOR] Primary bot healthy: @${user.username ?: user.firstName} (id: ${user.id}) at $formattedTime")
+            credentialsManager.recordBotHealthLog("OK | @${user.username ?: user.firstName} (id: ${user.id}) | $formattedTime")
+            if (_primaryBotAlert.value != null) {
+                _primaryBotAlert.value = null
+                credentialsManager.clearBotRevocationAlert()
+            }
+            return Result.success(user)
+        }
+    }
 
     private var debouncePublishJob: Job? = null
     private val debounceMutex = Mutex()
@@ -211,6 +289,19 @@ class VaultSyncManager private constructor(private val context: Context) {
 
         _isSyncing.value = true
         try {
+            // Active bot-health monitoring: check getMe for primary bot as part of periodic/foreground sync
+            Log.i(TAG, "Active bot-health monitoring: Checking primary bot via getMe...")
+            val healthCheckResult = checkPrimaryBotHealth(token)
+            if (healthCheckResult.isFailure) {
+                val currentAlert = _primaryBotAlert.value
+                if (currentAlert != null) {
+                    val criticalMessage = "Your bot token appears to be invalid or revoked — switch to a standby bot in Settings"
+                    Log.e(TAG, "🚨 [BOT HEALTH MONITOR] Halting sync: $criticalMessage (Error ${currentAlert.errorCode}: ${currentAlert.errorMessage})")
+                    _isSyncing.value = false
+                    return Result.failure(TelegramApiException(criticalMessage, currentAlert.errorCode, currentAlert.errorMessage))
+                }
+            }
+
             val localFilesPre = database.fileDao().getAll().filter { it.status == FileStatus.COMPLETED }
             val localFoldersPre = database.folderDao().getAll()
             val localLastSyncedTime = credentialsManager.getLastSyncedTime()

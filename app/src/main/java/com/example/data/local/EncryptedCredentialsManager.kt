@@ -37,6 +37,11 @@ class EncryptedCredentialsManager(context: Context) {
         private const val PREF_LAST_INDEX_MSG_ID = "last_vault_index_message_id"
         private const val PREF_DEVICE_ID = "vault_device_id"
         private const val PREF_THEME_MODE = "app_theme_mode" // "light" or "dark"
+        private const val PREF_ALERT_ERROR_CODE = "bot_alert_error_code"
+        private const val PREF_ALERT_ERROR_MSG = "bot_alert_error_msg"
+        private const val PREF_ALERT_TIMESTAMP = "bot_alert_timestamp"
+        private const val PREF_ALERT_FORMATTED_TIME = "bot_alert_formatted_time"
+        private const val PREF_BOT_HEALTH_HISTORY = "bot_health_history_logs"
         // Telegram Bot API allows uploading up to 50MB via sendDocument, BUT strictly limits
         // downloading to 20MB via getFile. If a chunk exceeds 20MB, getFile returns HTTP 400 'Bad Request: file is too big'.
         // We set CHUNK_SIZE_BYTES globally to 18MB to leave safe headroom for multipart boundary overhead and API limits.
@@ -76,7 +81,7 @@ class EncryptedCredentialsManager(context: Context) {
         return entry.secretKey
     }
 
-    private fun encrypt(plainText: String): String {
+    fun encryptToken(plainText: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getSecretKey())
         val iv = cipher.iv
@@ -88,7 +93,7 @@ class EncryptedCredentialsManager(context: Context) {
         return Base64.encodeToString(combined, Base64.NO_WRAP)
     }
 
-    private fun decrypt(encryptedBase64: String): String? {
+    fun decryptToken(encryptedBase64: String): String? {
         return try {
             val combined = Base64.decode(encryptedBase64, Base64.NO_WRAP)
             if (combined.size < GCM_IV_LENGTH) return null
@@ -106,6 +111,10 @@ class EncryptedCredentialsManager(context: Context) {
             null
         }
     }
+
+    private fun encrypt(plainText: String): String = encryptToken(plainText)
+
+    private fun decrypt(encryptedBase64: String): String? = decryptToken(encryptedBase64)
 
     fun saveCredentials(botToken: String, chatId: String) {
         val cleanToken = botToken.trim()
@@ -292,5 +301,56 @@ class EncryptedCredentialsManager(context: Context) {
 
     fun setThemeMode(mode: String) {
         prefs.edit().putString(PREF_THEME_MODE, mode).apply()
+    }
+
+    fun saveLastBotRevocationAlert(alert: com.example.domain.model.BotRevocationAlert?) {
+        if (alert == null) {
+            clearBotRevocationAlert()
+            return
+        }
+        prefs.edit()
+            .putInt(PREF_ALERT_ERROR_CODE, alert.errorCode ?: -1)
+            .putString(PREF_ALERT_ERROR_MSG, alert.errorMessage)
+            .putLong(PREF_ALERT_TIMESTAMP, alert.timestamp)
+            .putString(PREF_ALERT_FORMATTED_TIME, alert.formattedTime)
+            .apply()
+    }
+
+    fun getLastBotRevocationAlert(): com.example.domain.model.BotRevocationAlert? {
+        val timestamp = prefs.getLong(PREF_ALERT_TIMESTAMP, 0L)
+        if (timestamp == 0L) return null
+        val code = prefs.getInt(PREF_ALERT_ERROR_CODE, -1)
+        val msg = prefs.getString(PREF_ALERT_ERROR_MSG, null) ?: return null
+        val formattedTime = prefs.getString(PREF_ALERT_FORMATTED_TIME, "") ?: ""
+        return com.example.domain.model.BotRevocationAlert(
+            errorCode = if (code != -1) code else null,
+            errorMessage = msg,
+            timestamp = timestamp,
+            formattedTime = formattedTime
+        )
+    }
+
+    fun clearBotRevocationAlert() {
+        prefs.edit()
+            .remove(PREF_ALERT_ERROR_CODE)
+            .remove(PREF_ALERT_ERROR_MSG)
+            .remove(PREF_ALERT_TIMESTAMP)
+            .remove(PREF_ALERT_FORMATTED_TIME)
+            .apply()
+    }
+
+    fun recordBotHealthLog(entry: String) {
+        val existing = prefs.getString(PREF_BOT_HEALTH_HISTORY, "") ?: ""
+        val list = if (existing.isBlank()) mutableListOf() else existing.split(";;;").toMutableList()
+        list.add(0, entry)
+        // Keep up to 30 history entries
+        val trimmed = list.take(30).joinToString(";;;")
+        prefs.edit().putString(PREF_BOT_HEALTH_HISTORY, trimmed).apply()
+    }
+
+    fun getBotHealthLogs(): List<String> {
+        val existing = prefs.getString(PREF_BOT_HEALTH_HISTORY, "") ?: ""
+        if (existing.isBlank()) return emptyList()
+        return existing.split(";;;")
     }
 }

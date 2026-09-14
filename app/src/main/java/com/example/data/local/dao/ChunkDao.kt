@@ -58,4 +58,13 @@ interface ChunkDao {
 
     @Query("SELECT * FROM chunks WHERE channelId = :channelId")
     suspend fun getChunksByChannel(channelId: String): List<ChunkEntity>
+
+    @Query("SELECT * FROM chunks WHERE isUploaded = 1 AND telegramMessageId IS NOT NULL ORDER BY fileId, chunkIndex ASC")
+    suspend fun getAllRecoverableChunks(): List<ChunkEntity>
+
+    @Query("SELECT COUNT(*) FROM chunks WHERE isUploaded = 1 AND telegramMessageId IS NOT NULL")
+    suspend fun getRecoverableChunkCount(): Int
+
+    @Query("UPDATE chunks SET channelId = :channelId, telegramMessageId = :telegramMessageId, telegramFileId = :telegramFileId WHERE fileId = :fileId AND chunkIndex = :chunkIndex")
+    suspend fun updateChunkRecovery(fileId: String, chunkIndex: Int, channelId: String, telegramMessageId: Long, telegramFileId: String?)
 }
