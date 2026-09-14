@@ -540,7 +540,8 @@ fun HomeScreen(
                 }
             }
 
-            // 2. Hero: Bento-Grid Storage Breakdown & Consolidated Stats
+            // 2. Hero: Bento-Grid Storage Breakdown & Consolidated Stats (Temporarily disabled for diagnostic isolation)
+            /*
             item(key = "hero_bento_grid") {
                 StorageBentoGrid(
                     stats = storageStats,
@@ -553,6 +554,7 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
+            */
 
             // 3. Search & Filter Row: Search Box + 3D Sort Button + 3D View Toggle Button
             item(key = "search_and_filter_row") {
