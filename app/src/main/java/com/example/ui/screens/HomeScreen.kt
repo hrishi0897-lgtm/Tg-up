@@ -22,11 +22,12 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import com.example.domain.model.StorageCategory
+import com.example.domain.model.classifyFileCategory
 import com.example.ui.components.Fab3D
 import com.example.ui.components.IconButton3D
-import com.example.ui.components.QuickStatsBar
 import com.example.ui.components.SquareButton3D
-import com.example.ui.components.StorageDonutRingCard
+import com.example.ui.components.StorageBentoGrid
 import com.example.ui.components.TeleVaultBottomNav
 import com.example.ui.components.UploadButton3D
 import com.example.ui.theme.LocalReduceMotion
@@ -205,6 +206,7 @@ fun HomeScreen(
     val colors = LocalTeleVaultColors.current
     var showFabMenu by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
+    var selectedCategory by remember { mutableStateOf<StorageCategory?>(null) }
 
     val activeCount = activeTransfersCount
 
@@ -337,7 +339,11 @@ fun HomeScreen(
             )
         }
     ) { innerPadding ->
-        val filePairs = remember(files) { files.chunked(2) }
+        val displayedFiles = remember(files, selectedCategory) {
+            if (selectedCategory == null) files
+            else files.filter { classifyFileCategory(it.mimeType, it.name) == selectedCategory }
+        }
+        val filePairs = remember(displayedFiles) { displayedFiles.chunked(2) }
 
         LazyColumn(
             modifier = Modifier
@@ -534,13 +540,14 @@ fun HomeScreen(
                 }
             }
 
-            // 2. Hero: 3-segment Storage Ring Donut Card + Quick Stats Bar
-            item(key = "hero_storage_card") {
-                StorageDonutRingCard(stats = storageStats)
-                Spacer(modifier = Modifier.height(12.dp))
-                QuickStatsBar(
-                    filesCount = storageStats.fileCount,
-                    foldersCount = storageStats.folderCount,
+            // 2. Hero: Bento-Grid Storage Breakdown & Consolidated Stats
+            item(key = "hero_bento_grid") {
+                StorageBentoGrid(
+                    stats = storageStats,
+                    selectedCategory = selectedCategory,
+                    onCategoryClick = { clickedCat ->
+                        selectedCategory = if (selectedCategory == clickedCat) null else clickedCat
+                    },
                     activeTransfersCount = activeCount,
                     onTransfersClick = onOpenTransfers
                 )
@@ -753,15 +760,46 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = when {
+                                searchQuery.isNotBlank() -> "Search results"
+                                selectedCategory == StorageCategory.DOCUMENTS -> "Documents"
+                                selectedCategory == StorageCategory.MEDIA -> "Media"
+                                selectedCategory == StorageCategory.OTHER -> "Other files"
+                                else -> "Vault files"
+                            },
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = BodySansFont,
+                            color = colors.text
+                        )
+
+                        if (selectedCategory != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(100.dp))
+                                    .background(colors.surfaceHi)
+                                    .clickable { selectedCategory = null }
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = "Filtered • Clear ✕",
+                                    fontSize = 11.sp,
+                                    fontFamily = BodySansFont,
+                                    fontWeight = FontWeight.Medium,
+                                    color = colors.textDim
+                                )
+                            }
+                        }
+                    }
+
                     Text(
-                        text = if (searchQuery.isNotBlank()) "Search results" else "Vault files",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = BodySansFont,
-                        color = colors.text
-                    )
-                    Text(
-                        text = "${files.size} items",
+                        text = "${displayedFiles.size} items",
                         fontSize = 12.5.sp,
                         fontFamily = NumericMonoFont,
                         color = colors.textFaint
@@ -771,12 +809,46 @@ fun HomeScreen(
             }
 
             // 7. Content: Empty State or File List/Grid
-            if (files.isEmpty() && folders.isEmpty()) {
+            if (displayedFiles.isEmpty() && folders.isEmpty()) {
                 item(key = "empty_state") {
-                    EmptyFolderState(
-                        isSearch = searchQuery.isNotBlank(),
-                        onUploadClick = onUploadFileClick
-                    )
+                    if (selectedCategory != null) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 36.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = "No ${selectedCategory?.name?.lowercase()} in this folder",
+                                fontSize = 14.sp,
+                                fontFamily = BodySansFont,
+                                color = colors.textDim
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.surface)
+                                    .border(1.dp, colors.line, RoundedCornerShape(10.dp))
+                                    .clickable { selectedCategory = null }
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = "Show All Files",
+                                    fontSize = 12.5.sp,
+                                    fontFamily = BodySansFont,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = colors.teal
+                                )
+                            }
+                        }
+                    } else {
+                        EmptyFolderState(
+                            isSearch = searchQuery.isNotBlank(),
+                            onUploadClick = onUploadFileClick
+                        )
+                    }
                 }
             } else if (isGridView) {
                 items(filePairs, key = { pair -> "grid_pair_${pair.first().id}" }) { pair ->
@@ -798,7 +870,7 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(10.dp))
                 }
             } else {
-                items(files, key = { it.id }) { file ->
+                items(displayedFiles, key = { it.id }) { file ->
                     FileListItem(file = file, onClick = { onFileClick(file) })
                     Spacer(modifier = Modifier.height(8.dp))
                 }
