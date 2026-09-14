@@ -591,6 +591,45 @@ class TelegramRepository(
     }
 
     /**
+     * Creates a temporary, revocable invite link for a relay chat/channel.
+     * Optionally configures expiration timestamp and member limit (e.g. 1 member limit for single-recipient sharing).
+     */
+    suspend fun createChatInviteLink(
+        token: String,
+        chatId: String,
+        name: String? = null,
+        expireDate: Long? = null,
+        memberLimit: Int? = null
+    ): Result<TelegramChatInviteLink> {
+        return executeWithRetry("Creating invite link for chat $chatId") {
+            api.createChatInviteLink(
+                url = botUrl(token, "createChatInviteLink"),
+                chatId = chatId,
+                name = name,
+                expireDate = expireDate,
+                memberLimit = memberLimit
+            )
+        }
+    }
+
+    /**
+     * Revokes a temporary invite link, immediately cutting off any new joins.
+     */
+    suspend fun revokeChatInviteLink(
+        token: String,
+        chatId: String,
+        inviteLink: String
+    ): Result<TelegramChatInviteLink> {
+        return executeWithRetry("Revoking invite link $inviteLink on chat $chatId") {
+            api.revokeChatInviteLink(
+                url = botUrl(token, "revokeChatInviteLink"),
+                chatId = chatId,
+                inviteLink = inviteLink
+            )
+        }
+    }
+
+    /**
      * Health check to detect whether a specific bot token is working, banned, or has chat access.
      */
     suspend fun checkBotHealth(token: String, chatId: String? = null): Result<BotHealthStatus> {

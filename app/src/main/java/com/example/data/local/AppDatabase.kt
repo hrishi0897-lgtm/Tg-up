@@ -10,11 +10,13 @@ import com.example.data.local.dao.ChannelDao
 import com.example.data.local.dao.ChunkDao
 import com.example.data.local.dao.FileDao
 import com.example.data.local.dao.FolderDao
+import com.example.data.local.dao.SharedFileDao
 import com.example.data.local.dao.StandbyBotDao
 import com.example.data.local.entity.ChannelEntity
 import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FolderEntity
+import com.example.data.local.entity.SharedFileEntity
 import com.example.data.local.entity.StandbyBotEntity
 
 @Database(
@@ -23,9 +25,10 @@ import com.example.data.local.entity.StandbyBotEntity
         ChunkEntity::class,
         FolderEntity::class,
         ChannelEntity::class,
-        StandbyBotEntity::class
+        StandbyBotEntity::class,
+        SharedFileEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -35,6 +38,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun folderDao(): FolderDao
     abstract fun channelDao(): ChannelDao
     abstract fun standbyBotDao(): StandbyBotDao
+    abstract fun sharedFileDao(): SharedFileDao
 
     companion object {
         @Volatile
@@ -70,6 +74,31 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                     """.trimIndent()
                 )
+            }
+        }
+
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `shared_files` (
+                        `id` TEXT NOT NULL,
+                        `fileId` TEXT NOT NULL,
+                        `fileName` TEXT NOT NULL,
+                        `fileSize` INTEGER NOT NULL,
+                        `inviteLink` TEXT NOT NULL,
+                        `createdDate` INTEGER NOT NULL,
+                        `expiryDate` INTEGER,
+                        `revoked` INTEGER NOT NULL,
+                        `relayChatId` TEXT NOT NULL,
+                        `copiedMessageIds` TEXT NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_shared_files_fileId` ON `shared_files` (`fileId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_shared_files_createdDate` ON `shared_files` (`createdDate`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_shared_files_revoked` ON `shared_files` (`revoked`)")
             }
         }
 
@@ -187,7 +216,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "televault_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, Migration3To4(appContext), MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, Migration3To4(appContext), MIGRATION_4_5, MIGRATION_5_6)
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onOpen(db: SupportSQLiteDatabase) {
                             super.onOpen(db)

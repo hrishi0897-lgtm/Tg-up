@@ -54,6 +54,17 @@ data class TelegramChatMember(
     @Json(name = "user") val user: TelegramUser? = null
 )
 
+@JsonClass(generateAdapter = true)
+data class TelegramChatInviteLink(
+    @Json(name = "invite_link") val inviteLink: String,
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "creator") val creator: TelegramUser? = null,
+    @Json(name = "expire_date") val expireDate: Long? = null,
+    @Json(name = "member_limit") val memberLimit: Int? = null,
+    @Json(name = "is_primary") val isPrimary: Boolean? = null,
+    @Json(name = "is_revoked") val isRevoked: Boolean? = null
+)
+
 data class BotHealthStatus(
     val token: String,
     val isWorking: Boolean,

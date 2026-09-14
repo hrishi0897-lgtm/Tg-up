@@ -42,6 +42,8 @@ class EncryptedCredentialsManager(context: Context) {
         private const val PREF_ALERT_TIMESTAMP = "bot_alert_timestamp"
         private const val PREF_ALERT_FORMATTED_TIME = "bot_alert_formatted_time"
         private const val PREF_BOT_HEALTH_HISTORY = "bot_health_history_logs"
+        private const val PREF_SHARE_SHEET_ASK_FOLDER = "share_sheet_ask_folder"
+        private const val PREF_RELAY_CHAT_ID = "relay_chat_id"
         // Telegram Bot API allows uploading up to 50MB via sendDocument, BUT strictly limits
         // downloading to 20MB via getFile. If a chunk exceeds 20MB, getFile returns HTTP 400 'Bad Request: file is too big'.
         // We set CHUNK_SIZE_BYTES globally to 18MB to leave safe headroom for multipart boundary overhead and API limits.
@@ -352,5 +354,28 @@ class EncryptedCredentialsManager(context: Context) {
         val existing = prefs.getString(PREF_BOT_HEALTH_HISTORY, "") ?: ""
         if (existing.isBlank()) return emptyList()
         return existing.split(";;;")
+    }
+
+    /**
+     * Preference for Android share sheet: true to prompt for destination folder, false to directly upload to root.
+     */
+    fun isShareSheetAskFolder(): Boolean {
+        return prefs.getBoolean(PREF_SHARE_SHEET_ASK_FOLDER, true)
+    }
+
+    fun setShareSheetAskFolder(ask: Boolean) {
+        prefs.edit().putBoolean(PREF_SHARE_SHEET_ASK_FOLDER, ask).apply()
+    }
+
+    /**
+     * Dedicated Telegram relay chat/channel ID for temporary revocable file sharing.
+     */
+    fun getRelayChatId(): String? {
+        val raw = prefs.getString(PREF_RELAY_CHAT_ID, null)?.trim()
+        return if (raw.isNullOrBlank()) null else raw
+    }
+
+    fun setRelayChatId(chatId: String) {
+        prefs.edit().putString(PREF_RELAY_CHAT_ID, chatId.trim()).apply()
     }
 }

@@ -48,10 +48,15 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.FolderShared
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Wifi
+import com.example.data.local.entity.SharedFileEntity
 import com.example.domain.model.BotRevocationAlert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -137,6 +142,13 @@ fun SettingsScreen(
     onDismissPrimaryBotAlert: (() -> Unit)? = null,
     botHealthLogs: List<String> = emptyList(),
     onCheckPrimaryBotHealth: (() -> Unit)? = null,
+    isShareSheetAskFolder: Boolean = true,
+    onShareSheetAskFolderChange: ((Boolean) -> Unit)? = null,
+    relayChatId: String? = null,
+    onRelayChatIdChange: ((String) -> Unit)? = null,
+    sharedFiles: List<SharedFileEntity> = emptyList(),
+    onRevokeSharedFile: ((String) -> Unit)? = null,
+    onPairDeviceClick: (() -> Unit)? = null,
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit,
     onStartTestTransfer: (() -> Unit)? = null
@@ -148,6 +160,8 @@ fun SettingsScreen(
     var showAddTokenDialog by remember { mutableStateOf(false) }
     var newBotTokenInput by remember { mutableStateOf("") }
     var showBotHealthLogs by remember { mutableStateOf(false) }
+    var isEditingRelayChat by remember { mutableStateOf(false) }
+    var relayChatInput by remember(relayChatId) { mutableStateOf(relayChatId ?: "") }
 
     // Standby bot management states
     var showAddStandbyBotDialog by remember { mutableStateOf(false) }
@@ -1094,6 +1108,52 @@ fun SettingsScreen(
                         }
                     }
 
+                    // Pair Another Device Button
+                    if (onPairDeviceClick != null) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(colors.violet.copy(alpha = 0.12f))
+                                .border(1.dp, colors.violet.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                .clickable { onPairDeviceClick() }
+                                .padding(horizontal = 14.dp, vertical = 12.dp)
+                                .testTag("pair_device_button")
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Devices,
+                                    contentDescription = null,
+                                    tint = colors.violet,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Pair Another Device",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.text
+                                    )
+                                    Text(
+                                        text = "Display encrypted QR code to pair a secondary phone or tablet",
+                                        fontSize = 11.sp,
+                                        color = colors.textDim
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.QrCode,
+                                    contentDescription = null,
+                                    tint = colors.violet,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+
                     // Disconnect Danger Row
                     Box(
                         modifier = Modifier
@@ -1841,6 +1901,209 @@ fun SettingsScreen(
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
                                 Text("Optimize", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Inbound Sharing & Share Sheet Integration
+            SettingsCard(
+                icon = Icons.Default.Share,
+                title = "SHARE SHEET INTEGRATION",
+                colors = colors
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Prompt for folder on shared files",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.text
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "When enabled, shows a folder selector when files are shared to TeleVault from Gallery, Files, or browsers. When disabled, uploads directly to root Vault.",
+                                fontSize = 11.sp,
+                                color = colors.textDim,
+                                lineHeight = 15.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Switch(
+                            checked = isShareSheetAskFolder,
+                            onCheckedChange = { onShareSheetAskFolderChange?.invoke(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = colors.violet,
+                                uncheckedThumbColor = colors.textFaint,
+                                uncheckedTrackColor = colors.surfaceHi
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Shared Files & Disposable Relay Channel
+            SettingsCard(
+                icon = Icons.Default.FolderShared,
+                title = "SHARED FILES & RELAY CHANNEL",
+                colors = colors
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Disposable relay channels generate single-recipient invite links with automatic expiration, keeping your primary vault completely hidden.",
+                        fontSize = 12.sp,
+                        color = colors.textDim,
+                        lineHeight = 16.sp
+                    )
+
+                    // Relay Chat ID Configuration Row
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(colors.surfaceHi.copy(alpha = 0.6f))
+                            .padding(12.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Relay Channel ID",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.violet
+                                    )
+                                    Text(
+                                        text = relayChatId?.ifBlank { null } ?: "Using primary storage channel as relay",
+                                        fontSize = 12.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = colors.text
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { isEditingRelayChat = !isEditingRelayChat },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = colors.violet)
+                                ) {
+                                    Text(if (isEditingRelayChat) "Cancel" else "Configure", fontSize = 12.sp)
+                                }
+                            }
+
+                            if (isEditingRelayChat) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = relayChatInput,
+                                        onValueChange = { relayChatInput = it },
+                                        placeholder = { Text("e.g. -100xxxxxxx or empty", fontSize = 12.sp, color = colors.textFaint) },
+                                        modifier = Modifier.weight(1f),
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = colors.violet,
+                                            unfocusedBorderColor = colors.line,
+                                            focusedTextColor = colors.text,
+                                            unfocusedTextColor = colors.text
+                                        )
+                                    )
+                                    Button(
+                                        onClick = {
+                                            onRelayChatIdChange?.invoke(relayChatInput.trim())
+                                            isEditingRelayChat = false
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = colors.violet),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("Save", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Shared files list
+                    if (sharedFiles.isEmpty()) {
+                        Text(
+                            text = "No files have been shared via relay yet.",
+                            fontSize = 12.sp,
+                            color = colors.textFaint,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    } else {
+                        Text(
+                            text = "Active & Revoked Shares (${sharedFiles.size})",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.text
+                        )
+                        sharedFiles.forEach { share ->
+                            val isExpired = share.expiryDate != null && System.currentTimeMillis() > share.expiryDate
+                            val isRevoked = share.revoked
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(colors.surfaceHi.copy(alpha = 0.4f))
+                                    .padding(10.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = share.inviteLink,
+                                            fontSize = 12.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Medium,
+                                            color = colors.text,
+                                            maxLines = 1
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        val statusText = when {
+                                            isRevoked -> "Revoked"
+                                            isExpired -> "Expired"
+                                            else -> "Active"
+                                        }
+                                        val statusColor = when {
+                                            isRevoked -> colors.danger
+                                            isExpired -> colors.amber
+                                            else -> colors.mint
+                                        }
+                                        Text(
+                                            text = "Status: $statusText • ${SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(share.createdDate))}",
+                                            fontSize = 10.sp,
+                                            color = statusColor
+                                        )
+                                    }
+                                    if (!isRevoked && !isExpired && onRevokeSharedFile != null) {
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Button(
+                                            onClick = { onRevokeSharedFile(share.id) },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = colors.danger.copy(alpha = 0.15f),
+                                                contentColor = colors.danger
+                                            ),
+                                            shape = RoundedCornerShape(6.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Text("Revoke", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

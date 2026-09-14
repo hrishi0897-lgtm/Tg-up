@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
@@ -13,14 +14,17 @@ import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
 import com.example.data.local.entity.FolderEntity
+import com.example.data.local.entity.SharedFileEntity
 import com.example.data.local.entity.StandbyBotEntity
 import com.example.data.remote.TelegramRepository
 import com.example.data.remote.TelegramUser
 import com.example.data.sync.VaultSyncManager
 import com.example.data.sync.VaultSyncWorker
+import com.example.data.transfer.RelayShareManager
 import com.example.data.transfer.StandbyRecoveryManager
 import com.example.data.transfer.StandbyRecoveryState
 import com.example.data.transfer.TransferManager
+import com.example.domain.QrCodeUtil
 import com.example.domain.model.BotHealthInfo
 import com.example.domain.model.BotRevocationAlert
 import com.example.domain.model.BreadcrumbItem
@@ -29,6 +33,7 @@ import com.example.domain.model.StorageCategory
 import com.example.domain.model.StorageStats
 import com.example.domain.model.TransferProgress
 import com.example.domain.model.classifyFileCategory
+import com.example.ui.screens.SharedFileItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -96,7 +101,16 @@ data class UiState(
     val testTransferStatus: String? = null,
     val testTransferSuccess: Boolean? = null,
     val primaryBotAlert: BotRevocationAlert? = null,
-    val standbyBotToRecover: StandbyBotEntity? = null
+    val standbyBotToRecover: StandbyBotEntity? = null,
+    val pendingShareSheetUpload: List<SharedFileItem>? = null,
+    val fileForSharing: FileEntity? = null,
+    val activeShareForCurrentFile: SharedFileEntity? = null,
+    val isGeneratingShareLink: Boolean = false,
+    val shareLinkError: String? = null,
+    val pairDeviceQrBitmap: Bitmap? = null,
+    val showPairDeviceDialog: Boolean = false,
+    val shareSheetAskFolder: Boolean = true,
+    val relayChatId: String? = null
 )
 
 class TeleVaultViewModel(application: Application) : AndroidViewModel(application) {
@@ -106,13 +120,19 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     private val creds = EncryptedCredentialsManager(application)
     private val transferManager = TransferManager.getInstance(application)
     private val vaultSyncManager = VaultSyncManager.getInstance(application)
+    private val relayShareManager = RelayShareManager.getInstance(application)
+
+    val sharedFiles: StateFlow<List<SharedFileEntity>> = relayShareManager.getAllSharesFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _uiState = MutableStateFlow(
         UiState(
             isAuthenticated = creds.hasCredentials(),
             chunkSizeMb = creds.getChunkSizeMb(),
             isWifiOnly = creds.isWifiOnly(),
-            lastSyncedTime = creds.getLastSyncedTime()
+            lastSyncedTime = creds.getLastSyncedTime(),
+            shareSheetAskFolder = creds.isShareSheetAskFolder(),
+            relayChatId = creds.getRelayChatId()
         )
     )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -853,6 +873,142 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
         return Pair(name, size)
+    }
+
+    // Share Sheet Incoming Uri Handling
+    fun handleIncomingSharedUris(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val items = uris.map { uri ->
+            val (name, size) = resolveUriMetadata(uri)
+            SharedFileItem(uri = uri, name = name, size = size)
+        }
+        if (!creds.isShareSheetAskFolder()) {
+            // User chose "Always upload to root"
+            for (item in items) {
+                transferManager.enqueueUpload(item.uri, null)
+            }
+            _uiState.update { it.copy(showTransfersSheet = true) }
+        } else {
+            // Prompt user with folder selection
+            _uiState.update { it.copy(pendingShareSheetUpload = items) }
+        }
+    }
+
+    fun confirmShareSheetUpload(targetFolderId: String?, rememberAlwaysRoot: Boolean) {
+        if (rememberAlwaysRoot) {
+            creds.setShareSheetAskFolder(false)
+            _uiState.update { it.copy(shareSheetAskFolder = false) }
+        }
+        val items = _uiState.value.pendingShareSheetUpload ?: return
+        for (item in items) {
+            transferManager.enqueueUpload(item.uri, targetFolderId)
+        }
+        _uiState.update {
+            it.copy(
+                pendingShareSheetUpload = null,
+                showTransfersSheet = true
+            )
+        }
+    }
+
+    fun dismissShareSheetUpload() {
+        _uiState.update { it.copy(pendingShareSheetUpload = null) }
+    }
+
+    fun setShareSheetAskFolder(ask: Boolean) {
+        creds.setShareSheetAskFolder(ask)
+        _uiState.update { it.copy(shareSheetAskFolder = ask) }
+    }
+
+    // Relay File Sharing (Feature 2)
+    fun openShareFileDialog(file: FileEntity) {
+        viewModelScope.launch {
+            val activeShare = relayShareManager.getActiveShareForFile(file.id)
+            _uiState.update {
+                it.copy(
+                    fileForSharing = file,
+                    activeShareForCurrentFile = activeShare,
+                    isGeneratingShareLink = false,
+                    shareLinkError = null
+                )
+            }
+        }
+    }
+
+    fun dismissShareFileDialog() {
+        _uiState.update {
+            it.copy(
+                fileForSharing = null,
+                activeShareForCurrentFile = null,
+                isGeneratingShareLink = false,
+                shareLinkError = null
+            )
+        }
+    }
+
+    fun createRelayShare(fileId: String, expireHours: Int) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGeneratingShareLink = true, shareLinkError = null) }
+            val result = relayShareManager.createShare(fileId, expireHours)
+            if (result.isSuccess) {
+                val share = result.getOrThrow()
+                _uiState.update {
+                    it.copy(
+                        isGeneratingShareLink = false,
+                        activeShareForCurrentFile = share,
+                        shareLinkError = null
+                    )
+                }
+            } else {
+                val err = result.exceptionOrNull()?.message ?: "Failed to generate share link"
+                _uiState.update {
+                    it.copy(
+                        isGeneratingShareLink = false,
+                        shareLinkError = err
+                    )
+                }
+            }
+        }
+    }
+
+    fun revokeRelayShare(shareId: String) {
+        viewModelScope.launch {
+            val result = relayShareManager.revokeShare(shareId)
+            if (result.isSuccess) {
+                val current = _uiState.value.activeShareForCurrentFile
+                if (current?.id == shareId) {
+                    _uiState.update { it.copy(activeShareForCurrentFile = current.copy(revoked = true)) }
+                }
+            }
+        }
+    }
+
+    fun setRelayChatId(id: String) {
+        creds.setRelayChatId(id)
+        _uiState.update { it.copy(relayChatId = creds.getRelayChatId()) }
+    }
+
+    // Device Pairing (Feature 3)
+    fun openPairDeviceDialog() {
+        val (token, chatId) = getCredentials()
+        if (token.isBlank() || chatId.isBlank()) return
+        val payload = QrCodeUtil.createPairingPayload(token, chatId)
+        val bitmap = QrCodeUtil.generateQrBitmap(payload, size = 512)
+        _uiState.update {
+            it.copy(
+                showPairDeviceDialog = true,
+                pairDeviceQrBitmap = bitmap
+            )
+        }
+    }
+
+    fun dismissPairDeviceDialog() {
+        _uiState.update {
+            it.copy(
+                showPairDeviceDialog = false,
+                pairDeviceQrBitmap = null
+            )
+        }
     }
 
     fun downloadFile(fileId: String) {

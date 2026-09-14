@@ -48,6 +48,9 @@ import com.example.data.transfer.TransferService
 import com.example.data.transfer.TransferWorker
 import com.example.ui.screens.CreateFolderDialog
 import com.example.ui.screens.FileDetailSheet
+import com.example.ui.screens.PairDeviceDialog
+import com.example.ui.screens.ShareFileDialog
+import com.example.ui.screens.ShareSheetFolderDialog
 import com.example.ui.screens.FolderManagementScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LargeFileConfirmationDialog
@@ -135,6 +138,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        handleIntent(intent)
     }
 
     override fun onResume() {
@@ -228,6 +232,42 @@ class MainActivity : ComponentActivity() {
                 intent.getStringExtra(TransferService.EXTRA_NAVIGATE_TO) == TransferService.DESTINATION_TRANSFERS
         if (isTransfersAction) {
             viewModel.navigateToTransfersScreen()
+            return
+        }
+
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                val uri: android.net.Uri? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                } ?: intent.data ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+
+                if (uri != null) {
+                    android.util.Log.i("TeleVaultShare", "Received ACTION_SEND for uri: $uri")
+                    viewModel.handleIncomingSharedUris(listOf(uri))
+                }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val uris: ArrayList<android.net.Uri>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+                }
+                val list = uris ?: mutableListOf<android.net.Uri>().apply {
+                    intent.clipData?.let { clip ->
+                        for (i in 0 until clip.itemCount) {
+                            clip.getItemAt(i)?.uri?.let { add(it) }
+                        }
+                    }
+                }
+                if (list.isNotEmpty()) {
+                    android.util.Log.i("TeleVaultShare", "Received ACTION_SEND_MULTIPLE with ${list.size} files")
+                    viewModel.handleIncomingSharedUris(list)
+                }
+            }
         }
     }
 }
@@ -470,6 +510,9 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     onRename = {
                         viewModel.setFileToRename(currentDetailFile)
                     },
+                    onShareViaRelay = {
+                        viewModel.openShareFileDialog(currentDetailFile)
+                    },
                     onMove = { viewModel.setItemToMove(currentDetailFile) },
                     onDelete = { viewModel.deleteFile(currentDetailFile.id) }
                 )
@@ -486,6 +529,43 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     viewModel = viewModel,
                     isDarkTheme = isDarkTheme,
                     onDismiss = { viewModel.setShowSettingsSheet(false) }
+                )
+            }
+
+            // Share Sheet Inbound Confirmation Dialog
+            if (uiState.pendingShareSheetUpload != null) {
+                ShareSheetFolderDialog(
+                    items = uiState.pendingShareSheetUpload!!,
+                    folders = folders,
+                    onDismiss = { viewModel.dismissShareSheetUpload() },
+                    onConfirmUpload = { targetFolderId, rememberAlwaysRoot ->
+                        viewModel.confirmShareSheetUpload(targetFolderId, rememberAlwaysRoot)
+                    }
+                )
+            }
+
+            // Share File via Relay Dialog
+            if (uiState.fileForSharing != null) {
+                ShareFileDialog(
+                    file = uiState.fileForSharing!!,
+                    activeShare = uiState.activeShareForCurrentFile,
+                    isGenerating = uiState.isGeneratingShareLink,
+                    errorMessage = uiState.shareLinkError,
+                    onDismiss = { viewModel.dismissShareFileDialog() },
+                    onCreateShare = { fileId, expireHours ->
+                        viewModel.createRelayShare(fileId, expireHours)
+                    },
+                    onRevokeShare = { shareId ->
+                        viewModel.revokeRelayShare(shareId)
+                    }
+                )
+            }
+
+            // Pair Device QR Dialog
+            if (uiState.showPairDeviceDialog && uiState.pairDeviceQrBitmap != null) {
+                PairDeviceDialog(
+                    qrBitmap = uiState.pairDeviceQrBitmap!!,
+                    onDismiss = { viewModel.dismissPairDeviceDialog() }
                 )
             }
 
@@ -749,6 +829,7 @@ private fun SettingsScreenContainer(
     val standbyBots by viewModel.standbyBots.collectAsState()
     val verifiedStandbyBotsCount by viewModel.verifiedStandbyBotsCount.collectAsState()
     val recoveryState by viewModel.recoveryState.collectAsState()
+    val sharedFiles by viewModel.sharedFiles.collectAsState()
     val (token, chatId) = viewModel.getCredentials()
     SettingsScreen(
         botTokenMasked = token,
@@ -764,6 +845,13 @@ private fun SettingsScreenContainer(
         standbyBots = standbyBots,
         verifiedStandbyBotsCount = verifiedStandbyBotsCount,
         recoveryState = recoveryState,
+        isShareSheetAskFolder = uiState.shareSheetAskFolder,
+        onShareSheetAskFolderChange = { viewModel.setShareSheetAskFolder(it) },
+        relayChatId = uiState.relayChatId,
+        onRelayChatIdChange = { viewModel.setRelayChatId(it) },
+        sharedFiles = sharedFiles,
+        onRevokeSharedFile = { viewModel.revokeRelayShare(it) },
+        onPairDeviceClick = { viewModel.openPairDeviceDialog() },
         onAddStandbyBot = { tokenInput, labelInput, onResult ->
             viewModel.addStandbyBot(tokenInput, labelInput, onResult)
         },

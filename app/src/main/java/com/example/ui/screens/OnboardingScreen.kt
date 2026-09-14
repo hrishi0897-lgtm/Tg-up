@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -41,6 +42,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -64,6 +66,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.components.QrScannerDialog
 import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.StatusError
 import com.example.ui.theme.StatusSuccess
@@ -80,6 +83,7 @@ fun OnboardingScreen(
     var chatId by remember { mutableStateOf("") }
     var isTokenVisible by remember { mutableStateOf(false) }
     var showGuide by remember { mutableStateOf(false) }
+    var showScanner by remember { mutableStateOf(false) }
 
     val scrollState = rememberScrollState()
 
@@ -343,7 +347,62 @@ fun OnboardingScreen(
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.weight(1f).height(1.dp).background(colors.line))
+                        Text(
+                            text = "OR",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textFaint,
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
+                        Box(modifier = Modifier.weight(1f).height(1.dp).background(colors.line))
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Scan QR to Pair button
+                    OutlinedButton(
+                        onClick = { showScanner = true },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("scan_qr_pair_button"),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.violet.copy(alpha = 0.5f)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.violet)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.QrCodeScanner,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Scan QR to Pair from Another Device",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
+            }
+
+            if (showScanner) {
+                QrScannerDialog(
+                    onDismiss = { showScanner = false },
+                    onScanned = { pairing ->
+                        showScanner = false
+                        botToken = pairing.token
+                        chatId = pairing.chatId
+                        onConnect(pairing.token, pairing.chatId)
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))

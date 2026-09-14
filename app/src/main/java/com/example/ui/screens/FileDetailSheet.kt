@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material.icons.filled.Warning
@@ -83,6 +84,7 @@ fun FileDetailSheet(
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
     onShare: () -> Unit,
+    onShareViaRelay: (() -> Unit)? = null,
     onRename: () -> Unit,
     onMove: () -> Unit,
     onDelete: () -> Unit
@@ -427,6 +429,21 @@ fun FileDetailSheet(
                             onShare()
                         }
                     )
+
+                    if (onShareViaRelay != null) {
+                        HorizontalDivider(color = colors.line, thickness = 0.5.dp)
+
+                        // Action 2b: Share via Relay (Link / QR)
+                        ActionItem(
+                            icon = Icons.Default.QrCode,
+                            label = "Share via Relay (Link / QR)",
+                            iconTint = colors.violet,
+                            labelColor = colors.text,
+                            onClick = {
+                                onShareViaRelay()
+                            }
+                        )
+                    }
 
                     HorizontalDivider(color = colors.line, thickness = 0.5.dp)
 

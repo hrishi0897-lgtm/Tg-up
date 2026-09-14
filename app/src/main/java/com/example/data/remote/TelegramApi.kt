@@ -112,4 +112,23 @@ interface TelegramApi {
         @Field("chat_id") chatId: String,
         @Field("message_id") messageId: Long? = null
     ): Response<TelegramResponse<Boolean>>
+
+    @FormUrlEncoded
+    @POST
+    suspend fun createChatInviteLink(
+        @Url url: String,
+        @Field("chat_id") chatId: String,
+        @Field("name") name: String? = null,
+        @Field("expire_date") expireDate: Long? = null,
+        @Field("member_limit") memberLimit: Int? = null,
+        @Field("creates_join_request") createsJoinRequest: Boolean? = null
+    ): Response<TelegramResponse<TelegramChatInviteLink>>
+
+    @FormUrlEncoded
+    @POST
+    suspend fun revokeChatInviteLink(
+        @Url url: String,
+        @Field("chat_id") chatId: String,
+        @Field("invite_link") inviteLink: String
+    ): Response<TelegramResponse<TelegramChatInviteLink>>
 }
