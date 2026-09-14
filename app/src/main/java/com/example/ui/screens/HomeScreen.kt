@@ -108,9 +108,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -540,8 +542,7 @@ fun HomeScreen(
                 }
             }
 
-            // 2. Hero: Bento-Grid Storage Breakdown & Consolidated Stats (Temporarily disabled for diagnostic isolation)
-            /*
+            // 2. Hero: Bento-Grid Storage Breakdown & Consolidated Stats
             item(key = "hero_bento_grid") {
                 StorageBentoGrid(
                     stats = storageStats,
@@ -554,7 +555,6 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
-            */
 
             // 3. Search & Filter Row: Search Box + 3D Sort Button + 3D View Toggle Button
             item(key = "search_and_filter_row") {
@@ -970,41 +970,10 @@ private fun HomeTopBar(
                     style = WordmarkTextStyle.copy(color = colors.text)
                 )
                 Spacer(modifier = Modifier.height(2.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    val dotColor = when {
-                        isResyncing -> colors.teal
-                        lastSyncedTime > 0 -> colors.mint
-                        else -> colors.textFaint
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(dotColor)
-                    )
-                    val statusText = when {
-                        isResyncing -> "Syncing vault..."
-                        lastSyncedTime > 0 -> {
-                            val diff = System.currentTimeMillis() - lastSyncedTime
-                            when {
-                                diff < 60_000L -> "Synced just now"
-                                diff < 3_600_000L -> "Synced ${diff / 60_000L}m ago"
-                                diff < 86_400_000L -> "Synced ${diff / 3_600_000L}h ago"
-                                else -> "Synced on ${java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date(lastSyncedTime))}"
-                            }
-                        }
-                        else -> "Telegram cloud storage"
-                    }
-                    Text(
-                        text = statusText,
-                        fontSize = 11.sp,
-                        fontFamily = BodySansFont,
-                        color = if (isResyncing) colors.teal else colors.textFaint
-                    )
-                }
+                SyncedStatusText(
+                    isResyncing = isResyncing,
+                    lastSyncedTime = lastSyncedTime
+                )
             }
         }
 
@@ -1013,17 +982,6 @@ private fun HomeTopBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val infiniteTransition = rememberInfiniteTransition(label = "resync_infinite")
-            val spinAngleState = infiniteTransition.animateFloat(
-                initialValue = 0f,
-                targetValue = 360f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(850, easing = LinearEasing),
-                    repeatMode = RepeatMode.Restart
-                ),
-                label = "resync_angle"
-            )
-
             // Theme toggle 3D icon button (sun when dark, moon when light)
             IconButton3D(
                 onClick = onToggleTheme,
@@ -1037,21 +995,11 @@ private fun HomeTopBar(
                 )
             }
 
-            // Resync 3D icon button
-            IconButton3D(
-                onClick = onResync,
-                enabled = !isResyncing,
-                modifier = Modifier.testTag("resync_btn")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = "Sync",
-                    tint = if (isResyncing) colors.violet else colors.textDim,
-                    modifier = Modifier
-                        .size(17.dp)
-                        .graphicsLayer { rotationZ = if (isResyncing) spinAngleState.value else 0f }
-                )
-            }
+            // Resync 3D icon button (animation instantiated strictly while isResyncing == true)
+            ResyncButton(
+                isResyncing = isResyncing,
+                onResync = onResync
+            )
 
             // Settings 3D icon button
             IconButton3D(
@@ -1067,6 +1015,119 @@ private fun HomeTopBar(
             }
         }
     }
+}
+
+/**
+ * Isolated sync status text with 60-second polling cadence to prevent recomposing
+ * sibling header elements (wordmark, canvas, action buttons).
+ */
+@Composable
+private fun SyncedStatusText(
+    isResyncing: Boolean,
+    lastSyncedTime: Long,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTeleVaultColors.current
+
+    // Ticks every 60 seconds to keep relative time text fresh without high-frequency recomposition churn
+    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(lastSyncedTime) {
+        while (true) {
+            delay(60_000L)
+            currentTime = System.currentTimeMillis()
+        }
+    }
+
+    val statusText = remember(isResyncing, lastSyncedTime, currentTime) {
+        when {
+            isResyncing -> "Syncing vault..."
+            lastSyncedTime > 0 -> {
+                val diff = currentTime - lastSyncedTime
+                when {
+                    diff < 60_000L -> "Synced just now"
+                    diff < 3_600_000L -> "Synced ${diff / 60_000L}m ago"
+                    diff < 86_400_000L -> "Synced ${diff / 3_600_000L}h ago"
+                    else -> "Synced on ${java.text.SimpleDateFormat("MMM d", java.util.Locale.getDefault()).format(java.util.Date(lastSyncedTime))}"
+                }
+            }
+            else -> "Telegram cloud storage"
+        }
+    }
+
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        val dotColor = when {
+            isResyncing -> colors.teal
+            lastSyncedTime > 0 -> colors.mint
+            else -> colors.textFaint
+        }
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(dotColor)
+        )
+        Text(
+            text = statusText,
+            fontSize = 11.sp,
+            fontFamily = BodySansFont,
+            color = if (isResyncing) colors.teal else colors.textFaint
+        )
+    }
+}
+
+/**
+ * Isolated resync button. Only enters active animation composition when isResyncing == true,
+ * ensuring zero frame clock scheduling or animation callbacks when idle.
+ */
+@Composable
+private fun ResyncButton(
+    isResyncing: Boolean,
+    onResync: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalTeleVaultColors.current
+    IconButton3D(
+        onClick = onResync,
+        enabled = !isResyncing,
+        modifier = modifier.testTag("resync_btn")
+    ) {
+        if (isResyncing) {
+            ResyncSpinningIcon(tint = colors.violet)
+        } else {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Sync",
+                tint = colors.textDim,
+                modifier = Modifier.size(17.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ResyncSpinningIcon(tint: Color) {
+    val infiniteTransition = rememberInfiniteTransition(label = "resync_infinite")
+    val spinAngleState = infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(850, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "resync_angle"
+    )
+    Icon(
+        imageVector = Icons.Default.Refresh,
+        contentDescription = "Syncing",
+        tint = tint,
+        modifier = Modifier
+            .size(17.dp)
+            .graphicsLayer { rotationZ = spinAngleState.value }
+    )
 }
 
 // ==========================================
