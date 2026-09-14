@@ -736,7 +736,7 @@ fun HomeScreen(
                     }
                 }
 
-                items(folders, key = { it.id }) { folder ->
+                items(folders, key = { it.id }, contentType = { "folder_row" }) { folder ->
                     FolderItemRow(
                         folder = folder,
                         onClick = { onFolderClick(folder) },
@@ -851,7 +851,7 @@ fun HomeScreen(
                     }
                 }
             } else if (isGridView) {
-                items(filePairs, key = { pair -> "grid_pair_${pair.first().id}" }) { pair ->
+                items(filePairs, key = { pair -> "grid_pair_${pair.first().id}" }, contentType = { "grid_pair" }) { pair ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -870,7 +870,7 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(10.dp))
                 }
             } else {
-                items(displayedFiles, key = { it.id }) { file ->
+                items(displayedFiles, key = { it.id }, contentType = { "file_item" }) { file ->
                     FileListItem(file = file, onClick = { onFileClick(file) })
                     Spacer(modifier = Modifier.height(8.dp))
                 }

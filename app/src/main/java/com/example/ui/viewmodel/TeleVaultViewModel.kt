@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -450,22 +451,23 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(transferNotificationMessage = null) }
     }
 
-    // Storage summary reactive stats
+    // Storage summary reactive stats: computed on Dispatchers.Default using lightweight completed files projection
     val storageStats: StateFlow<StorageStats> = combine(
-        db.fileDao().observeAll(),
+        db.fileDao().observeCompletedFilesCategoryData(),
         db.folderDao().observeFolderCount()
-    ) { allFiles, folderCount ->
-        val completedFiles = allFiles.filter { it.status == FileStatus.COMPLETED }
-        val totalBytes = completedFiles.sumOf { it.size }
+    ) { completedFiles, folderCount ->
+        var totalBytes = 0L
         var docBytes = 0L
         var mediaBytes = 0L
         var otherBytes = 0L
 
         for (file in completedFiles) {
+            val size = file.size
+            totalBytes += size
             when (classifyFileCategory(file.mimeType, file.name)) {
-                StorageCategory.DOCUMENTS -> docBytes += file.size
-                StorageCategory.MEDIA -> mediaBytes += file.size
-                StorageCategory.OTHER -> otherBytes += file.size
+                StorageCategory.DOCUMENTS -> docBytes += size
+                StorageCategory.MEDIA -> mediaBytes += size
+                StorageCategory.OTHER -> otherBytes += size
             }
         }
 
@@ -479,7 +481,8 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 otherBytes = otherBytes
             )
         )
-    }.distinctUntilChanged()
+    }.flowOn(Dispatchers.Default)
+    .distinctUntilChanged()
     .stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),

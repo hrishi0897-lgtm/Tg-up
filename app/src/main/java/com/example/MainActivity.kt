@@ -276,11 +276,6 @@ class MainActivity : ComponentActivity() {
 fun TeleVaultApp(viewModel: TeleVaultViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     val isDarkTheme by viewModel.isDarkTheme.collectAsState()
-    val storageStats by viewModel.storageStats.collectAsState()
-    val folders by viewModel.currentFolders.collectAsState()
-    val files by viewModel.currentFiles.collectAsState()
-    val activeTransfersCount by viewModel.activeTransfersCount.collectAsState()
-    val standbyBots by viewModel.standbyBots.collectAsState()
     val recoveryState by viewModel.recoveryState.collectAsState()
 
     // File upload picker
@@ -292,24 +287,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         }
     }
 
-    // Memoized callbacks for HomeScreen to avoid unnecessary recompositions
-    val onToggleTheme = remember(viewModel) { { viewModel.toggleTheme() } }
-    val onSearchChange = remember(viewModel) { { query: String -> viewModel.setSearchQuery(query) } }
-    val onSortChange = remember(viewModel) { { sort: SortBy -> viewModel.setSortBy(sort) } }
-    val onToggleViewMode = remember(viewModel) { { viewModel.toggleViewMode() } }
-    val onFolderClick = remember(viewModel) { { folder: FolderEntity -> viewModel.openFolder(folder) } }
-    val onBreadcrumbClick = remember(viewModel) { { index: Int -> viewModel.navigateToBreadcrumb(index) } }
-    val onFileClick = remember(viewModel) { { file: FileEntity -> viewModel.inspectFile(file) } }
-    val onRenameFolder = remember(viewModel) { { folder: FolderEntity -> viewModel.setFolderToRename(folder) } }
-    val onDeleteFolder = remember(viewModel) { { folder: FolderEntity -> viewModel.deleteFolder(folder) } }
-    val onCreateFolderClick = remember(viewModel) { { viewModel.setShowCreateFolderDialog(true) } }
     val onUploadFileClick = remember(filePickerLauncher) { { filePickerLauncher.launch("*/*") } }
-    val onOpenTransfers = remember(viewModel) { { viewModel.navigateToTransfersScreen() } }
-    val onOpenSettings = remember(viewModel) { { viewModel.navigateToSettingsScreen() } }
-    val onOpenFolderManagement = remember(viewModel) { { viewModel.navigateToFolderManagementScreen() } }
-    val onResync = remember(viewModel) { { viewModel.manualSyncFromHeader() } }
-    val onDismissResyncMsg = remember(viewModel) { { viewModel.clearResyncMessage() } }
-    val onDismissTransferError = remember(viewModel) { { viewModel.dismissTransferError() } }
 
     val context = LocalContext.current
     LaunchedEffect(uiState.transferErrorMessage) {
@@ -434,42 +412,10 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         onBack = { viewModel.navigateToVaultScreen() }
                     )
                 } else {
-                    HomeScreen(
-                        storageStats = storageStats,
-                        folders = folders,
-                        files = files,
-                        breadcrumbs = uiState.breadcrumbs,
-                        searchQuery = uiState.searchQuery,
-                        sortBy = uiState.sortBy,
-                        sortAscending = uiState.sortAscending,
-                        isGridView = uiState.isGridView,
-                        activeTransfersCount = activeTransfersCount,
-                        isResyncing = uiState.isResyncing,
-                        resyncMessage = uiState.resyncMessage,
-                        lastSyncedTime = uiState.lastSyncedTime,
+                    HomeScreenContainer(
+                        viewModel = viewModel,
                         isDarkTheme = isDarkTheme,
-                        onToggleTheme = onToggleTheme,
-                        onSearchChange = onSearchChange,
-                        onSortChange = onSortChange,
-                        onToggleViewMode = onToggleViewMode,
-                        onFolderClick = onFolderClick,
-                        onBreadcrumbClick = onBreadcrumbClick,
-                        onFileClick = onFileClick,
-                        onRenameFolder = onRenameFolder,
-                        onDeleteFolder = onDeleteFolder,
-                        onCreateFolderClick = onCreateFolderClick,
-                        onUploadFileClick = onUploadFileClick,
-                        onOpenTransfers = onOpenTransfers,
-                        onOpenSettings = onOpenSettings,
-                        onOpenFolderManagement = onOpenFolderManagement,
-                        onResync = onResync,
-                        onDismissResyncMsg = onDismissResyncMsg,
-                        transferErrorMessage = uiState.transferErrorMessage,
-                        onDismissTransferError = onDismissTransferError,
-                        botRevocationAlert = uiState.primaryBotAlert,
-                        onDismissBotRevocationAlert = { viewModel.dismissBotRevocationAlert() },
-                        onTriggerRecoveryFromAlert = { viewModel.triggerRecoveryFromAlert() },
-                        hasStandbyBots = standbyBots.isNotEmpty()
+                        onUploadFileClick = onUploadFileClick
                     )
                 }
             }
@@ -534,13 +480,9 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
 
             // Share Sheet Inbound Confirmation Dialog
             if (uiState.pendingShareSheetUpload != null) {
-                ShareSheetFolderDialog(
-                    items = uiState.pendingShareSheetUpload!!,
-                    folders = folders,
-                    onDismiss = { viewModel.dismissShareSheetUpload() },
-                    onConfirmUpload = { targetFolderId, rememberAlwaysRoot ->
-                        viewModel.confirmShareSheetUpload(targetFolderId, rememberAlwaysRoot)
-                    }
+                ShareSheetFolderDialogContainer(
+                    viewModel = viewModel,
+                    items = uiState.pendingShareSheetUpload!!
                 )
             }
 
@@ -786,6 +728,58 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
 }
 
 @Composable
+private fun HomeScreenContainer(
+    viewModel: TeleVaultViewModel,
+    isDarkTheme: Boolean,
+    onUploadFileClick: () -> Unit
+) {
+    val storageStats by viewModel.storageStats.collectAsState()
+    val folders by viewModel.currentFolders.collectAsState()
+    val files by viewModel.currentFiles.collectAsState()
+    val activeTransfersCount by viewModel.activeTransfersCount.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+    val standbyBots by viewModel.standbyBots.collectAsState()
+
+    HomeScreen(
+        storageStats = storageStats,
+        folders = folders,
+        files = files,
+        breadcrumbs = uiState.breadcrumbs,
+        searchQuery = uiState.searchQuery,
+        sortBy = uiState.sortBy,
+        sortAscending = uiState.sortAscending,
+        isGridView = uiState.isGridView,
+        activeTransfersCount = activeTransfersCount,
+        isResyncing = uiState.isResyncing,
+        resyncMessage = uiState.resyncMessage,
+        lastSyncedTime = uiState.lastSyncedTime,
+        isDarkTheme = isDarkTheme,
+        onToggleTheme = { viewModel.toggleTheme() },
+        onSearchChange = { query -> viewModel.setSearchQuery(query) },
+        onSortChange = { sort -> viewModel.setSortBy(sort) },
+        onToggleViewMode = { viewModel.toggleViewMode() },
+        onFolderClick = { folder -> viewModel.openFolder(folder) },
+        onBreadcrumbClick = { index -> viewModel.navigateToBreadcrumb(index) },
+        onFileClick = { file -> viewModel.inspectFile(file) },
+        onRenameFolder = { folder -> viewModel.setFolderToRename(folder) },
+        onDeleteFolder = { folder -> viewModel.deleteFolder(folder) },
+        onCreateFolderClick = { viewModel.setShowCreateFolderDialog(true) },
+        onUploadFileClick = onUploadFileClick,
+        onOpenTransfers = { viewModel.navigateToTransfersScreen() },
+        onOpenSettings = { viewModel.navigateToSettingsScreen() },
+        onOpenFolderManagement = { viewModel.navigateToFolderManagementScreen() },
+        onResync = { viewModel.manualSyncFromHeader() },
+        onDismissResyncMsg = { viewModel.clearResyncMessage() },
+        transferErrorMessage = uiState.transferErrorMessage,
+        onDismissTransferError = { viewModel.dismissTransferError() },
+        botRevocationAlert = uiState.primaryBotAlert,
+        onDismissBotRevocationAlert = { viewModel.dismissBotRevocationAlert() },
+        onTriggerRecoveryFromAlert = { viewModel.triggerRecoveryFromAlert() },
+        hasStandbyBots = standbyBots.isNotEmpty()
+    )
+}
+
+@Composable
 private fun TransfersScreenContainer(viewModel: TeleVaultViewModel) {
     val activeTransfers by viewModel.activeTransfers.collectAsState()
     val recentlyCompleted by viewModel.recentlyCompleted.collectAsState()
@@ -895,5 +889,21 @@ private fun MoveFileDialogContainer(
         currentFolderId = file.folderId,
         onDismiss = { viewModel.setItemToMove(null) },
         onSelectDestination = { targetFolderId -> viewModel.moveFile(file.id, targetFolderId) }
+    )
+}
+
+@Composable
+private fun ShareSheetFolderDialogContainer(
+    viewModel: TeleVaultViewModel,
+    items: List<com.example.ui.screens.SharedFileItem>
+) {
+    val allFolders by viewModel.allFolders.collectAsState()
+    ShareSheetFolderDialog(
+        items = items,
+        folders = allFolders,
+        onDismiss = { viewModel.dismissShareSheetUpload() },
+        onConfirmUpload = { targetFolderId, rememberAlwaysRoot ->
+            viewModel.confirmShareSheetUpload(targetFolderId, rememberAlwaysRoot)
+        }
     )
 }

@@ -40,6 +40,9 @@ interface FileDao {
     @Query("SELECT * FROM files ORDER BY uploadDate DESC")
     fun observeAll(): Flow<List<FileEntity>>
 
+    @Query("SELECT name, mimeType, size FROM files WHERE status = 'COMPLETED'")
+    fun observeCompletedFilesCategoryData(): Flow<List<FileCategoryProjection>>
+
     @Query("SELECT * FROM files ORDER BY uploadDate DESC")
     suspend fun getAll(): List<FileEntity>
 
@@ -88,3 +91,9 @@ interface FileDao {
     @Query("DELETE FROM files")
     suspend fun clearAll()
 }
+
+data class FileCategoryProjection(
+    val name: String,
+    val mimeType: String,
+    val size: Long
+)
