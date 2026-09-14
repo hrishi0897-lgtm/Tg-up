@@ -367,20 +367,8 @@ fun HomeScreen(
                 }
             }
 
-            // 1. Status Badge: "Backend connected" or "Bot token revoked"
+            // 1. Status Badge: "Backend connected" or "Bot token revoked" (Static indicator, zero animation idle overhead)
             item(key = "status_badge") {
-                val reduceMotion = LocalReduceMotion.current
-                val infinitePulse = rememberInfiniteTransition(label = "badge_pulse")
-                val pulseAlphaState = infinitePulse.animateFloat(
-                    initialValue = 0.35f,
-                    targetValue = 1f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(900, easing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "pulse_dot_alpha"
-                )
-
                 if (botRevocationAlert != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -395,7 +383,6 @@ fun HomeScreen(
                             modifier = Modifier
                                 .size(7.dp)
                                 .clip(CircleShape)
-                                .graphicsLayer { this.alpha = if (reduceMotion) 1f else pulseAlphaState.value }
                                 .background(colors.danger)
                         )
                         Text(
@@ -420,7 +407,6 @@ fun HomeScreen(
                             modifier = Modifier
                                 .size(7.dp)
                                 .clip(CircleShape)
-                                .graphicsLayer { this.alpha = if (reduceMotion) 1f else pulseAlphaState.value }
                                 .background(colors.mint)
                         )
                         Text(

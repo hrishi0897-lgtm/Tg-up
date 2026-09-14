@@ -43,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -526,8 +527,8 @@ private fun CategoryBentoTile(
 
 /**
  * Lightweight mini-bar:
- * Uses animateFloatAsState driving Modifier.fillMaxWidth(fraction) on a simple colored Box.
- * Isolated from parent tiles so that fill animations do not trigger parent recompositions.
+ * Uses animateFloatAsState driving scaleX on a graphicsLayer anchored at (0f, 0f).
+ * Eliminates layout and measurement re-passes on every animation frame.
  */
 @Composable
 private fun CategoryMiniBar(
@@ -537,10 +538,10 @@ private fun CategoryMiniBar(
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTeleVaultColors.current
-    val targetFraction = fraction.coerceIn(0f, 1f)
+    val targetScale = if (fraction > 0f) fraction.coerceIn(0f, 1f).coerceAtLeast(0.04f) else 0f
 
     val animatedProgress by animateFloatAsState(
-        targetValue = targetFraction,
+        targetValue = targetScale,
         animationSpec = if (reduceMotion) snap() else tween(durationMillis = 240, easing = FastOutSlowInEasing),
         label = "bento_minibar"
     )
@@ -555,7 +556,11 @@ private fun CategoryMiniBar(
         Box(
             modifier = Modifier
                 .fillMaxHeight()
-                .fillMaxWidth(fraction = animatedProgress.coerceAtLeast(if (fraction > 0f) 0.04f else 0f))
+                .fillMaxWidth()
+                .graphicsLayer {
+                    scaleX = animatedProgress
+                    transformOrigin = TransformOrigin(0f, 0f)
+                }
                 .clip(RoundedCornerShape(100.dp))
                 .background(color)
         )
