@@ -351,7 +351,8 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 6.dp, bottom = 96.dp)
+            contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 6.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // 0. Bot Revocation Alert Banner (High priority, hard-to-miss alert)
             if (botRevocationAlert != null) {
@@ -362,7 +363,7 @@ fun HomeScreen(
                         onTriggerRecovery = onTriggerRecoveryFromAlert,
                         onOpenSettings = onOpenSettings,
                         onDismiss = onDismissBotRevocationAlert,
-                        modifier = Modifier.padding(bottom = 14.dp)
+                        modifier = Modifier.padding(bottom = 6.dp)
                     )
                 }
             }
@@ -374,16 +375,14 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(7.dp),
                         modifier = Modifier
-                            .clip(RoundedCornerShape(100.dp))
-                            .background(colors.danger.copy(alpha = 0.15f))
+                            .background(colors.danger.copy(alpha = 0.15f), RoundedCornerShape(100.dp))
                             .border(1.dp, colors.danger.copy(alpha = 0.45f), RoundedCornerShape(100.dp))
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(7.dp)
-                                .clip(CircleShape)
-                                .background(colors.danger)
+                                .background(colors.danger, CircleShape)
                         )
                         Text(
                             text = "Bot token revoked / invalid",
@@ -398,16 +397,14 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(7.dp),
                         modifier = Modifier
-                            .clip(RoundedCornerShape(100.dp))
-                            .background(colors.mint.copy(alpha = 0.12f))
+                            .background(colors.mint.copy(alpha = 0.12f), RoundedCornerShape(100.dp))
                             .border(1.dp, colors.mint.copy(alpha = 0.35f), RoundedCornerShape(100.dp))
                             .padding(horizontal = 12.dp, vertical = 6.dp)
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(7.dp)
-                                .clip(CircleShape)
-                                .background(colors.mint)
+                                .background(colors.mint, CircleShape)
                         )
                         Text(
                             text = "Backend connected",
@@ -418,7 +415,7 @@ fun HomeScreen(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
             // Transfer error banner if present
@@ -427,8 +424,7 @@ fun HomeScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(colors.danger.copy(alpha = 0.15f))
+                            .background(colors.danger.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
                             .border(1.dp, colors.danger.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
                             .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -475,7 +471,7 @@ fun HomeScreen(
                             Text("✕", color = colors.textDim, fontSize = 12.sp)
                         }
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
             }
 
@@ -494,8 +490,7 @@ fun HomeScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(bannerBg)
+                            .background(bannerBg, RoundedCornerShape(12.dp))
                             .border(1.dp, bannerBorder, RoundedCornerShape(12.dp))
                             .padding(12.dp)
                             .testTag("sync_banner"),
@@ -524,7 +519,7 @@ fun HomeScreen(
                             Text("✕", color = colors.textDim, fontSize = 12.sp)
                         }
                     }
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
                 }
             }
 
@@ -539,7 +534,7 @@ fun HomeScreen(
                     activeTransfersCount = activeCount,
                     onTransfersClick = onOpenTransfers
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             // 3. Search & Filter Row: Search Box + 3D Sort Button + 3D View Toggle Button
@@ -731,11 +726,10 @@ fun HomeScreen(
                         onRename = { onRenameFolder(folder) },
                         onDelete = { onDeleteFolder(folder) }
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
                 item(key = "folders_spacer") {
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(2.dp))
                 }
             }
 
@@ -744,7 +738,7 @@ fun HomeScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 10.dp, bottom = 4.dp),
+                        .padding(top = 6.dp, bottom = 2.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -770,8 +764,7 @@ fun HomeScreen(
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(100.dp))
-                                    .background(colors.surfaceHi)
+                                    .background(colors.surfaceHi, RoundedCornerShape(100.dp))
                                     .clickable { selectedCategory = null }
                                     .padding(horizontal = 8.dp, vertical = 3.dp)
                             ) {
@@ -793,7 +786,6 @@ fun HomeScreen(
                         color = colors.textFaint
                     )
                 }
-                Spacer(modifier = Modifier.height(10.dp))
             }
 
             // 7. Content: Empty State or File List/Grid
@@ -816,8 +808,7 @@ fun HomeScreen(
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(colors.surface)
+                                    .background(colors.surface, RoundedCornerShape(10.dp))
                                     .border(1.dp, colors.line, RoundedCornerShape(10.dp))
                                     .clickable { selectedCategory = null }
                                     .padding(horizontal = 14.dp, vertical = 8.dp)
@@ -855,12 +846,10 @@ fun HomeScreen(
                             Spacer(modifier = Modifier.weight(1f))
                         }
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
                 }
             } else {
                 items(displayedFiles, key = { it.id }, contentType = { "file_item" }) { file ->
                     FileListItem(file = file, onClick = { onFileClick(file) })
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         }
@@ -1447,8 +1436,7 @@ private fun FolderItemRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(StaticItemCornerShape)
-            .background(colors.surface)
+            .background(colors.surface, StaticItemCornerShape)
             .border(1.dp, colors.line, StaticItemCornerShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -1457,8 +1445,7 @@ private fun FolderItemRow(
         Box(
             modifier = Modifier
                 .size(42.dp)
-                .clip(StaticIconCornerShape)
-                .background(colors.surfaceHi)
+                .background(colors.surfaceHi, StaticIconCornerShape)
                 .border(1.dp, colors.line, StaticIconCornerShape),
             contentAlignment = Alignment.Center
         ) {
@@ -1492,9 +1479,7 @@ private fun FolderItemRow(
         Box {
             IconButton(
                 onClick = { showMenu = true },
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
+                modifier = Modifier.size(32.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
@@ -1508,7 +1493,7 @@ private fun FolderItemRow(
                 expanded = showMenu,
                 onDismissRequest = { showMenu = false },
                 modifier = Modifier
-                    .background(colors.surfaceHi)
+                    .background(colors.surfaceHi, RoundedCornerShape(12.dp))
                     .border(1.dp, colors.line, RoundedCornerShape(12.dp))
             ) {
                 DropdownMenuItem(
@@ -1542,8 +1527,7 @@ private fun FileListItem(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(StaticItemCornerShape)
-            .background(colors.surface)
+            .background(colors.surface, StaticItemCornerShape)
             .border(1.dp, colors.line, StaticItemCornerShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -1600,8 +1584,7 @@ private fun FileGridCard(
         modifier = Modifier
             .fillMaxWidth()
             .height(140.dp)
-            .clip(StaticItemCornerShape)
-            .background(colors.surface)
+            .background(colors.surface, StaticItemCornerShape)
             .border(1.dp, colors.line, StaticItemCornerShape)
             .clickable(onClick = onClick)
             .padding(14.dp)
@@ -1648,8 +1631,7 @@ fun FileIcon(mimeType: String, size: androidx.compose.ui.unit.Dp) {
     Box(
         modifier = Modifier
             .size(size + 14.dp)
-            .clip(StaticIconCornerShape)
-            .background(theme.bg)
+            .background(theme.bg, StaticIconCornerShape)
             .border(1.dp, theme.border, StaticIconCornerShape),
         contentAlignment = Alignment.Center
     ) {
