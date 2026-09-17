@@ -107,6 +107,7 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -888,7 +889,9 @@ fun HomeScreen(
                     } else {
                         EmptyFolderState(
                             isSearch = searchQuery.isNotBlank(),
-                            onUploadClick = onUploadFileClick
+                            isResyncing = isResyncing,
+                            onUploadClick = onUploadFileClick,
+                            onResyncClick = onResync
                         )
                     }
                 }
@@ -1226,7 +1229,9 @@ private fun ResyncSpinningIcon(tint: Color) {
 @Composable
 private fun EmptyFolderState(
     isSearch: Boolean,
-    onUploadClick: () -> Unit
+    isResyncing: Boolean = false,
+    onUploadClick: () -> Unit,
+    onResyncClick: () -> Unit = {}
 ) {
     val colors = LocalTeleVaultColors.current
 
@@ -1313,28 +1318,74 @@ private fun EmptyFolderState(
         if (!isSearch) {
             Spacer(modifier = Modifier.height(22.dp))
 
-            // 3D Violet Upload Button
-            UploadButton3D(
-                onClick = onUploadClick,
-                modifier = Modifier.testTag("empty_upload_button")
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(9.dp)
+                // 3D Violet Upload Button
+                UploadButton3D(
+                    onClick = onUploadClick,
+                    modifier = Modifier.testTag("empty_upload_button")
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.UploadFile,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = "Upload a file",
-                        fontSize = 14.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        fontFamily = BodySansFont,
-                        color = Color.White
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.UploadFile,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Upload a file",
+                            fontSize = 14.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = BodySansFont,
+                            color = Color.White
+                        )
+                    }
+                }
+
+                // Sync from Telegram Button
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(colors.surface)
+                        .border(1.dp, colors.line, RoundedCornerShape(12.dp))
+                        .clickable(enabled = !isResyncing, onClick = onResyncClick)
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                        .testTag("empty_sync_button"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (isResyncing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            color = colors.violet,
+                            strokeWidth = 2.dp
+                        )
+                        Text(
+                            text = "Syncing from Telegram...",
+                            fontSize = 13.sp,
+                            fontFamily = BodySansFont,
+                            color = colors.textDim
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = null,
+                            tint = colors.textDim,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = "Sync from Telegram",
+                            fontSize = 13.sp,
+                            fontFamily = BodySansFont,
+                            fontWeight = FontWeight.Medium,
+                            color = colors.text
+                        )
+                    }
                 }
             }
         }

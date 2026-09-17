@@ -442,12 +442,19 @@ class VaultSyncManager private constructor(private val context: Context) {
                 }
 
                 // 3. Remove local references to files deleted on another device (never delete remote Telegram chunks!)
+                // Safety guard: If remote index has 0 files but local vault has existing completed files,
+                // do not mass-delete local files (this prevents wiping local files if an empty index was posted or read)
                 val allLocalFiles = database.fileDao().getAll()
-                for (localFile in allLocalFiles) {
-                    if (localFile.status == FileStatus.COMPLETED && !remoteFileIds.contains(localFile.id)) {
-                        Log.i(TAG, "Rebuilding local database: Removing local reference for remotely deleted file: ${localFile.name} (${localFile.id})")
-                        database.fileDao().deleteById(localFile.id)
+                if (remoteFileIds.isNotEmpty()) {
+                    for (localFile in allLocalFiles) {
+                        if (localFile.status == FileStatus.COMPLETED && !remoteFileIds.contains(localFile.id)) {
+                            Log.i(TAG, "Rebuilding local database: Removing local reference for remotely deleted file: ${localFile.name} (${localFile.id})")
+                            database.fileDao().deleteById(localFile.id)
+                        }
                     }
+                } else if (allLocalFiles.any { it.status == FileStatus.COMPLETED }) {
+                    Log.w(TAG, "Remote index has 0 files but local DB has completed files. Preserving local files and auto-publishing updated index.")
+                    scheduleAutoPublish(debounceDelayMs = 1000L)
                 }
 
                 val now = System.currentTimeMillis()
