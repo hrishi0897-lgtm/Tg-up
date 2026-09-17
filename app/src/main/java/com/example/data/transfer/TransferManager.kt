@@ -23,6 +23,7 @@ import com.example.domain.ChecksumUtil
 import com.example.domain.DownloadStorageManager
 import com.example.domain.RollingSpeedEstimator
 import com.example.domain.StorageUtil
+import com.example.domain.ThumbnailUtil
 import com.example.domain.model.TransferProgress
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -264,6 +265,16 @@ class TransferManager private constructor(
                     "totalChunks=$totalChunks, targetChunkSize=$targetChunkSize bytes (${ChecksumUtil.formatBytes(targetChunkSize)})"
                 )
 
+                // Generate downscaled thumbnail locally before upload if file is media (image or video)
+                val thumbFile = if (ThumbnailUtil.isMedia(mimeType)) {
+                    try {
+                        ThumbnailUtil.generateThumbnail(context, stagingFile, mimeType, fileId)
+                    } catch (e: Exception) {
+                        Log.w("TransferManager", "Thumbnail generation failed for $fileName", e)
+                        null
+                    }
+                } else null
+
                 // 4. Register file in Room database
                 val fileEntity = FileEntity(
                     id = fileId,
@@ -275,7 +286,8 @@ class TransferManager private constructor(
                     checksum = overallChecksum,
                     totalChunks = totalChunks,
                     completedChunks = 0,
-                    localPath = stagingFile.absolutePath
+                    localPath = stagingFile.absolutePath,
+                    thumbnailLocalPath = thumbFile?.absolutePath
                 )
                 database.fileDao().insert(fileEntity)
 
@@ -733,6 +745,40 @@ class TransferManager private constructor(
                     )
                 }
 
+                // Check for thumbnail to upload alongside chunks
+                var thumbnailMessageId: Long? = fileEntity.thumbnailMessageId
+                var thumbnailFileId: String? = fileEntity.thumbnailFileId
+
+                val localThumb = fileEntity.thumbnailLocalPath?.let { File(it) }
+                    ?: ThumbnailUtil.getThumbnailFile(context, fileId)
+
+                if (thumbnailFileId == null && localThumb.exists() && localThumb.length() > 0L) {
+                    try {
+                        Log.i(
+                            "TransferManager",
+                            "Uploading thumbnail document for $fileId (${fileEntity.name}): " +
+                            "size=${localThumb.length()} bytes, caption=THUMBNAIL|$fileId"
+                        )
+                        val thumbResult = repository.uploadThumbnail(token, chatId, fileId, localThumb)
+                        if (thumbResult.isSuccess) {
+                            val thumbMsg = thumbResult.getOrThrow()
+                            thumbnailMessageId = thumbMsg.messageId
+                            thumbnailFileId = thumbMsg.document?.fileId
+                            database.fileDao().updateThumbnailInfo(
+                                fileId = fileId,
+                                fileIdRemote = thumbnailFileId,
+                                messageId = thumbnailMessageId,
+                                localPath = localThumb.absolutePath
+                            )
+                            Log.i("TransferManager", "Thumbnail successfully uploaded: msgId=$thumbnailMessageId, fileId=$thumbnailFileId")
+                        } else {
+                            Log.w("TransferManager", "Thumbnail upload failed: ${thumbResult.exceptionOrNull()?.message}")
+                        }
+                    } catch (e: Exception) {
+                        Log.w("TransferManager", "Exception uploading thumbnail for $fileId", e)
+                    }
+                }
+
                 val manifest = FileManifest(
                     fileId = fileId,
                     name = fileEntity.name,
@@ -742,7 +788,9 @@ class TransferManager private constructor(
                     folderId = fileEntity.folderId,
                     channelId = chatId,
                     uploadDate = System.currentTimeMillis(),
-                    chunks = manifestChunks
+                    chunks = manifestChunks,
+                    thumbnailMessageId = thumbnailMessageId,
+                    thumbnailFileId = thumbnailFileId
                 )
 
                 // Write manifest JSON to a small local file for upload via sendDocument

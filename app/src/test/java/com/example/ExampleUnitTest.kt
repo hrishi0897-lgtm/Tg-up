@@ -236,4 +236,28 @@ class ExampleUnitTest {
     assertEquals(3, filterFolders(folders, "   ").size)
     assertEquals(3, filterFiles(files, "").size)
   }
+
+  @Test
+  fun thumbnailUtil_identifiesMediaMimeTypesCorrectly() {
+    assertTrue(com.example.domain.ThumbnailUtil.isMedia("image/jpeg"))
+    assertTrue(com.example.domain.ThumbnailUtil.isMedia("image/png"))
+    assertTrue(com.example.domain.ThumbnailUtil.isMedia("image/webp"))
+    assertTrue(com.example.domain.ThumbnailUtil.isMedia("video/mp4"))
+    assertTrue(com.example.domain.ThumbnailUtil.isMedia("video/quicktime"))
+
+    assertFalse(com.example.domain.ThumbnailUtil.isMedia("application/pdf"))
+    assertFalse(com.example.domain.ThumbnailUtil.isMedia("text/plain"))
+    assertFalse(com.example.domain.ThumbnailUtil.isMedia("application/zip"))
+
+    assertTrue(com.example.domain.ThumbnailUtil.isVideo("video/mp4"))
+    assertFalse(com.example.domain.ThumbnailUtil.isVideo("image/jpeg"))
+  }
+
+  @Test
+  fun thumbnailTag_formatsCorrectly() {
+    val fileId = "test-file-1234"
+    val caption = "THUMBNAIL|$fileId"
+    assertTrue(caption.startsWith("THUMBNAIL|"))
+    assertEquals(fileId, caption.removePrefix("THUMBNAIL|"))
+  }
 }

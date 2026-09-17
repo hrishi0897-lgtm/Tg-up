@@ -31,7 +31,9 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -71,7 +73,9 @@ import coil.request.ImageRequest
 import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
+import com.example.data.transfer.ThumbnailManager
 import com.example.domain.ChecksumUtil
+import com.example.domain.ThumbnailUtil
 import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.StatusError
 import com.example.ui.theme.StatusSuccess
@@ -88,7 +92,10 @@ fun FileDetailSheet(
     onShareViaRelay: (() -> Unit)? = null,
     onRename: () -> Unit,
     onMove: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onOpenPreview: (() -> Unit)? = null,
+    onGeneratePreview: (() -> Unit)? = null,
+    isGeneratingPreview: Boolean = false
 ) {
     val colors = LocalTeleVaultColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -130,7 +137,15 @@ fun FileDetailSheet(
     }
 
     val isMedia = remember(file.mimeType) {
-        file.mimeType.startsWith("image/") || file.mimeType.startsWith("video/")
+        ThumbnailUtil.isMedia(file.mimeType)
+    }
+    val isVideo = remember(file.mimeType) {
+        ThumbnailUtil.isVideo(file.mimeType)
+    }
+
+    val thumbnailManager = remember { ThumbnailManager.getInstance(context) }
+    val thumbFile = remember(file.thumbnailLocalPath, file.thumbnailFileId, file.id) {
+        if (isMedia) thumbnailManager.getOrFetchThumbnail(file) else null
     }
 
     ModalBottomSheet(
@@ -168,26 +183,71 @@ fun FileDetailSheet(
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Preview or Icon: If it's an image/video with local content, render real thumbnail
-                    if (isMedia && localTarget != null) {
+                    // Preview or Icon: If it's an image/video with thumbnail or local content, render real thumbnail
+                    val canPreviewMedia = isMedia && (thumbFile != null || (localTarget != null && isDownloadedLocally))
+                    if (canPreviewMedia) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(160.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(colors.surfaceHi)
-                                .border(1.dp, colors.line, RoundedCornerShape(12.dp)),
+                                .border(1.dp, colors.line, RoundedCornerShape(12.dp))
+                                .clickable { onOpenPreview?.invoke() },
                             contentAlignment = Alignment.Center
                         ) {
+                            val previewSource = if (isDownloadedLocally && localTarget != null) (shareableUri ?: localTarget) else thumbFile
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data(shareableUri ?: localTarget)
+                                    .data(previewSource)
                                     .crossfade(true)
                                     .build(),
                                 contentDescription = file.name,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.matchParentSize()
                             )
+                            if (isVideo) {
+                                Box(
+                                    modifier = Modifier
+                                        .matchParentSize()
+                                        .background(Color(0x33000000)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Video",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                }
+                            }
+                            // Subtle preview chip
+                            androidx.compose.material3.Surface(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(8.dp),
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color.Black.copy(alpha = 0.65f)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.OpenInNew,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Open Preview",
+                                        fontSize = 11.sp,
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
                         }
                         Spacer(modifier = Modifier.height(14.dp))
                     } else {
@@ -206,6 +266,35 @@ fun FileDetailSheet(
                             FileIcon(mimeType = file.mimeType, size = 48.dp)
                         }
                         Spacer(modifier = Modifier.height(14.dp))
+
+                        // If it is media, downloaded locally, but lacks thumbnail (e.g. uploaded before this feature)
+                        if (isMedia && isDownloadedLocally && file.thumbnailFileId == null && onGeneratePreview != null) {
+                            androidx.compose.material3.OutlinedButton(
+                                onClick = onGeneratePreview,
+                                enabled = !isGeneratingPreview,
+                                modifier = Modifier
+                                    .padding(bottom = 12.dp)
+                                    .testTag("generate_thumbnail_button")
+                            ) {
+                                if (isGeneratingPreview) {
+                                    androidx.compose.material3.CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        strokeWidth = 2.dp,
+                                        color = colors.teal
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Generating preview...", fontSize = 12.sp)
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Image,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Generate Fast Thumbnail", fontSize = 12.sp)
+                                }
+                            }
+                        }
                     }
 
                     // File Name

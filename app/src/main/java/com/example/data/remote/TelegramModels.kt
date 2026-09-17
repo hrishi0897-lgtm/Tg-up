@@ -127,7 +127,9 @@ data class FileManifest(
     @Json(name = "folderId") val folderId: String? = null,
     @Json(name = "channelId") val channelId: String? = null,
     @Json(name = "uploadDate") val uploadDate: Long = System.currentTimeMillis(),
-    @Json(name = "chunks") val chunks: List<ManifestChunk>
+    @Json(name = "chunks") val chunks: List<ManifestChunk>,
+    @Json(name = "thumbnailMessageId") val thumbnailMessageId: Long? = null,
+    @Json(name = "thumbnailFileId") val thumbnailFileId: String? = null
 )
 
 /**
@@ -163,7 +165,9 @@ data class VaultIndexFile(
     @Json(name = "checksum") val checksum: String,
     @Json(name = "totalChunks") val totalChunks: Int = 1,
     @Json(name = "manifestMessageId") val manifestMessageId: Long? = null,
-    @Json(name = "chunks") val chunks: List<ManifestChunk> = emptyList()
+    @Json(name = "chunks") val chunks: List<ManifestChunk> = emptyList(),
+    @Json(name = "thumbnailMessageId") val thumbnailMessageId: Long? = null,
+    @Json(name = "thumbnailFileId") val thumbnailFileId: String? = null
 )
 
 @JsonClass(generateAdapter = true)

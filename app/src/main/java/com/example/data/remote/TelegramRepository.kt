@@ -60,6 +60,7 @@ class TelegramRepository(
         const val MANIFEST_PREFIX = "TELEVAULT_MANIFEST_V1:"
         const val MANIFEST_CAPTION_PREFIX = "MANIFEST|"
         const val CHUNK_CAPTION_PREFIX = "TELEVAULT_CHUNK:"
+        const val THUMBNAIL_CAPTION_PREFIX = "THUMBNAIL|"
         const val VAULT_INDEX_CAPTION = "VAULT_INDEX"
         private const val MAX_RETRIES = 3
         private const val BASE_BACKOFF_MS = 1000L
@@ -428,6 +429,71 @@ class TelegramRepository(
 
         return executeWithRetry("Uploading file manifest document ($partName)") {
             api.sendDocument(targetUrl, chatIdBody, captionBody, multipart)
+        }
+    }
+
+    /**
+     * Uploads a downscaled preview thumbnail (~200px max, 5-15 KB) as a separate document
+     * tagged with THUMBNAIL|<fileId> caption.
+     */
+    suspend fun uploadThumbnail(
+        token: String,
+        chatId: String,
+        fileId: String,
+        thumbnailFile: File
+    ): Result<TelegramMessage> {
+        val targetUrl = botUrl(token, "sendDocument")
+        val captionText = "$THUMBNAIL_CAPTION_PREFIX$fileId"
+        val partName = "thumb_${fileId}.jpg"
+
+        Log.i(
+            "TelegramRepo",
+            ">>> [uploadThumbnail DOCUMENT ATTACH] Target URL: ${redactToken(targetUrl)} | " +
+            "Thumb file: $partName | Size: ${thumbnailFile.length()} bytes | Caption: $captionText"
+        )
+
+        val requestBody = thumbnailFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
+        val multipart = MultipartBody.Part.createFormData("document", partName, requestBody)
+        val chatIdBody = chatId.toRequestBody("text/plain".toMediaTypeOrNull())
+        val captionBody = captionText.toRequestBody("text/plain".toMediaTypeOrNull())
+
+        return executeWithRetry("Uploading file thumbnail ($partName)") {
+            api.sendDocument(targetUrl, chatIdBody, captionBody, multipart)
+        }
+    }
+
+    /**
+     * Downloads a thumbnail file from Telegram using remote file_id into a destination local file.
+     */
+    suspend fun downloadThumbnail(
+        token: String,
+        telegramFileId: String,
+        destFile: File
+    ): Result<File> {
+        return try {
+            val fileInfoResult = getFileInfo(token, telegramFileId)
+            if (fileInfoResult.isFailure) {
+                return Result.failure(fileInfoResult.exceptionOrNull() ?: Exception("Failed to get thumbnail file info"))
+            }
+            val filePath = fileInfoResult.getOrThrow().filePath
+                ?: return Result.failure(Exception("Thumbnail getFile returned empty file_path"))
+
+            val streamResult = downloadFileStream(token, filePath)
+            if (streamResult.isFailure) {
+                return Result.failure(streamResult.exceptionOrNull() ?: Exception("Failed to download thumbnail stream"))
+            }
+
+            val body = streamResult.getOrThrow()
+            destFile.parentFile?.mkdirs()
+            body.byteStream().use { input ->
+                destFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            Result.success(destFile)
+        } catch (e: Exception) {
+            Log.e("TelegramRepo", "downloadThumbnail error: ${e.message}", e)
+            Result.failure(e)
         }
     }
 

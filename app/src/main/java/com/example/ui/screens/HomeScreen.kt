@@ -22,6 +22,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.PlayArrow
 import com.example.domain.model.StorageCategory
 import com.example.domain.model.classifyFileCategory
 import com.example.ui.components.Fab3D
@@ -35,6 +36,13 @@ import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.MotionSpecs
 import com.example.ui.theme.pressScale
 import com.example.ui.viewmodel.AppScreen
+import com.example.data.transfer.ThumbnailManager
+import com.example.domain.ThumbnailUtil
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import java.io.File
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -1747,7 +1755,7 @@ private fun FileListItem(
             Spacer(modifier = Modifier.width(12.dp))
         }
 
-        FileIcon(mimeType = file.mimeType, size = 22.dp)
+        FileThumbnailView(file = file, size = 22.dp)
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -1822,7 +1830,7 @@ private fun FileGridCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
-                FileIcon(mimeType = file.mimeType, size = 22.dp)
+                FileThumbnailView(file = file, size = 24.dp)
                 if (isSelectionMode) {
                     Icon(
                         imageVector = if (isSelected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
@@ -1876,6 +1884,61 @@ fun FileIcon(mimeType: String, size: androidx.compose.ui.unit.Dp) {
             tint = theme.tint,
             modifier = Modifier.size(size)
         )
+    }
+}
+
+@Composable
+fun FileThumbnailView(
+    file: FileEntity,
+    size: androidx.compose.ui.unit.Dp = 22.dp,
+    modifier: Modifier = Modifier
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val colors = LocalTeleVaultColors.current
+    val isMedia = remember(file.mimeType) { ThumbnailUtil.isMedia(file.mimeType) }
+    val isVideo = remember(file.mimeType) { ThumbnailUtil.isVideo(file.mimeType) }
+
+    val thumbnailManager = remember { ThumbnailManager.getInstance(context) }
+    val thumbFile = remember(file.thumbnailLocalPath, file.thumbnailFileId, file.id) {
+        if (isMedia) thumbnailManager.getOrFetchThumbnail(file) else null
+    }
+
+    if (thumbFile != null && thumbFile.exists() && thumbFile.length() > 0L) {
+        Box(
+            modifier = modifier
+                .size(size + 14.dp)
+                .clip(StaticIconCornerShape)
+                .background(colors.surfaceHi)
+                .border(1.dp, colors.line, StaticIconCornerShape),
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(thumbFile)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = file.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            if (isVideo) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(androidx.compose.ui.graphics.Color(0x33000000)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Video",
+                        tint = androidx.compose.ui.graphics.Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    } else {
+        FileIcon(mimeType = file.mimeType, size = size)
     }
 }
 

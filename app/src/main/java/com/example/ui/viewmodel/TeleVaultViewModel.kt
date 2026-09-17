@@ -23,6 +23,7 @@ import com.example.data.sync.VaultSyncWorker
 import com.example.data.transfer.RelayShareManager
 import com.example.data.transfer.StandbyRecoveryManager
 import com.example.data.transfer.StandbyRecoveryState
+import com.example.data.transfer.ThumbnailManager
 import com.example.data.transfer.TransferManager
 import com.example.domain.QrCodeUtil
 import com.example.domain.model.BotHealthInfo
@@ -58,7 +59,8 @@ enum class AppScreen {
     TRANSFERS,
     SETTINGS,
     FOLDER_MANAGEMENT,
-    TRASH
+    TRASH,
+    PREVIEW
 }
 
 data class PendingUploadWarning(
@@ -116,7 +118,9 @@ data class UiState(
     val pairDeviceQrBitmap: Bitmap? = null,
     val showPairDeviceDialog: Boolean = false,
     val shareSheetAskFolder: Boolean = true,
-    val relayChatId: String? = null
+    val relayChatId: String? = null,
+    val previewFile: FileEntity? = null,
+    val isGeneratingPreview: Boolean = false
 )
 
 class TeleVaultViewModel(application: Application) : AndroidViewModel(application) {
@@ -125,6 +129,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     private val repo = TelegramRepository()
     private val creds = EncryptedCredentialsManager(application)
     private val transferManager = TransferManager.getInstance(application)
+    private val thumbnailManager = ThumbnailManager.getInstance(application)
     private val vaultSyncManager = VaultSyncManager.getInstance(application)
     private val relayShareManager = RelayShareManager.getInstance(application)
 
@@ -418,6 +423,17 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             vaultSyncManager.primaryBotAlert.collect { alert ->
                 _uiState.update { it.copy(primaryBotAlert = alert) }
+            }
+        }
+        viewModelScope.launch {
+            thumbnailManager.thumbnailUpdatedFlow.collect { updatedFileId ->
+                val updated = db.fileDao().getById(updatedFileId) ?: return@collect
+                _uiState.update { current ->
+                    current.copy(
+                        previewFile = if (current.previewFile?.id == updatedFileId) updated else current.previewFile,
+                        selectedFileForDetail = if (current.selectedFileForDetail?.id == updatedFileId) updated else current.selectedFileForDetail
+                    )
+                }
             }
         }
 
@@ -1238,6 +1254,67 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun dismissFileDetail() {
         _uiState.update { it.copy(selectedFileForDetail = null, selectedFileChunks = emptyList()) }
+    }
+
+    fun openPreview(file: FileEntity) {
+        _uiState.update {
+            it.copy(
+                previewFile = file,
+                currentScreen = AppScreen.PREVIEW,
+                selectedFileForDetail = null
+            )
+        }
+    }
+
+    fun closePreview() {
+        _uiState.update {
+            it.copy(
+                previewFile = null,
+                currentScreen = AppScreen.VAULT
+            )
+        }
+    }
+
+    fun onFileItemClick(file: FileEntity) {
+        val hasThumb = !file.thumbnailLocalPath.isNullOrBlank() || !file.thumbnailFileId.isNullOrBlank()
+        val isMedia = com.example.domain.ThumbnailUtil.isMedia(file.mimeType)
+        val hasLocalDownload = file.localPath != null || file.localUri != null
+        if (hasThumb || (isMedia && hasLocalDownload)) {
+            openPreview(file)
+        } else {
+            inspectFile(file)
+        }
+    }
+
+    fun loadFullImageInPreview(fileId: String) {
+        transferManager.startDownload(fileId)
+    }
+
+    fun generatePreviewForFile(file: FileEntity) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isGeneratingPreview = true) }
+            try {
+                val result = thumbnailManager.generateAndUploadThumbnail(file)
+                if (result.isSuccess) {
+                    val updated = db.fileDao().getById(file.id)
+                    _uiState.update {
+                        it.copy(
+                            selectedFileForDetail = updated ?: it.selectedFileForDetail,
+                            previewFile = updated ?: it.previewFile,
+                            transferNotificationMessage = "Preview generated successfully!"
+                        )
+                    }
+                    vaultSyncManager.scheduleAutoPublish()
+                } else {
+                    val err = result.exceptionOrNull()?.message ?: "Failed to generate preview"
+                    _uiState.update { it.copy(transferErrorMessage = err) }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(transferErrorMessage = e.message ?: "Failed to generate preview") }
+            } finally {
+                _uiState.update { it.copy(isGeneratingPreview = false) }
+            }
+        }
     }
 
     // Multi-Device Sync Vault from Telegram chat

@@ -50,6 +50,7 @@ import com.example.ui.screens.BulkDeleteDialog
 import com.example.ui.screens.BulkMoveDialog
 import com.example.ui.screens.CreateFolderDialog
 import com.example.ui.screens.FileDetailSheet
+import com.example.ui.screens.FilePreviewScreen
 import com.example.ui.screens.PairDeviceDialog
 import com.example.ui.screens.ShareFileDialog
 import com.example.ui.screens.ShareSheetFolderDialog
@@ -373,6 +374,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                                 AppScreen.SETTINGS -> 2
                                 AppScreen.FOLDER_MANAGEMENT -> 3
                                 AppScreen.TRASH -> 4
+                                AppScreen.PREVIEW -> 5
                             }
                             val targetOrder = when (targetScreen) {
                                 AppScreen.VAULT -> 0
@@ -380,6 +382,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                                 AppScreen.SETTINGS -> 2
                                 AppScreen.FOLDER_MANAGEMENT -> 3
                                 AppScreen.TRASH -> 4
+                                AppScreen.PREVIEW -> 5
                             }
                             if (targetOrder >= initialOrder) {
                                 (slideInHorizontally(
@@ -435,6 +438,21 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         onPermanentlyDeleteFile = { viewModel.permanentlyDeleteFile(it) },
                         onEmptyTrash = { viewModel.emptyTrash() }
                     )
+                } else if (currentScreen == AppScreen.PREVIEW && uiState.previewFile != null) {
+                    val previewFile = uiState.previewFile!!
+                    val activeTransfers by viewModel.activeTransfers.collectAsState()
+                    val activeTransfer = activeTransfers.find { it.fileId == previewFile.id }
+                    FilePreviewScreen(
+                        file = previewFile,
+                        activeTransfer = activeTransfer,
+                        onBack = { viewModel.closePreview() },
+                        onLoadFullImage = { viewModel.loadFullImageInPreview(it) },
+                        onInspectDetails = { viewModel.inspectFile(previewFile) },
+                        onShare = { viewModel.openShareFileDialog(previewFile) },
+                        onMove = { viewModel.setItemToMove(previewFile) },
+                        onRename = { viewModel.setFileToRename(previewFile) },
+                        onDelete = { viewModel.deleteFile(previewFile.id) }
+                    )
                 } else {
                     HomeScreenContainer(
                         viewModel = viewModel,
@@ -484,7 +502,10 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         viewModel.openShareFileDialog(currentDetailFile)
                     },
                     onMove = { viewModel.setItemToMove(currentDetailFile) },
-                    onDelete = { viewModel.deleteFile(currentDetailFile.id) }
+                    onDelete = { viewModel.deleteFile(currentDetailFile.id) },
+                    onOpenPreview = { viewModel.openPreview(currentDetailFile) },
+                    onGeneratePreview = { viewModel.generatePreviewForFile(currentDetailFile) },
+                    isGeneratingPreview = uiState.isGeneratingPreview
                 )
             }
 
@@ -808,7 +829,7 @@ private fun HomeScreenContainer(
         onToggleViewMode = { viewModel.toggleViewMode() },
         onFolderClick = { folder -> viewModel.openFolder(folder) },
         onBreadcrumbClick = { index -> viewModel.navigateToBreadcrumb(index) },
-        onFileClick = { file -> viewModel.inspectFile(file) },
+        onFileClick = { file -> viewModel.onFileItemClick(file) },
         onRenameFolder = { folder -> viewModel.setFolderToRename(folder) },
         onDeleteFolder = { folder -> viewModel.deleteFolder(folder) },
         onCreateFolderClick = { viewModel.setShowCreateFolderDialog(true) },

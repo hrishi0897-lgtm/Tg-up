@@ -119,6 +119,12 @@ interface FileDao {
     @Query("UPDATE files SET channelId = :channelId WHERE status = 'COMPLETED'")
     suspend fun updateChannelForCompletedFiles(channelId: String)
 
+    @Query("UPDATE files SET thumbnailFileId = :fileIdRemote, thumbnailMessageId = :messageId, thumbnailLocalPath = :localPath WHERE id = :fileId")
+    suspend fun updateThumbnailInfo(fileId: String, fileIdRemote: String?, messageId: Long?, localPath: String?)
+
+    @Query("UPDATE files SET thumbnailLocalPath = :localPath WHERE id = :fileId")
+    suspend fun updateThumbnailLocalPath(fileId: String, localPath: String?)
+
     @Query("DELETE FROM files")
     suspend fun clearAll()
 }

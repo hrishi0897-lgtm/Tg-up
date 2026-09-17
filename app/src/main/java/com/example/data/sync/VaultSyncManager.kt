@@ -233,7 +233,9 @@ class VaultSyncManager private constructor(private val context: Context) {
                     checksum = file.checksum,
                     totalChunks = file.totalChunks,
                     manifestMessageId = file.manifestMessageId,
-                    chunks = chunks
+                    chunks = chunks,
+                    thumbnailMessageId = file.thumbnailMessageId,
+                    thumbnailFileId = file.thumbnailFileId
                 )
             }
 
@@ -384,7 +386,9 @@ class VaultSyncManager private constructor(private val context: Context) {
                             completedChunks = remoteFile.totalChunks,
                             manifestMessageId = remoteFile.manifestMessageId,
                             localPath = null, // Download on-demand
-                            localUri = null
+                            localUri = null,
+                            thumbnailFileId = remoteFile.thumbnailFileId,
+                            thumbnailMessageId = remoteFile.thumbnailMessageId
                         )
                         database.fileDao().insert(newEntity)
 
@@ -409,13 +413,16 @@ class VaultSyncManager private constructor(private val context: Context) {
                     } else {
                         // File already exists locally: update name & folderId if changed remotely
                         val fileChannelId = remoteFile.channelId ?: existing.channelId ?: chatId
-                        if (existing.name != remoteFile.name || existing.folderId != remoteFile.folderId || existing.channelId != fileChannelId) {
-                            Log.i(TAG, "Rebuilding local database: Updating file placement: ${existing.name} -> ${remoteFile.name} (folder: ${remoteFile.folderId})")
+                        val needsThumbnailUpdate = existing.thumbnailFileId == null && remoteFile.thumbnailFileId != null
+                        if (existing.name != remoteFile.name || existing.folderId != remoteFile.folderId || existing.channelId != fileChannelId || needsThumbnailUpdate) {
+                            Log.i(TAG, "Rebuilding local database: Updating file placement/metadata: ${existing.name} -> ${remoteFile.name}")
                             database.fileDao().update(
                                 existing.copy(
                                     name = remoteFile.name,
                                     folderId = remoteFile.folderId,
-                                    channelId = fileChannelId
+                                    channelId = fileChannelId,
+                                    thumbnailFileId = existing.thumbnailFileId ?: remoteFile.thumbnailFileId,
+                                    thumbnailMessageId = existing.thumbnailMessageId ?: remoteFile.thumbnailMessageId
                                 )
                             )
                         }

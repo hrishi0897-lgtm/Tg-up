@@ -39,5 +39,8 @@ data class FileEntity(
     val localPath: String? = null, // Local cached path if downloaded
     val localUri: String? = null, // MediaStore or local content URI
     val errorMessage: String? = null,
-    val deletedAt: Long? = null // Timestamp when file was moved to Trash; null = active file
+    val deletedAt: Long? = null, // Timestamp when file was moved to Trash; null = active file
+    val thumbnailFileId: String? = null, // Telegram document file_id for thumbnail chunk
+    val thumbnailMessageId: Long? = null, // Telegram message_id for thumbnail chunk
+    val thumbnailLocalPath: String? = null // Local cached path of generated thumbnail
 )
