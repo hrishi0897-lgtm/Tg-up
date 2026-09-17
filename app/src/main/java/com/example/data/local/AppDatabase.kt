@@ -28,7 +28,7 @@ import com.example.data.local.entity.StandbyBotEntity
         StandbyBotEntity::class,
         SharedFileEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -99,6 +99,13 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_shared_files_fileId` ON `shared_files` (`fileId`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_shared_files_createdDate` ON `shared_files` (`createdDate`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_shared_files_revoked` ON `shared_files` (`revoked`)")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `files` ADD COLUMN `deletedAt` INTEGER")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_files_deletedAt` ON `files` (`deletedAt`)")
             }
         }
 
@@ -216,7 +223,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "televault_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, Migration3To4(appContext), MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, Migration3To4(appContext), MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onOpen(db: SupportSQLiteDatabase) {
                             super.onOpen(db)

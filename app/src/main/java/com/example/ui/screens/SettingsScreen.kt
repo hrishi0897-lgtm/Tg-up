@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LightMode
@@ -149,6 +150,8 @@ fun SettingsScreen(
     sharedFiles: List<SharedFileEntity> = emptyList(),
     onRevokeSharedFile: ((String) -> Unit)? = null,
     onPairDeviceClick: (() -> Unit)? = null,
+    trashCount: Int = 0,
+    onNavigateToTrash: (() -> Unit)? = null,
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit,
     onStartTestTransfer: (() -> Unit)? = null
@@ -2315,6 +2318,49 @@ fun SettingsScreen(
                                 uncheckedTrackColor = colors.surfaceHi
                             )
                         )
+                    }
+                }
+            }
+
+            // 5b. Recycle Bin & Retention Card
+            if (onNavigateToTrash != null) {
+                SettingsCard(
+                    icon = Icons.Default.DeleteSweep,
+                    title = "RECYCLE BIN & RETENTION",
+                    colors = colors
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Recycle Bin",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.text
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Deleted files are safely retained for 30 days before permanent automatic purge. Currently $trashCount file(s) in bin.",
+                                fontSize = 11.sp,
+                                color = colors.textDim,
+                                lineHeight = 15.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Button(
+                            onClick = { onNavigateToTrash() },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = colors.surfaceHi,
+                                contentColor = colors.violet
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                        ) {
+                            Text("Open Bin", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             }

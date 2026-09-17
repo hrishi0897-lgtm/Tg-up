@@ -31,41 +31,72 @@ interface FileDao {
     @Query("SELECT * FROM files WHERE id = :fileId")
     suspend fun getById(fileId: String): FileEntity?
 
-    @Query("SELECT * FROM files WHERE folderId IS :folderId ORDER BY uploadDate DESC")
+    @Query("SELECT * FROM files WHERE folderId IS :folderId AND deletedAt IS NULL ORDER BY uploadDate DESC")
     fun observeByFolder(folderId: String?): Flow<List<FileEntity>>
 
-    @Query("SELECT * FROM files WHERE folderId IS :folderId ORDER BY uploadDate DESC")
+    @Query("SELECT * FROM files WHERE folderId IS :folderId AND deletedAt IS NULL ORDER BY uploadDate DESC")
     suspend fun getByFolder(folderId: String?): List<FileEntity>
 
-    @Query("SELECT * FROM files ORDER BY uploadDate DESC")
+    @Query("SELECT * FROM files WHERE deletedAt IS NULL ORDER BY uploadDate DESC")
     fun observeAll(): Flow<List<FileEntity>>
 
-    @Query("SELECT name, mimeType, size FROM files WHERE status = 'COMPLETED'")
+    @Query("SELECT name, mimeType, size FROM files WHERE status = 'COMPLETED' AND deletedAt IS NULL")
     fun observeCompletedFilesCategoryData(): Flow<List<FileCategoryProjection>>
 
-    @Query("SELECT * FROM files ORDER BY uploadDate DESC")
+    @Query("SELECT * FROM files WHERE deletedAt IS NULL ORDER BY uploadDate DESC")
     suspend fun getAll(): List<FileEntity>
 
-    @Query("SELECT * FROM files WHERE name LIKE '%' || :query || '%' ORDER BY uploadDate DESC")
+    @Query("SELECT * FROM files WHERE name LIKE '%' || :query || '%' AND deletedAt IS NULL ORDER BY uploadDate DESC")
     fun searchFiles(query: String): Flow<List<FileEntity>>
 
-    @Query("SELECT * FROM files WHERE status IN (:statuses) ORDER BY uploadDate ASC")
+    @Query("SELECT * FROM files WHERE status IN (:statuses) AND deletedAt IS NULL ORDER BY uploadDate ASC")
     suspend fun getFilesByStatus(statuses: List<FileStatus>): List<FileEntity>
 
-    @Query("SELECT * FROM files WHERE status IN (:statuses) ORDER BY uploadDate DESC")
+    @Query("SELECT * FROM files WHERE status IN (:statuses) AND deletedAt IS NULL ORDER BY uploadDate DESC")
     fun observeTransfers(statuses: List<FileStatus>): Flow<List<FileEntity>>
 
-    @Query("SELECT COALESCE(SUM(size), 0) FROM files WHERE status = 'COMPLETED'")
+    @Query("SELECT COALESCE(SUM(size), 0) FROM files WHERE status = 'COMPLETED' AND deletedAt IS NULL")
     fun observeTotalStorageUsed(): Flow<Long>
 
-    @Query("SELECT COALESCE(SUM(size), 0) FROM files WHERE status = 'COMPLETED'")
+    @Query("SELECT COALESCE(SUM(size), 0) FROM files WHERE status = 'COMPLETED' AND deletedAt IS NULL")
     suspend fun getTotalStorageUsed(): Long
 
-    @Query("SELECT COUNT(*) FROM files WHERE status = 'COMPLETED'")
+    @Query("SELECT COUNT(*) FROM files WHERE status = 'COMPLETED' AND deletedAt IS NULL")
     fun observeCompletedFileCount(): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM files WHERE status = 'COMPLETED'")
+    @Query("SELECT COUNT(*) FROM files WHERE status = 'COMPLETED' AND deletedAt IS NULL")
     suspend fun getCompletedFileCount(): Int
+
+    // -----------------------------------------------------------------
+    // Trash / Recycle Bin Queries & Mutations
+    // -----------------------------------------------------------------
+
+    @Query("SELECT * FROM files WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    fun observeTrashFiles(): Flow<List<FileEntity>>
+
+    @Query("SELECT * FROM files WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    suspend fun getTrashFiles(): List<FileEntity>
+
+    @Query("SELECT COUNT(*) FROM files WHERE deletedAt IS NOT NULL")
+    fun observeTrashCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM files WHERE deletedAt IS NOT NULL")
+    suspend fun getTrashCount(): Int
+
+    @Query("UPDATE files SET deletedAt = :timestamp WHERE id = :fileId")
+    suspend fun moveToTrash(fileId: String, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE files SET deletedAt = :timestamp WHERE id IN (:fileIds)")
+    suspend fun bulkMoveToTrash(fileIds: List<String>, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE files SET deletedAt = NULL WHERE id = :fileId")
+    suspend fun restoreFromTrash(fileId: String)
+
+    @Query("UPDATE files SET deletedAt = NULL WHERE id IN (:fileIds)")
+    suspend fun bulkRestoreFromTrash(fileIds: List<String>)
+
+    @Query("SELECT * FROM files WHERE deletedAt IS NOT NULL AND deletedAt <= :thresholdTimestamp")
+    suspend fun getExpiredTrashFiles(thresholdTimestamp: Long): List<FileEntity>
 
     @Query("UPDATE files SET name = :newName WHERE id = :fileId")
     suspend fun renameFile(fileId: String, newName: String)

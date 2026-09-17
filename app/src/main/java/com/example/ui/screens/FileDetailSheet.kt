@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
@@ -475,10 +476,10 @@ fun FileDetailSheet(
 
                     HorizontalDivider(color = colors.line, thickness = 0.5.dp)
 
-                    // Action 5: Delete
+                    // Action 5: Move to Trash
                     ActionItem(
-                        icon = Icons.Default.Delete,
-                        label = "Delete",
+                        icon = Icons.Default.DeleteOutline,
+                        label = "Move to Trash",
                         iconTint = StatusError,
                         labelColor = StatusError,
                         onClick = {

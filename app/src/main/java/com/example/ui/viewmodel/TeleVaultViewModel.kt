@@ -57,7 +57,8 @@ enum class AppScreen {
     VAULT,
     TRANSFERS,
     SETTINGS,
-    FOLDER_MANAGEMENT
+    FOLDER_MANAGEMENT,
+    TRASH
 }
 
 data class PendingUploadWarning(
@@ -420,6 +421,9 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
+        // Auto-purge any files in Trash older than 30 days
+        purgeExpiredTrash()
+
         // On app start with existing credentials, schedule periodic worker and trigger background check
         if (creds.hasCredentials()) {
             VaultSyncWorker.schedule(application)
@@ -622,6 +626,20 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             viewModelScope,
             SharingStarted.WhileSubscribed(5000),
             emptyList()
+        )
+
+    val trashFiles: StateFlow<List<FileEntity>> = db.fileDao().observeTrashFiles()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            emptyList()
+        )
+
+    val trashCount: StateFlow<Int> = db.fileDao().observeTrashCount()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            0
         )
 
     private data class Params(
@@ -1088,6 +1106,10 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(currentScreen = AppScreen.FOLDER_MANAGEMENT) }
     }
 
+    fun navigateToTrashScreen() {
+        _uiState.update { it.copy(currentScreen = AppScreen.TRASH) }
+    }
+
     fun setFolderToDelete(folder: FolderEntity?) {
         _uiState.update { it.copy(folderToDelete = folder) }
     }
@@ -1153,13 +1175,51 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun deleteFile(fileId: String) {
         viewModelScope.launch {
-            transferManager.deleteFile(fileId)
+            db.fileDao().moveToTrash(fileId, System.currentTimeMillis())
             _uiState.update {
                 if (it.selectedFileForDetail?.id == fileId) {
                     it.copy(selectedFileForDetail = null, selectedFileChunks = emptyList())
                 } else it
             }
-            vaultSyncManager.publishVaultIndex()
+            vaultSyncManager.scheduleAutoPublish()
+        }
+    }
+
+    fun restoreFileFromTrash(fileId: String) {
+        viewModelScope.launch {
+            db.fileDao().restoreFromTrash(fileId)
+            vaultSyncManager.scheduleAutoPublish()
+        }
+    }
+
+    fun permanentlyDeleteFile(fileId: String) {
+        viewModelScope.launch {
+            transferManager.deleteFile(fileId)
+            vaultSyncManager.scheduleAutoPublish()
+        }
+    }
+
+    fun emptyTrash() {
+        viewModelScope.launch {
+            val trashed = db.fileDao().getTrashFiles()
+            for (file in trashed) {
+                transferManager.deleteFile(file.id)
+            }
+            vaultSyncManager.scheduleAutoPublish()
+        }
+    }
+
+    fun purgeExpiredTrash() {
+        viewModelScope.launch {
+            val thirtyDaysAgo = System.currentTimeMillis() - 30L * 24L * 60L * 60L * 1000L
+            val expired = db.fileDao().getExpiredTrashFiles(thirtyDaysAgo)
+            if (expired.isNotEmpty()) {
+                Log.d("TeleVaultViewModel", "Auto-purging ${expired.size} expired files from trash older than 30 days")
+                for (file in expired) {
+                    transferManager.deleteFile(file.id)
+                }
+                vaultSyncManager.scheduleAutoPublish()
+            }
         }
     }
 
@@ -1405,8 +1465,9 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         val selectedIds = _uiState.value.selectedFileIds.toList()
         if (selectedIds.isEmpty()) return
         viewModelScope.launch {
+            val now = System.currentTimeMillis()
             selectedIds.forEach { fileId ->
-                transferManager.deleteFile(fileId)
+                db.fileDao().moveToTrash(fileId, now)
             }
             _uiState.update { state ->
                 val updatedDetail = if (state.selectedFileForDetail != null && selectedIds.contains(state.selectedFileForDetail.id)) {
@@ -1422,7 +1483,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                     selectedFileChunks = if (updatedDetail == null) emptyList() else state.selectedFileChunks
                 )
             }
-            vaultSyncManager.publishVaultIndex()
+            vaultSyncManager.scheduleAutoPublish()
         }
     }
 

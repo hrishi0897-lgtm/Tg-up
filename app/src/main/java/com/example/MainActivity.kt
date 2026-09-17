@@ -102,6 +102,7 @@ import android.view.Surface
 import android.view.WindowManager
 import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.TeleVaultViewModel
+import com.example.ui.screens.TrashScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -338,6 +339,11 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         viewModel.navigateToVaultScreen()
     }
 
+    // Handle back button for trash screen
+    BackHandler(enabled = uiState.currentScreen == AppScreen.TRASH) {
+        viewModel.navigateToVaultScreen()
+    }
+
     // Handle back button for folder hierarchy navigation
     BackHandler(enabled = uiState.currentScreen == AppScreen.VAULT && uiState.breadcrumbs.size > 1) {
         viewModel.navigateUp()
@@ -366,12 +372,14 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                                 AppScreen.TRANSFERS -> 1
                                 AppScreen.SETTINGS -> 2
                                 AppScreen.FOLDER_MANAGEMENT -> 3
+                                AppScreen.TRASH -> 4
                             }
                             val targetOrder = when (targetScreen) {
                                 AppScreen.VAULT -> 0
                                 AppScreen.TRANSFERS -> 1
                                 AppScreen.SETTINGS -> 2
                                 AppScreen.FOLDER_MANAGEMENT -> 3
+                                AppScreen.TRASH -> 4
                             }
                             if (targetOrder >= initialOrder) {
                                 (slideInHorizontally(
@@ -417,6 +425,15 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     FolderManagementScreen(
                         viewModel = viewModel,
                         onBack = { viewModel.navigateToVaultScreen() }
+                    )
+                } else if (currentScreen == AppScreen.TRASH) {
+                    val trashFiles by viewModel.trashFiles.collectAsState()
+                    TrashScreen(
+                        trashFiles = trashFiles,
+                        onBack = { viewModel.navigateToVaultScreen() },
+                        onRestoreFile = { viewModel.restoreFileFromTrash(it) },
+                        onPermanentlyDeleteFile = { viewModel.permanentlyDeleteFile(it) },
+                        onEmptyTrash = { viewModel.emptyTrash() }
                     )
                 } else {
                     HomeScreenContainer(
@@ -769,6 +786,7 @@ private fun HomeScreenContainer(
     val activeTransfersCount by viewModel.activeTransfersCount.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val standbyBots by viewModel.standbyBots.collectAsState()
+    val trashCount by viewModel.trashCount.collectAsState()
 
     HomeScreen(
         storageStats = storageStats,
@@ -797,6 +815,8 @@ private fun HomeScreenContainer(
         onUploadFileClick = onUploadFileClick,
         onOpenTransfers = { viewModel.navigateToTransfersScreen() },
         onOpenSettings = { viewModel.navigateToSettingsScreen() },
+        onOpenTrash = { viewModel.navigateToTrashScreen() },
+        trashCount = trashCount,
         onOpenFolderManagement = { viewModel.navigateToFolderManagementScreen() },
         onResync = { viewModel.manualSyncFromHeader() },
         onDismissResyncMsg = { viewModel.clearResyncMessage() },
@@ -862,6 +882,7 @@ private fun SettingsScreenContainer(
     val verifiedStandbyBotsCount by viewModel.verifiedStandbyBotsCount.collectAsState()
     val recoveryState by viewModel.recoveryState.collectAsState()
     val sharedFiles by viewModel.sharedFiles.collectAsState()
+    val trashCount by viewModel.trashCount.collectAsState()
     val (token, chatId) = viewModel.getCredentials()
     SettingsScreen(
         botTokenMasked = token,
@@ -884,6 +905,8 @@ private fun SettingsScreenContainer(
         sharedFiles = sharedFiles,
         onRevokeSharedFile = { viewModel.revokeRelayShare(it) },
         onPairDeviceClick = { viewModel.openPairDeviceDialog() },
+        trashCount = trashCount,
+        onNavigateToTrash = { viewModel.navigateToTrashScreen() },
         onAddStandbyBot = { tokenInput, labelInput, onResult ->
             viewModel.addStandbyBot(tokenInput, labelInput, onResult)
         },

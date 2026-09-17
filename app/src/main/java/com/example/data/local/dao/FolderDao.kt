@@ -95,13 +95,13 @@ interface FolderDao {
     @Query("UPDATE files SET folderId = :newFolderId WHERE id IN (:fileIds)")
     suspend fun moveFiles(fileIds: List<String>, newFolderId: String?)
 
-    @Query("SELECT * FROM files WHERE folderId IS :folderId ORDER BY name ASC")
+    @Query("SELECT * FROM files WHERE folderId IS :folderId AND deletedAt IS NULL ORDER BY name ASC")
     suspend fun getFilesInFolder(folderId: String?): List<FileEntity>
 
-    @Query("SELECT * FROM files WHERE folderId IS :folderId ORDER BY name ASC")
+    @Query("SELECT * FROM files WHERE folderId IS :folderId AND deletedAt IS NULL ORDER BY name ASC")
     fun observeFilesInFolder(folderId: String?): Flow<List<FileEntity>>
 
-    @Query("SELECT COUNT(*) FROM files WHERE folderId IS :folderId")
+    @Query("SELECT COUNT(*) FROM files WHERE folderId IS :folderId AND deletedAt IS NULL")
     suspend fun countFilesInFolder(folderId: String?): Int
 
     @Transaction

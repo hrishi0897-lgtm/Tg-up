@@ -722,18 +722,18 @@ fun BulkDeleteDialog(
                 )
             }
         },
-        title = "Delete $selectedCount ${if (selectedCount == 1) "file" else "files"}?",
+        title = "Move $selectedCount ${if (selectedCount == 1) "file" else "files"} to Trash?",
         content = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Are you sure you want to permanently delete the selected $selectedCount ${if (selectedCount == 1) "file" else "files"} from the vault?",
+                    text = "Are you sure you want to move the selected $selectedCount ${if (selectedCount == 1) "file" else "files"} to the Recycle Bin?",
                     color = colors.text,
                     fontSize = 13.5.sp,
                     fontFamily = BodySansFont
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "This will remove them from the cloud and cannot be undone.",
+                    text = "Items in the Recycle Bin can be restored anytime or will be permanently deleted after 30 days.",
                     color = colors.textFaint,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
@@ -753,7 +753,7 @@ fun BulkDeleteDialog(
                     .pressScale(0.93f)
                     .testTag("btn_confirm_bulk_delete")
             ) {
-                Text("Delete All", fontWeight = FontWeight.Bold)
+                Text("Move to Trash", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

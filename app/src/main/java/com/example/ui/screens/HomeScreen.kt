@@ -83,6 +83,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DriveFileMove
@@ -223,6 +224,8 @@ fun HomeScreen(
     onBulkDownload: () -> Unit = {},
     onBulkMove: () -> Unit = {},
     onBulkDelete: () -> Unit = {},
+    trashCount: Int = 0,
+    onOpenTrash: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTeleVaultColors.current
@@ -256,8 +259,10 @@ fun HomeScreen(
                     isResyncing = isResyncing,
                     lastSyncedTime = lastSyncedTime,
                     isDarkTheme = isDarkTheme,
+                    trashCount = trashCount,
                     onToggleTheme = onToggleTheme,
                     onOpenSettings = onOpenSettings,
+                    onOpenTrash = onOpenTrash,
                     onResync = onResync
                 )
             }
@@ -978,8 +983,10 @@ private fun HomeTopBar(
     isResyncing: Boolean,
     lastSyncedTime: Long = 0L,
     isDarkTheme: Boolean = false,
+    trashCount: Int = 0,
     onToggleTheme: () -> Unit = {},
     onOpenSettings: () -> Unit,
+    onOpenTrash: () -> Unit,
     onResync: () -> Unit
 ) {
     val colors = LocalTeleVaultColors.current
@@ -1081,6 +1088,30 @@ private fun HomeTopBar(
                     tint = colors.textDim,
                     modifier = Modifier.size(17.dp)
                 )
+            }
+
+            // Trash / Recycle Bin 3D icon button
+            Box {
+                IconButton3D(
+                    onClick = onOpenTrash,
+                    modifier = Modifier.testTag("trash_topbar_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteSweep,
+                        contentDescription = "Recycle Bin",
+                        tint = if (trashCount > 0) colors.amber else colors.textDim,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+                if (trashCount > 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(colors.amber)
+                    )
+                }
             }
 
             // Resync 3D icon button (animation instantiated strictly while isResyncing == true)

@@ -18,7 +18,8 @@ enum class FileStatus {
     indices = [
         Index(value = ["folderId"]),
         Index(value = ["status"]),
-        Index(value = ["name"])
+        Index(value = ["name"]),
+        Index(value = ["deletedAt"])
     ]
 )
 data class FileEntity(
@@ -37,5 +38,6 @@ data class FileEntity(
     val manifestMessageId: Long? = null, // Telegram message ID of manifest
     val localPath: String? = null, // Local cached path if downloaded
     val localUri: String? = null, // MediaStore or local content URI
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val deletedAt: Long? = null // Timestamp when file was moved to Trash; null = active file
 )
