@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
@@ -593,6 +594,166 @@ fun DeleteConfirmationDialog(
                     .testTag("btn_confirm_delete")
             ) {
                 Text("Delete", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.pressScale(0.93f)
+            ) {
+                Text("Cancel", color = colors.textDim)
+            }
+        }
+    )
+}
+
+@Composable
+fun BulkMoveDialog(
+    selectedCount: Int,
+    folders: List<FolderEntity>,
+    currentFolderId: String?,
+    onDismiss: () -> Unit,
+    onSelectDestination: (folderId: String?) -> Unit
+) {
+    val colors = LocalTeleVaultColors.current
+    AnimatedDialogCard(
+        onDismiss = onDismiss,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(colors.violet.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DriveFileMove,
+                    contentDescription = null,
+                    tint = colors.violet,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        },
+        title = "Move $selectedCount ${if (selectedCount == 1) "file" else "files"}",
+        content = {
+            Column {
+                Text(
+                    text = "Select destination folder:",
+                    color = colors.textDim,
+                    fontSize = 13.sp,
+                    fontFamily = BodySansFont
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                ) {
+                    // Root folder option
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (currentFolderId == null) colors.surfaceHi else Color.Transparent)
+                                .clickable { onSelectDestination(null) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Home, contentDescription = null, tint = colors.violet, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text("Vault Root (No folder)", color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+
+                    items(folders, key = { it.id }) { folder ->
+                        val isCurrent = folder.id == currentFolderId
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isCurrent) colors.surfaceHi else Color.Transparent)
+                                .clickable { onSelectDestination(folder.id) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Folder, contentDescription = null, tint = colors.violet, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(folder.name, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.pressScale(0.93f)
+            ) {
+                Text("Cancel", color = colors.textDim)
+            }
+        }
+    )
+}
+
+@Composable
+fun BulkDeleteDialog(
+    selectedCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = LocalTeleVaultColors.current
+    AnimatedDialogCard(
+        onDismiss = onDismiss,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(StatusError.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DeleteSweep,
+                    contentDescription = null,
+                    tint = StatusError,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        },
+        title = "Delete $selectedCount ${if (selectedCount == 1) "file" else "files"}?",
+        content = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Are you sure you want to permanently delete the selected $selectedCount ${if (selectedCount == 1) "file" else "files"} from the vault?",
+                    color = colors.text,
+                    fontSize = 13.5.sp,
+                    fontFamily = BodySansFont
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "This will remove them from the cloud and cannot be undone.",
+                    color = colors.textFaint,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    fontFamily = BodySansFont
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = StatusError,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .pressScale(0.93f)
+                    .testTag("btn_confirm_bulk_delete")
+            ) {
+                Text("Delete All", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

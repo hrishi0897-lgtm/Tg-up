@@ -46,6 +46,8 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import com.example.data.transfer.TransferService
 import com.example.data.transfer.TransferWorker
+import com.example.ui.screens.BulkDeleteDialog
+import com.example.ui.screens.BulkMoveDialog
 import com.example.ui.screens.CreateFolderDialog
 import com.example.ui.screens.FileDetailSheet
 import com.example.ui.screens.PairDeviceDialog
@@ -316,6 +318,11 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         }
     }
 
+    // Handle back button when in selection mode
+    BackHandler(enabled = uiState.isSelectionMode) {
+        viewModel.clearSelection()
+    }
+
     // Handle back button for transfers screen
     BackHandler(enabled = uiState.currentScreen == AppScreen.TRANSFERS) {
         viewModel.navigateToVaultScreen()
@@ -548,6 +555,29 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                 )
             }
 
+            // Bulk Move Dialog
+            if (uiState.showBulkMoveDialog && uiState.selectedFileIds.isNotEmpty()) {
+                val allFolders by viewModel.allFolders.collectAsState()
+                BulkMoveDialog(
+                    selectedCount = uiState.selectedFileIds.size,
+                    folders = allFolders,
+                    currentFolderId = uiState.currentFolderId,
+                    onDismiss = { viewModel.setShowBulkMoveDialog(false) },
+                    onSelectDestination = { targetFolderId ->
+                        viewModel.bulkMoveSelected(targetFolderId)
+                    }
+                )
+            }
+
+            // Bulk Delete Dialog
+            if (uiState.showBulkDeleteDialog && uiState.selectedFileIds.isNotEmpty()) {
+                BulkDeleteDialog(
+                    selectedCount = uiState.selectedFileIds.size,
+                    onConfirm = { viewModel.bulkDeleteSelected() },
+                    onDismiss = { viewModel.setShowBulkDeleteDialog(false) }
+                )
+            }
+
             // Large File Confirmation Dialog
             if (uiState.pendingUploadWarning != null) {
                 val warning = uiState.pendingUploadWarning!!
@@ -775,7 +805,15 @@ private fun HomeScreenContainer(
         botRevocationAlert = uiState.primaryBotAlert,
         onDismissBotRevocationAlert = { viewModel.dismissBotRevocationAlert() },
         onTriggerRecoveryFromAlert = { viewModel.triggerRecoveryFromAlert() },
-        hasStandbyBots = standbyBots.isNotEmpty()
+        hasStandbyBots = standbyBots.isNotEmpty(),
+        selectedFileIds = uiState.selectedFileIds,
+        isSelectionMode = uiState.isSelectionMode,
+        onToggleFileSelection = { fileId -> viewModel.toggleFileSelection(fileId) },
+        onSelectAllFiles = { viewModel.selectAllFiles(files) },
+        onClearSelection = { viewModel.clearSelection() },
+        onBulkDownload = { viewModel.bulkDownloadSelected() },
+        onBulkMove = { viewModel.setShowBulkMoveDialog(true) },
+        onBulkDelete = { viewModel.setShowBulkDeleteDialog(true) }
     )
 }
 

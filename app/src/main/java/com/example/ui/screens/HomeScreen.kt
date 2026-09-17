@@ -36,12 +36,16 @@ import com.example.ui.theme.MotionSpecs
 import com.example.ui.theme.pressScale
 import com.example.ui.viewmodel.AppScreen
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,10 +76,16 @@ import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderZip
@@ -85,6 +95,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.UploadFile
@@ -203,6 +214,14 @@ fun HomeScreen(
     hasStandbyBots: Boolean = false,
     isDarkTheme: Boolean = false,
     onToggleTheme: () -> Unit = {},
+    selectedFileIds: Set<String> = emptySet(),
+    isSelectionMode: Boolean = false,
+    onToggleFileSelection: (String) -> Unit = {},
+    onSelectAllFiles: () -> Unit = {},
+    onClearSelection: () -> Unit = {},
+    onBulkDownload: () -> Unit = {},
+    onBulkMove: () -> Unit = {},
+    onBulkDelete: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTeleVaultColors.current
@@ -211,6 +230,11 @@ fun HomeScreen(
     var selectedCategory by remember { mutableStateOf<StorageCategory?>(null) }
 
     val activeCount = activeTransfersCount
+    val displayedFiles = remember(files, selectedCategory) {
+        if (selectedCategory == null) files
+        else files.filter { classifyFileCategory(it.mimeType, it.name) == selectedCategory }
+    }
+    val filePairs = remember(displayedFiles) { displayedFiles.chunked(2) }
 
     Scaffold(
         modifier = modifier
@@ -218,22 +242,33 @@ fun HomeScreen(
             .background(colors.bodyBg),
         containerColor = colors.bg,
         topBar = {
-            HomeTopBar(
-                isResyncing = isResyncing,
-                lastSyncedTime = lastSyncedTime,
-                isDarkTheme = isDarkTheme,
-                onToggleTheme = onToggleTheme,
-                onOpenSettings = onOpenSettings,
-                onResync = onResync
-            )
+            if (isSelectionMode) {
+                BulkSelectionTopBar(
+                    selectedCount = selectedFileIds.size,
+                    totalCount = displayedFiles.size,
+                    allSelected = displayedFiles.isNotEmpty() && selectedFileIds.size == displayedFiles.size,
+                    onSelectAll = onSelectAllFiles,
+                    onClearSelection = onClearSelection
+                )
+            } else {
+                HomeTopBar(
+                    isResyncing = isResyncing,
+                    lastSyncedTime = lastSyncedTime,
+                    isDarkTheme = isDarkTheme,
+                    onToggleTheme = onToggleTheme,
+                    onOpenSettings = onOpenSettings,
+                    onResync = onResync
+                )
+            }
         },
         floatingActionButton = {
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Expanded FAB menu items
-                AnimatedVisibility(
+            if (!isSelectionMode) {
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Expanded FAB menu items
+                    AnimatedVisibility(
                     visible = showFabMenu,
                     enter = fadeIn(animationSpec = tween(150)) + expandVertically(
                         animationSpec = spring(dampingRatio = 0.65f, stiffness = 500f)
@@ -331,22 +366,26 @@ fun HomeScreen(
                     )
                 }
             }
-        },
+        }
+    },
         bottomBar = {
-            TeleVaultBottomNav(
-                currentScreen = AppScreen.VAULT,
-                activeTransferCount = activeCount,
-                onVaultSelected = { /* Already in Vault */ },
-                onTransfersSelected = onOpenTransfers
-            )
+            if (isSelectionMode) {
+                BulkActionsBottomBar(
+                    selectedCount = selectedFileIds.size,
+                    onDownload = onBulkDownload,
+                    onMove = onBulkMove,
+                    onDelete = onBulkDelete
+                )
+            } else {
+                TeleVaultBottomNav(
+                    currentScreen = AppScreen.VAULT,
+                    activeTransferCount = activeCount,
+                    onVaultSelected = { /* Already in Vault */ },
+                    onTransfersSelected = onOpenTransfers
+                )
+            }
         }
     ) { innerPadding ->
-        val displayedFiles = remember(files, selectedCategory) {
-            if (selectedCategory == null) files
-            else files.filter { classifyFileCategory(it.mimeType, it.name) == selectedCategory }
-        }
-        val filePairs = remember(displayedFiles) { displayedFiles.chunked(2) }
-
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -779,12 +818,36 @@ fun HomeScreen(
                         }
                     }
 
-                    Text(
-                        text = "${displayedFiles.size} items",
-                        fontSize = 12.5.sp,
-                        fontFamily = NumericMonoFont,
-                        color = colors.textFaint
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (displayedFiles.isNotEmpty()) {
+                            Text(
+                                text = if (isSelectionMode) "Done" else "Select",
+                                fontSize = 12.5.sp,
+                                fontFamily = BodySansFont,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.teal,
+                                modifier = Modifier
+                                    .clickable {
+                                        if (isSelectionMode) {
+                                            onClearSelection()
+                                        } else {
+                                            displayedFiles.firstOrNull()?.let { onToggleFileSelection(it.id) }
+                                        }
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
+                        Text(
+                            text = "${displayedFiles.size} items",
+                            fontSize = 12.5.sp,
+                            fontFamily = NumericMonoFont,
+                            color = colors.textFaint
+                        )
+                    }
                 }
             }
 
@@ -835,12 +898,44 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        val file1 = pair[0]
+                        val isSelected1 = selectedFileIds.contains(file1.id)
                         Box(modifier = Modifier.weight(1f)) {
-                            FileGridCard(file = pair[0], onClick = { onFileClick(pair[0]) })
+                            FileGridCard(
+                                file = file1,
+                                isSelected = isSelected1,
+                                isSelectionMode = isSelectionMode,
+                                onClick = {
+                                    if (isSelectionMode) {
+                                        onToggleFileSelection(file1.id)
+                                    } else {
+                                        onFileClick(file1)
+                                    }
+                                },
+                                onLongClick = {
+                                    onToggleFileSelection(file1.id)
+                                }
+                            )
                         }
                         if (pair.size > 1) {
+                            val file2 = pair[1]
+                            val isSelected2 = selectedFileIds.contains(file2.id)
                             Box(modifier = Modifier.weight(1f)) {
-                                FileGridCard(file = pair[1], onClick = { onFileClick(pair[1]) })
+                                FileGridCard(
+                                    file = file2,
+                                    isSelected = isSelected2,
+                                    isSelectionMode = isSelectionMode,
+                                    onClick = {
+                                        if (isSelectionMode) {
+                                            onToggleFileSelection(file2.id)
+                                        } else {
+                                            onFileClick(file2)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        onToggleFileSelection(file2.id)
+                                    }
+                                )
                             }
                         } else {
                             Spacer(modifier = Modifier.weight(1f))
@@ -849,7 +944,22 @@ fun HomeScreen(
                 }
             } else {
                 items(displayedFiles, key = { it.id }, contentType = { "file_item" }) { file ->
-                    FileListItem(file = file, onClick = { onFileClick(file) })
+                    val isSelected = selectedFileIds.contains(file.id)
+                    FileListItem(
+                        file = file,
+                        isSelected = isSelected,
+                        isSelectionMode = isSelectionMode,
+                        onClick = {
+                            if (isSelectionMode) {
+                                onToggleFileSelection(file.id)
+                            } else {
+                                onFileClick(file)
+                            }
+                        },
+                        onLongClick = {
+                            onToggleFileSelection(file.id)
+                        }
+                    )
                 }
             }
         }
@@ -1515,24 +1625,46 @@ private fun FolderItemRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FileListItem(
     file: FileEntity,
-    onClick: () -> Unit
+    isSelected: Boolean = false,
+    isSelectionMode: Boolean = false,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {}
 ) {
     val colors = LocalTeleVaultColors.current
     val formattedSize = remember(file.size) { ChecksumUtil.formatFileSize(file.size) }
     val formattedDate = remember(file.uploadDate) { ChecksumUtil.formatDate(file.uploadDate) }
 
+    val borderColor = if (isSelected) colors.teal else colors.line
+    val backgroundColor = if (isSelected) colors.teal.copy(alpha = 0.08f) else colors.surface
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surface, StaticItemCornerShape)
-            .border(1.dp, colors.line, StaticItemCornerShape)
-            .clickable(onClick = onClick)
+            .background(backgroundColor, StaticItemCornerShape)
+            .border(if (isSelected) 1.5.dp else 1.dp, borderColor, StaticItemCornerShape)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (isSelectionMode) {
+            Icon(
+                imageVector = if (isSelected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                contentDescription = if (isSelected) "Selected" else "Not selected",
+                tint = if (isSelected) colors.teal else colors.textDim,
+                modifier = Modifier
+                    .size(22.dp)
+                    .testTag("checkbox_${file.id}")
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+        }
+
         FileIcon(mimeType = file.mimeType, size = 22.dp)
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -1572,21 +1704,31 @@ private fun FileListItem(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FileGridCard(
     file: FileEntity,
-    onClick: () -> Unit
+    isSelected: Boolean = false,
+    isSelectionMode: Boolean = false,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {}
 ) {
     val colors = LocalTeleVaultColors.current
     val formattedSize = remember(file.size) { ChecksumUtil.formatFileSize(file.size) }
+
+    val borderColor = if (isSelected) colors.teal else colors.line
+    val backgroundColor = if (isSelected) colors.teal.copy(alpha = 0.08f) else colors.surface
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(140.dp)
-            .background(colors.surface, StaticItemCornerShape)
-            .border(1.dp, colors.line, StaticItemCornerShape)
-            .clickable(onClick = onClick)
+            .background(backgroundColor, StaticItemCornerShape)
+            .border(if (isSelected) 1.5.dp else 1.dp, borderColor, StaticItemCornerShape)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .padding(14.dp)
     ) {
         Column(
@@ -1599,7 +1741,18 @@ private fun FileGridCard(
                 verticalAlignment = Alignment.Top
             ) {
                 FileIcon(mimeType = file.mimeType, size = 22.dp)
-                FileStatusIndicator(status = file.status)
+                if (isSelectionMode) {
+                    Icon(
+                        imageVector = if (isSelected) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                        contentDescription = if (isSelected) "Selected" else "Not selected",
+                        tint = if (isSelected) colors.teal else colors.textDim,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .testTag("grid_checkbox_${file.id}")
+                    )
+                } else {
+                    FileStatusIndicator(status = file.status)
+                }
             }
 
             Column {
@@ -1878,6 +2031,188 @@ fun BotRevocationAlertBanner(
                 }
             }
         }
+    }
+}
+
+// ==========================================
+// Bulk Selection Top Bar
+// ==========================================
+@Composable
+fun BulkSelectionTopBar(
+    selectedCount: Int,
+    totalCount: Int,
+    allSelected: Boolean,
+    onSelectAll: () -> Unit,
+    onClearSelection: () -> Unit
+) {
+    val colors = LocalTeleVaultColors.current
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding(),
+        color = colors.surfaceHi,
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.line)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                IconButton(
+                    onClick = onClearSelection,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .testTag("bulk_cancel_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Cancel Selection",
+                        tint = colors.text,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Column {
+                    Text(
+                        text = if (selectedCount == 0) "Select items" else "$selectedCount selected",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = BodySansFont,
+                        color = colors.text
+                    )
+                    Text(
+                        text = "$totalCount total available",
+                        fontSize = 11.5.sp,
+                        fontFamily = NumericMonoFont,
+                        color = colors.textDim
+                    )
+                }
+            }
+
+            TextButton(
+                onClick = onSelectAll,
+                modifier = Modifier.testTag("bulk_select_all_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SelectAll,
+                    contentDescription = null,
+                    tint = colors.teal,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (allSelected) "Deselect All" else "Select All",
+                    fontSize = 13.sp,
+                    fontFamily = BodySansFont,
+                    fontWeight = FontWeight.SemiBold,
+                    color = colors.teal
+                )
+            }
+        }
+    }
+}
+
+// ==========================================
+// Bulk Actions Bottom Bar
+// ==========================================
+@Composable
+fun BulkActionsBottomBar(
+    selectedCount: Int,
+    onDownload: () -> Unit,
+    onMove: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val colors = LocalTeleVaultColors.current
+    val hasSelection = selectedCount > 0
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding(),
+        color = colors.surfaceHi,
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
+        shadowElevation = 12.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Download Action
+            BulkActionButton(
+                icon = Icons.Default.Download,
+                label = "Download",
+                tint = if (hasSelection) colors.teal else colors.textDim.copy(alpha = 0.5f),
+                enabled = hasSelection,
+                onClick = onDownload,
+                testTag = "bulk_download_button"
+            )
+
+            // Move Action
+            BulkActionButton(
+                icon = Icons.Default.DriveFileMove,
+                label = "Move",
+                tint = if (hasSelection) colors.violet else colors.textDim.copy(alpha = 0.5f),
+                enabled = hasSelection,
+                onClick = onMove,
+                testTag = "bulk_move_button"
+            )
+
+            // Delete Action
+            BulkActionButton(
+                icon = Icons.Default.Delete,
+                label = "Delete",
+                tint = if (hasSelection) colors.danger else colors.textDim.copy(alpha = 0.5f),
+                enabled = hasSelection,
+                onClick = onDelete,
+                testTag = "bulk_delete_button"
+            )
+        }
+    }
+}
+
+@Composable
+private fun BulkActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    testTag: String
+) {
+    val colors = LocalTeleVaultColors.current
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .testTag(testTag)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = tint,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontFamily = BodySansFont,
+            fontWeight = FontWeight.Medium,
+            color = if (enabled) colors.text else colors.textDim.copy(alpha = 0.5f)
+        )
     }
 }
 

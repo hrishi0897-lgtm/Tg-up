@@ -94,6 +94,10 @@ data class UiState(
     val folderToDelete: FolderEntity? = null,
     val fileToDelete: FileEntity? = null,
     val itemToMove: FileEntity? = null,
+    val selectedFileIds: Set<String> = emptySet(),
+    val isSelectionMode: Boolean = false,
+    val showBulkMoveDialog: Boolean = false,
+    val showBulkDeleteDialog: Boolean = false,
     val showInAppGuide: Boolean = false,
     val pendingUploadWarning: PendingUploadWarning? = null,
     val transferErrorMessage: String? = null,
@@ -1314,6 +1318,112 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setItemToMove(file: FileEntity?) {
         _uiState.update { it.copy(itemToMove = file) }
+    }
+
+    // ==========================================
+    // Bulk File Selection & Batch Operations
+    // ==========================================
+
+    fun toggleFileSelection(fileId: String) {
+        _uiState.update { state ->
+            val updated = state.selectedFileIds.toMutableSet()
+            if (updated.contains(fileId)) {
+                updated.remove(fileId)
+            } else {
+                updated.add(fileId)
+            }
+            state.copy(
+                selectedFileIds = updated,
+                isSelectionMode = updated.isNotEmpty()
+            )
+        }
+    }
+
+    fun selectAllFiles(files: List<FileEntity>) {
+        val allIds = files.map { it.id }.toSet()
+        _uiState.update {
+            it.copy(
+                selectedFileIds = allIds,
+                isSelectionMode = allIds.isNotEmpty()
+            )
+        }
+    }
+
+    fun clearSelection() {
+        _uiState.update {
+            it.copy(
+                selectedFileIds = emptySet(),
+                isSelectionMode = false,
+                showBulkMoveDialog = false,
+                showBulkDeleteDialog = false
+            )
+        }
+    }
+
+    fun setShowBulkMoveDialog(show: Boolean) {
+        _uiState.update { it.copy(showBulkMoveDialog = show) }
+    }
+
+    fun setShowBulkDeleteDialog(show: Boolean) {
+        _uiState.update { it.copy(showBulkDeleteDialog = show) }
+    }
+
+    fun bulkDownloadSelected() {
+        val selectedIds = _uiState.value.selectedFileIds.toList()
+        if (selectedIds.isEmpty()) return
+        selectedIds.forEach { fileId ->
+            transferManager.startDownload(fileId)
+        }
+        _uiState.update {
+            it.copy(
+                selectedFileIds = emptySet(),
+                isSelectionMode = false,
+                showTransfersSheet = true
+            )
+        }
+    }
+
+    fun bulkMoveSelected(targetFolderId: String?) {
+        val selectedIds = _uiState.value.selectedFileIds.toList()
+        if (selectedIds.isEmpty()) return
+        viewModelScope.launch {
+            selectedIds.forEach { fileId ->
+                db.fileDao().moveFile(fileId, targetFolderId)
+            }
+            _uiState.update {
+                it.copy(
+                    selectedFileIds = emptySet(),
+                    isSelectionMode = false,
+                    showBulkMoveDialog = false
+                )
+            }
+            vaultSyncManager.scheduleAutoPublish()
+        }
+    }
+
+    fun bulkDeleteSelected() {
+        val selectedIds = _uiState.value.selectedFileIds.toList()
+        if (selectedIds.isEmpty()) return
+        viewModelScope.launch {
+            selectedIds.forEach { fileId ->
+                transferManager.deleteFile(fileId)
+            }
+            _uiState.update { state ->
+                val updatedDetail = if (state.selectedFileForDetail != null && selectedIds.contains(state.selectedFileForDetail.id)) {
+                    null
+                } else {
+                    state.selectedFileForDetail
+                }
+                state.copy(
+                    selectedFileIds = emptySet(),
+                    isSelectionMode = false,
+                    showBulkDeleteDialog = false,
+                    selectedFileForDetail = updatedDetail,
+                    selectedFileChunks = if (updatedDetail == null) emptyList() else state.selectedFileChunks
+                )
+            }
+            vaultSyncManager.publishVaultIndex()
+        }
     }
 
     fun getCredentials(): Pair<String, String> {
