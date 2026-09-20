@@ -533,6 +533,7 @@ fun DeleteConfirmationDialog(
     title: String = "Delete Item",
     itemName: String,
     warningText: String = "This will permanently delete this item from your Telegram vault and remove all chunks. This cannot be undone.",
+    confirmButtonText: String = "Delete",
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
@@ -593,7 +594,7 @@ fun DeleteConfirmationDialog(
                     .pressScale(0.93f)
                     .testTag("btn_confirm_delete")
             ) {
-                Text("Delete", fontWeight = FontWeight.Bold)
+                Text(confirmButtonText, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

@@ -242,7 +242,7 @@ abstract class AppDatabase : RoomDatabase() {
                                     val now = System.currentTimeMillis()
                                     db.execSQL(
                                         "INSERT OR IGNORE INTO `channels` (`channelId`, `displayName`, `addedDate`, `isActive`) VALUES (?, 'My Vault', ?, 1)",
-                                        arrayOf(chatId, now)
+                                        arrayOf<Any>(chatId, now)
                                     )
                                 }
                             } catch (e: Exception) {

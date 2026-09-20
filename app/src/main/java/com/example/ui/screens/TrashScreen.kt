@@ -3,8 +3,10 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,17 +26,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -84,12 +90,18 @@ fun TrashScreen(
     onRestoreFile: (String) -> Unit,
     onPermanentlyDeleteFile: (String) -> Unit,
     onEmptyTrash: () -> Unit,
+    onBulkRestore: ((List<String>) -> Unit)? = null,
+    onBulkPermanentlyDelete: ((List<String>) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTeleVaultColors.current ?: DarkTeleVaultColors
 
     var showEmptyTrashDialog by remember { mutableStateOf(false) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
     var fileToDeletePermanently by remember { mutableStateOf<FileEntity?>(null) }
+    var selectedTrashIds by remember { mutableStateOf(setOf<String>()) }
+
+    val isSelectionMode = selectedTrashIds.isNotEmpty()
 
     Scaffold(
         modifier = modifier
@@ -99,12 +111,38 @@ fun TrashScreen(
             .navigationBarsPadding(),
         containerColor = colors.bg,
         topBar = {
-            TrashTopBar(
-                itemCount = trashFiles.size,
-                onBack = onBack,
-                onEmptyTrashClick = { showEmptyTrashDialog = true },
-                colors = colors
-            )
+            if (isSelectionMode) {
+                TrashSelectionTopBar(
+                    selectedCount = selectedTrashIds.size,
+                    totalCount = trashFiles.size,
+                    onClearSelection = { selectedTrashIds = emptySet() },
+                    onSelectAll = {
+                        selectedTrashIds = if (selectedTrashIds.size == trashFiles.size) {
+                            emptySet()
+                        } else {
+                            trashFiles.map { it.id }.toSet()
+                        }
+                    },
+                    onBulkRestore = {
+                        val ids = selectedTrashIds.toList()
+                        selectedTrashIds = emptySet()
+                        if (onBulkRestore != null) {
+                            onBulkRestore(ids)
+                        } else {
+                            ids.forEach { onRestoreFile(it) }
+                        }
+                    },
+                    onBulkDeleteForever = { showBulkDeleteDialog = true },
+                    colors = colors
+                )
+            } else {
+                TrashTopBar(
+                    itemCount = trashFiles.size,
+                    onBack = onBack,
+                    onEmptyTrashClick = { showEmptyTrashDialog = true },
+                    colors = colors
+                )
+            }
         }
     ) { innerPadding ->
         Column(
@@ -173,8 +211,21 @@ fun TrashScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                     }
                     items(trashFiles, key = { it.id }) { file ->
+                        val isSelected = selectedTrashIds.contains(file.id)
                         TrashItemCard(
                             file = file,
+                            isSelected = isSelected,
+                            isSelectionMode = isSelectionMode,
+                            onToggleSelect = {
+                                selectedTrashIds = if (isSelected) {
+                                    selectedTrashIds - file.id
+                                } else {
+                                    selectedTrashIds + file.id
+                                }
+                            },
+                            onLongClick = {
+                                selectedTrashIds = selectedTrashIds + file.id
+                            },
                             onRestore = { onRestoreFile(file.id) },
                             onDeleteForever = { fileToDeletePermanently = file },
                             colors = colors
@@ -221,6 +272,7 @@ fun TrashScreen(
                 Button(
                     onClick = {
                         showEmptyTrashDialog = false
+                        selectedTrashIds = emptySet()
                         onEmptyTrash()
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -234,6 +286,64 @@ fun TrashScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showEmptyTrashDialog = false }) {
+                    Text("Cancel", color = colors.textDim)
+                }
+            }
+        )
+    }
+
+    // Confirmation dialog: Bulk Permanently Delete
+    if (showBulkDeleteDialog && selectedTrashIds.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { showBulkDeleteDialog = false },
+            containerColor = colors.surface,
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.DeleteForever,
+                    contentDescription = null,
+                    tint = colors.danger,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Permanently Delete ${selectedTrashIds.size} Item${if (selectedTrashIds.size > 1) "s" else ""}?",
+                    fontFamily = DisplaySerifFont,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.text
+                )
+            },
+            text = {
+                Text(
+                    text = "The selected ${selectedTrashIds.size} file(s) will be permanently erased from Telegram and your local vault. This action cannot be reversed.",
+                    fontFamily = BodySansFont,
+                    fontSize = 14.sp,
+                    color = colors.textDim
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val ids = selectedTrashIds.toList()
+                        showBulkDeleteDialog = false
+                        selectedTrashIds = emptySet()
+                        if (onBulkPermanentlyDelete != null) {
+                            onBulkPermanentlyDelete(ids)
+                        } else {
+                            ids.forEach { onPermanentlyDeleteFile(it) }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.danger,
+                        contentColor = Color.White
+                    ),
+                    modifier = Modifier.testTag("confirm_bulk_delete_trash_button")
+                ) {
+                    Text("Delete Permanently", fontWeight = FontWeight.SemiBold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBulkDeleteDialog = false }) {
                     Text("Cancel", color = colors.textDim)
                 }
             }
@@ -291,6 +401,117 @@ fun TrashScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun TrashSelectionTopBar(
+    selectedCount: Int,
+    totalCount: Int,
+    onClearSelection: () -> Unit,
+    onSelectAll: () -> Unit,
+    onBulkRestore: () -> Unit,
+    onBulkDeleteForever: () -> Unit,
+    colors: com.example.ui.theme.TeleVaultColors
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            IconButton(
+                onClick = onClearSelection,
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(colors.surface)
+                    .border(1.dp, colors.line, CircleShape)
+                    .testTag("trash_cancel_selection_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Cancel Selection",
+                    tint = colors.text,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Text(
+                text = "$selectedCount selected",
+                fontFamily = BodySansFont,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = colors.text
+            )
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            IconButton(
+                onClick = onSelectAll,
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(colors.surface)
+                    .border(1.dp, colors.line, CircleShape)
+                    .testTag("trash_select_all_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SelectAll,
+                    contentDescription = if (selectedCount == totalCount) "Deselect All" else "Select All",
+                    tint = if (selectedCount == totalCount) colors.teal else colors.textDim,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            Button(
+                onClick = onBulkRestore,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.violet.copy(alpha = 0.2f),
+                    contentColor = colors.violet
+                ),
+                shape = RoundedCornerShape(10.dp),
+                elevation = null,
+                modifier = Modifier.testTag("bulk_restore_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Restore,
+                    contentDescription = null,
+                    tint = colors.violet,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Restore", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+
+            Button(
+                onClick = onBulkDeleteForever,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = colors.danger.copy(alpha = 0.2f),
+                    contentColor = colors.danger
+                ),
+                shape = RoundedCornerShape(10.dp),
+                elevation = null,
+                modifier = Modifier.testTag("bulk_delete_forever_btn")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DeleteForever,
+                    contentDescription = null,
+                    tint = colors.danger,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Delete", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
     }
 }
 
@@ -441,9 +662,14 @@ private fun TrashEmptyState(colors: com.example.ui.theme.TeleVaultColors) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrashItemCard(
     file: FileEntity,
+    isSelected: Boolean = false,
+    isSelectionMode: Boolean = false,
+    onToggleSelect: () -> Unit = {},
+    onLongClick: () -> Unit = {},
     onRestore: () -> Unit,
     onDeleteForever: () -> Unit,
     colors: com.example.ui.theme.TeleVaultColors
@@ -457,13 +683,34 @@ private fun TrashItemCard(
         (30 - elapsedDays).coerceAtLeast(0)
     }
 
+    val cardBorder = if (isSelected) {
+        androidx.compose.foundation.BorderStroke(1.5.dp, colors.violet)
+    } else {
+        androidx.compose.foundation.BorderStroke(1.dp, colors.line)
+    }
+
+    val cardBackground = if (isSelected) {
+        colors.violet.copy(alpha = 0.08f)
+    } else {
+        colors.surface
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("trash_item_${file.id}"),
+            .testTag("trash_item_${file.id}")
+            .clip(RoundedCornerShape(16.dp))
+            .combinedClickable(
+                onClick = {
+                    if (isSelectionMode) {
+                        onToggleSelect()
+                    }
+                },
+                onLongClick = onLongClick
+            ),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = colors.surface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.line)
+        colors = CardDefaults.cardColors(containerColor = cardBackground),
+        border = cardBorder
     ) {
         Column(
             modifier = Modifier
@@ -471,12 +718,21 @@ private fun TrashItemCard(
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Top row: Icon + Name + Days left badge
+            // Top row: Checkbox (if selection mode) + Icon + Name + Days left badge
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (isSelectionMode) {
+                    Icon(
+                        imageVector = if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        contentDescription = if (isSelected) "Selected" else "Not selected",
+                        tint = if (isSelected) colors.violet else colors.textFaint,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
                 Box(
                     modifier = Modifier
                         .size(42.dp)
@@ -529,57 +785,59 @@ private fun TrashItemCard(
                 }
             }
 
-            // Bottom action row: Restore & Delete Permanently
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(
-                    onClick = onDeleteForever,
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = colors.danger
-                    ),
-                    modifier = Modifier.testTag("delete_forever_${file.id}")
+            // Bottom action row: Restore & Delete Permanently (only when not in selection mode)
+            if (!isSelectionMode) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteForever,
-                        contentDescription = null,
-                        tint = colors.danger,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Delete",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                    TextButton(
+                        onClick = onDeleteForever,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = colors.danger
+                        ),
+                        modifier = Modifier.testTag("delete_forever_${file.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteForever,
+                            contentDescription = null,
+                            tint = colors.danger,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Delete",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
 
-                Button(
-                    onClick = onRestore,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.violet.copy(alpha = 0.2f),
-                        contentColor = colors.violet
-                    ),
-                    shape = RoundedCornerShape(10.dp),
-                    elevation = null,
-                    modifier = Modifier.testTag("restore_file_${file.id}")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Restore,
-                        contentDescription = null,
-                        tint = colors.violet,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Restore",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Button(
+                        onClick = onRestore,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = colors.violet.copy(alpha = 0.2f),
+                            contentColor = colors.violet
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        elevation = null,
+                        modifier = Modifier.testTag("restore_file_${file.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Restore,
+                            contentDescription = null,
+                            tint = colors.violet,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Restore",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
         }

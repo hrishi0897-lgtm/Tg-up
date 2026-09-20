@@ -49,6 +49,7 @@ import com.example.data.transfer.TransferWorker
 import com.example.ui.screens.BulkDeleteDialog
 import com.example.ui.screens.BulkMoveDialog
 import com.example.ui.screens.CreateFolderDialog
+import com.example.ui.screens.DeleteConfirmationDialog
 import com.example.ui.screens.FileDetailSheet
 import com.example.ui.screens.FilePreviewScreen
 import com.example.ui.screens.PairDeviceDialog
@@ -436,7 +437,9 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         onBack = { viewModel.navigateToVaultScreen() },
                         onRestoreFile = { viewModel.restoreFileFromTrash(it) },
                         onPermanentlyDeleteFile = { viewModel.permanentlyDeleteFile(it) },
-                        onEmptyTrash = { viewModel.emptyTrash() }
+                        onEmptyTrash = { viewModel.emptyTrash() },
+                        onBulkRestore = { viewModel.bulkRestoreFromTrash(it) },
+                        onBulkPermanentlyDelete = { viewModel.bulkPermanentlyDelete(it) }
                     )
                 } else if (currentScreen == AppScreen.PREVIEW && uiState.previewFile != null) {
                     val previewFile = uiState.previewFile!!
@@ -613,6 +616,32 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     selectedCount = uiState.selectedFileIds.size,
                     onConfirm = { viewModel.bulkDeleteSelected() },
                     onDismiss = { viewModel.setShowBulkDeleteDialog(false) }
+                )
+            }
+
+            // Delete Folder Confirmation Dialog
+            if (uiState.folderToDelete != null) {
+                val folder = uiState.folderToDelete!!
+                DeleteConfirmationDialog(
+                    title = "Delete Folder",
+                    itemName = folder.name,
+                    warningText = "This will delete the folder and all files inside it. This action cannot be undone.",
+                    confirmButtonText = "Delete Folder",
+                    onDismiss = { viewModel.setFolderToDelete(null) },
+                    onConfirm = { viewModel.confirmDeleteFolder() }
+                )
+            }
+
+            // Delete File Confirmation Dialog
+            if (uiState.fileToDelete != null) {
+                val file = uiState.fileToDelete!!
+                DeleteConfirmationDialog(
+                    title = "Move to Trash",
+                    itemName = file.name,
+                    warningText = "This file will be moved to the Recycle Bin. You can restore it within 30 days or delete it permanently.",
+                    confirmButtonText = "Move to Trash",
+                    onDismiss = { viewModel.setFileToDelete(null) },
+                    onConfirm = { viewModel.confirmDeleteFile() }
                 )
             }
 
@@ -831,7 +860,7 @@ private fun HomeScreenContainer(
         onBreadcrumbClick = { index -> viewModel.navigateToBreadcrumb(index) },
         onFileClick = { file -> viewModel.onFileItemClick(file) },
         onRenameFolder = { folder -> viewModel.setFolderToRename(folder) },
-        onDeleteFolder = { folder -> viewModel.deleteFolder(folder) },
+        onDeleteFolder = { folder -> viewModel.setFolderToDelete(folder) },
         onCreateFolderClick = { viewModel.setShowCreateFolderDialog(true) },
         onUploadFileClick = onUploadFileClick,
         onOpenTransfers = { viewModel.navigateToTransfersScreen() },

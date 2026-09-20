@@ -846,14 +846,21 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun deleteFolder(folder: FolderEntity) {
         viewModelScope.launch {
-            // Delete sub-files in folder
-            val filesInFolder = db.fileDao().getByFolder(folder.id)
-            for (file in filesInFolder) {
-                transferManager.deleteFile(file.id)
-            }
-            db.folderDao().deleteById(folder.id)
+            deleteFolderRecursive(folder.id)
             vaultSyncManager.scheduleAutoPublish()
         }
+    }
+
+    private suspend fun deleteFolderRecursive(folderId: String) {
+        val filesInFolder = db.fileDao().getByFolder(folderId)
+        for (file in filesInFolder) {
+            transferManager.deleteFile(file.id)
+        }
+        val subfolders = db.folderDao().getSubfolders(folderId)
+        for (subfolder in subfolders) {
+            deleteFolderRecursive(subfolder.id)
+        }
+        db.folderDao().deleteById(folderId)
     }
 
     fun moveFile(fileId: String, targetFolderId: String?) {
@@ -1208,9 +1215,27 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun bulkRestoreFromTrash(fileIds: List<String>) {
+        if (fileIds.isEmpty()) return
+        viewModelScope.launch {
+            db.fileDao().bulkRestoreFromTrash(fileIds)
+            vaultSyncManager.scheduleAutoPublish()
+        }
+    }
+
     fun permanentlyDeleteFile(fileId: String) {
         viewModelScope.launch {
             transferManager.deleteFile(fileId)
+            vaultSyncManager.scheduleAutoPublish()
+        }
+    }
+
+    fun bulkPermanentlyDelete(fileIds: List<String>) {
+        if (fileIds.isEmpty()) return
+        viewModelScope.launch {
+            for (fileId in fileIds) {
+                transferManager.deleteFile(fileId)
+            }
             vaultSyncManager.scheduleAutoPublish()
         }
     }
@@ -1524,9 +1549,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         val selectedIds = _uiState.value.selectedFileIds.toList()
         if (selectedIds.isEmpty()) return
         viewModelScope.launch {
-            selectedIds.forEach { fileId ->
-                db.fileDao().moveFile(fileId, targetFolderId)
-            }
+            db.folderDao().moveFiles(selectedIds, targetFolderId)
             _uiState.update {
                 it.copy(
                     selectedFileIds = emptySet(),
@@ -1543,9 +1566,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         if (selectedIds.isEmpty()) return
         viewModelScope.launch {
             val now = System.currentTimeMillis()
-            selectedIds.forEach { fileId ->
-                db.fileDao().moveToTrash(fileId, now)
-            }
+            db.fileDao().bulkMoveToTrash(selectedIds, now)
             _uiState.update { state ->
                 val updatedDetail = if (state.selectedFileForDetail != null && selectedIds.contains(state.selectedFileForDetail.id)) {
                     null

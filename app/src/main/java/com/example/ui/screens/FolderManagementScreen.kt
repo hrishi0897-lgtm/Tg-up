@@ -112,6 +112,7 @@ fun FolderManagementScreen(
     initialFolderId: String? = null,
     onBack: () -> Unit,
     onFileClick: ((FileEntity) -> Unit)? = null,
+    onDeleteFolder: ((FolderEntity) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -243,9 +244,26 @@ fun FolderManagementScreen(
             folderName = folder.name,
             onDismiss = { folderToDelete = null },
             onConfirm = {
-                coroutineScope.launch {
-                    folderDao.deleteById(folder.id)
-                    folderToDelete = null
+                val toDelete = folder
+                folderToDelete = null
+                if (onDeleteFolder != null) {
+                    onDeleteFolder(toDelete)
+                } else {
+                    coroutineScope.launch {
+                        suspend fun deleteRecursively(fId: String) {
+                            val subfolders = folderDao.getSubfolders(fId)
+                            for (sf in subfolders) {
+                                deleteRecursively(sf.id)
+                            }
+                            val filesInFolder = folderDao.getFilesInFolder(fId)
+                            val now = System.currentTimeMillis()
+                            for (file in filesInFolder) {
+                                fileDao?.moveToTrash(file.id, now)
+                            }
+                            folderDao.deleteById(fId)
+                        }
+                        deleteRecursively(toDelete.id)
+                    }
                 }
             }
         )
@@ -320,6 +338,7 @@ fun FolderManagementScreen(
         initialFolderId = uiState.currentFolderId,
         onBack = onBack,
         onFileClick = { viewModel.inspectFile(it) },
+        onDeleteFolder = { viewModel.deleteFolder(it) },
         modifier = modifier
     )
 }
