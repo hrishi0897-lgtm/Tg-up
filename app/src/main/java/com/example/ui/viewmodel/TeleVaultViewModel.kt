@@ -18,6 +18,7 @@ import com.example.data.local.entity.SharedFileEntity
 import com.example.data.local.entity.StandbyBotEntity
 import com.example.data.remote.TelegramRepository
 import com.example.data.remote.TelegramUser
+import com.example.data.sync.RestoreResult
 import com.example.data.sync.VaultSyncManager
 import com.example.data.sync.VaultSyncWorker
 import com.example.data.transfer.RelayShareManager
@@ -119,6 +120,10 @@ data class UiState(
     val showPairDeviceDialog: Boolean = false,
     val shareSheetAskFolder: Boolean = true,
     val relayChatId: String? = null,
+    val backupChatId: String? = null,
+    val isRestoringBackup: Boolean = false,
+    val restoreResult: RestoreResult? = null,
+    val restoreError: String? = null,
     val previewFile: FileEntity? = null,
     val isGeneratingPreview: Boolean = false
 )
@@ -143,7 +148,8 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             isWifiOnly = creds.isWifiOnly(),
             lastSyncedTime = creds.getLastSyncedTime(),
             shareSheetAskFolder = creds.isShareSheetAskFolder(),
-            relayChatId = creds.getRelayChatId()
+            relayChatId = creds.getRelayChatId(),
+            backupChatId = creds.getBackupChatId()
         )
     )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
@@ -666,7 +672,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     )
 
     // Credential Management & Validation
-    fun validateAndSaveCredentials(token: String, chatId: String) {
+    fun validateAndSaveCredentials(token: String, chatId: String, backupChatId: String? = null) {
         if (token.isBlank() || chatId.isBlank()) {
             _uiState.update { it.copy(validationError = "Please enter both Bot Token and Chat ID.") }
             return
@@ -677,7 +683,8 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             if (result.isSuccess) {
                 val user = result.getOrThrow()
                 val cleanChatId = chatId.trim()
-                creds.saveCredentials(token.trim(), cleanChatId)
+                val cleanBackupChatId = backupChatId?.trim()?.takeIf { it.isNotBlank() }
+                creds.saveCredentials(token.trim(), cleanChatId, cleanBackupChatId)
                 viewModelScope.launch(Dispatchers.IO) {
                     db.channelDao().insert(
                         ChannelEntity(
@@ -693,7 +700,8 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                         isValidating = false,
                         validationSuccessUser = user,
                         isAuthenticated = true,
-                        validationError = null
+                        validationError = null,
+                        backupChatId = cleanBackupChatId
                     )
                 }
                 VaultSyncWorker.schedule(getApplication())
@@ -708,6 +716,61 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 }
             }
         }
+    }
+
+    fun setBackupChatId(backupChatId: String?) {
+        val clean = backupChatId?.trim()?.takeIf { it.isNotBlank() }
+        creds.setBackupChatId(clean)
+        _uiState.update { it.copy(backupChatId = clean) }
+        // Schedule vault index publish so backup channel receives televault_index.json immediately
+        if (!clean.isNullOrBlank()) {
+            forcePublishVaultIndex()
+        }
+    }
+
+    fun restoreFromBackup(
+        backupChatId: String,
+        botToken: String? = null,
+        onComplete: (Result<RestoreResult>) -> Unit = {}
+    ) {
+        val cleanBackupId = backupChatId.trim()
+        if (cleanBackupId.isBlank()) {
+            val err = "Please enter the Backup Channel ID."
+            _uiState.update { it.copy(restoreError = err) }
+            onComplete(Result.failure(IllegalArgumentException(err)))
+            return
+        }
+
+        _uiState.update { it.copy(isRestoringBackup = true, restoreError = null) }
+        viewModelScope.launch {
+            val result = vaultSyncManager.restoreFromBackupChannel(cleanBackupId, botToken)
+            if (result.isSuccess) {
+                val res = result.getOrThrow()
+                _uiState.update {
+                    it.copy(
+                        isRestoringBackup = false,
+                        restoreResult = res,
+                        restoreError = null,
+                        isAuthenticated = true,
+                        backupChatId = null
+                    )
+                }
+                onComplete(Result.success(res))
+            } else {
+                val err = result.exceptionOrNull()?.message ?: "Failed to restore from backup"
+                _uiState.update {
+                    it.copy(
+                        isRestoringBackup = false,
+                        restoreError = err
+                    )
+                }
+                onComplete(Result.failure(Exception(err)))
+            }
+        }
+    }
+
+    fun clearRestoreResult() {
+        _uiState.update { it.copy(restoreResult = null, restoreError = null) }
     }
 
     fun disconnect() {

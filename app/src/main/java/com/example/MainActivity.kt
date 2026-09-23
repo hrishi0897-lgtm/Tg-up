@@ -413,8 +413,17 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     OnboardingScreen(
                         isValidating = uiState.isValidating,
                         validationError = uiState.validationError,
-                        onConnect = { token, chatId ->
-                            viewModel.validateAndSaveCredentials(token, chatId)
+                        isRestoringBackup = uiState.isRestoringBackup,
+                        restoreError = uiState.restoreError,
+                        restoreResult = uiState.restoreResult,
+                        onConnect = { token, chatId, backupChatId ->
+                            viewModel.validateAndSaveCredentials(token, chatId, backupChatId)
+                        },
+                        onRestoreFromBackup = { backupChatId, botToken ->
+                            viewModel.restoreFromBackup(backupChatId, botToken)
+                        },
+                        onDismissRestoreResult = {
+                            viewModel.clearRestoreResult()
                         }
                     )
                 } else if (currentScreen == AppScreen.TRANSFERS) {
@@ -952,6 +961,17 @@ private fun SettingsScreenContainer(
         onShareSheetAskFolderChange = { viewModel.setShareSheetAskFolder(it) },
         relayChatId = uiState.relayChatId,
         onRelayChatIdChange = { viewModel.setRelayChatId(it) },
+        backupChatId = uiState.backupChatId,
+        onBackupChatIdChange = { viewModel.setBackupChatId(it) },
+        isRestoringBackup = uiState.isRestoringBackup,
+        restoreError = uiState.restoreError,
+        restoreResult = uiState.restoreResult,
+        onRestoreFromBackup = { backupChatId ->
+            viewModel.restoreFromBackup(backupChatId)
+        },
+        onDismissRestoreResult = {
+            viewModel.clearRestoreResult()
+        },
         sharedFiles = sharedFiles,
         onRevokeSharedFile = { viewModel.revokeRelayShare(it) },
         onPairDeviceClick = { viewModel.openPairDeviceDialog() },

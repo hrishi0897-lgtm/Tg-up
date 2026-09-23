@@ -27,7 +27,7 @@ class GreetingScreenshotTest {
         OnboardingScreen(
           isValidating = false,
           validationError = null,
-          onConnect = { _, _ -> }
+          onConnect = { _, _, _ -> }
         )
       }
     }

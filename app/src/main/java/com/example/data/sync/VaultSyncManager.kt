@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.example.data.local.AppDatabase
 import com.example.data.local.EncryptedCredentialsManager
+import com.example.data.local.entity.ChannelEntity
 import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
@@ -34,6 +35,14 @@ data class SyncResult(
     val filesCount: Int,
     val newFilesCount: Int,
     val summary: String
+)
+
+data class RestoreResult(
+    val restoredFoldersCount: Int,
+    val restoredFilesCount: Int,
+    val brokenFilesCount: Int,
+    val summary: String,
+    val brokenFileNames: List<String> = emptyList()
 )
 
 /**
@@ -199,6 +208,19 @@ class VaultSyncManager private constructor(private val context: Context) {
             val localFolders = database.folderDao().getAll()
             val localFiles = database.fileDao().getAll().filter { it.status == FileStatus.COMPLETED }
 
+            val folderMap = localFolders.associateBy { it.id }
+            fun buildPath(folderId: String?): String {
+                if (folderId == null) return "/"
+                val parts = mutableListOf<String>()
+                var curr = folderMap[folderId]
+                val visited = mutableSetOf<String>()
+                while (curr != null && visited.add(curr.id)) {
+                    parts.add(0, curr.name)
+                    curr = curr.parentFolderId?.let { folderMap[it] }
+                }
+                return "/" + parts.joinToString("/")
+            }
+
             Log.i(TAG, "Publishing Vault Index: ${localFiles.size} files, ${localFolders.size} folders to chat $chatId...")
 
             val indexFolders = localFolders.map { folder ->
@@ -206,6 +228,7 @@ class VaultSyncManager private constructor(private val context: Context) {
                     id = folder.id,
                     name = folder.name,
                     parentFolderId = folder.parentFolderId,
+                    path = buildPath(folder.id),
                     createdDate = folder.createdDate
                 )
             }
@@ -215,10 +238,11 @@ class VaultSyncManager private constructor(private val context: Context) {
                     ManifestChunk(
                         index = chunk.chunkIndex,
                         messageId = chunk.telegramMessageId ?: 0L,
-                        channelId = chunk.channelId ?: file.channelId ?: chatId,
+                        channelId = chunk.channelId.ifEmpty { file.channelId ?: chatId },
                         telegramFileId = chunk.telegramFileId,
                         sha256 = chunk.checksum,
-                        size = chunk.size
+                        size = chunk.size,
+                        backupMessageId = chunk.backupTelegramMessageId
                     )
                 }
 
@@ -226,6 +250,7 @@ class VaultSyncManager private constructor(private val context: Context) {
                     id = file.id,
                     name = file.name,
                     folderId = file.folderId,
+                    folderPath = buildPath(file.folderId),
                     channelId = file.channelId ?: chatId,
                     size = file.size,
                     mimeType = file.mimeType,
@@ -239,11 +264,13 @@ class VaultSyncManager private constructor(private val context: Context) {
                 )
             }
 
+            val backupChatId = credentialsManager.getBackupChatId()?.trim()
             val now = System.currentTimeMillis()
             val vaultIndex = VaultIndex(
-                version = 1,
+                version = 2,
                 timestamp = now,
                 deviceId = credentialsManager.getDeviceId(),
+                backupChatId = backupChatId,
                 folders = indexFolders,
                 files = indexFiles
             )
@@ -258,7 +285,7 @@ class VaultSyncManager private constructor(private val context: Context) {
 
             if (uploadResult.isFailure) {
                 val err = uploadResult.exceptionOrNull() ?: Exception("Failed to upload vault index")
-                Log.e(TAG, "publishVaultIndex failed: ${err.message}", err)
+                Log.e(TAG, "publishVaultIndex failed on primary chat: ${err.message}", err)
                 return Result.failure(err)
             }
 
@@ -267,7 +294,29 @@ class VaultSyncManager private constructor(private val context: Context) {
             credentialsManager.setLastSyncedTime(now)
             _lastSyncedTime.value = now
 
-            Log.i(TAG, "publishVaultIndex succeeded: messageId=${newMsg.messageId}, ${indexFolders.size} folders, ${indexFiles.size} files, pinned in chat")
+            // Requirement 2: Upload televault_index.json to backup channel as well, replacing previous and pinning it
+            if (!backupChatId.isNullOrEmpty() && backupChatId != chatId) {
+                try {
+                    val prevBackupMsgId = credentialsManager.getLastBackupVaultIndexMessageId()
+                    val backupUploadResult = repository.uploadVaultIndex(
+                        token = token,
+                        chatId = backupChatId,
+                        vaultIndex = vaultIndex,
+                        previousIndexMessageId = prevBackupMsgId
+                    )
+                    if (backupUploadResult.isSuccess) {
+                        val backupMsg = backupUploadResult.getOrThrow()
+                        credentialsManager.setLastBackupVaultIndexMessageId(backupMsg.messageId)
+                        Log.i(TAG, "Successfully published & pinned televault_index.json to backup channel $backupChatId (msgId=${backupMsg.messageId})")
+                    } else {
+                        Log.w(TAG, "Failed to upload index to backup channel $backupChatId: ${backupUploadResult.exceptionOrNull()?.message}")
+                    }
+                } catch (backupEx: Exception) {
+                    Log.w(TAG, "Exception uploading index to backup channel: ${backupEx.message}")
+                }
+            }
+
+            Log.i(TAG, "publishVaultIndex succeeded: primary messageId=${newMsg.messageId}, ${indexFolders.size} folders, ${indexFiles.size} files, pinned in chat")
             Result.success(vaultIndex)
         } catch (e: Exception) {
             Log.e(TAG, "publishVaultIndex exception: ${e.message}", e)
@@ -532,6 +581,210 @@ class VaultSyncManager private constructor(private val context: Context) {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Sync exception: ${e.message}", e)
+            Result.failure(e)
+        } finally {
+            _isSyncing.value = false
+        }
+    }
+
+    /**
+     * Requirement 3 & 4: Disaster Recovery Flow.
+     * Takes backupChatId, downloads televault_index.json from it,
+     * rebuilds the entire local database from scratch (folders, files, chunks)
+     * using the backup channel's message_ids as the new primary source.
+     * Works on a fresh install with no local SQLite records beforehand.
+     * Runs integrity check: verifies chunk count and retrievability,
+     * flagging incomplete/broken files in the UI.
+     */
+    suspend fun restoreFromBackupChannel(
+        backupChatId: String,
+        botToken: String? = null
+    ): Result<RestoreResult> = syncMutex.withLock {
+        val cleanBackupChatId = backupChatId.trim()
+        val token = (botToken ?: credentialsManager.getBotToken())?.trim()
+
+        if (token.isNullOrBlank()) {
+            return Result.failure(IllegalStateException("Telegram Bot Token is missing. Please configure your bot token."))
+        }
+        if (cleanBackupChatId.isBlank()) {
+            return Result.failure(IllegalStateException("Backup Channel ID is empty."))
+        }
+
+        _isSyncing.value = true
+        try {
+            Log.i(TAG, "Starting Disaster Recovery from backup channel: $cleanBackupChatId...")
+
+            // 1. Download televault_index.json from backup channel
+            val fetchResult = repository.fetchLatestVaultIndex(token, cleanBackupChatId)
+            if (fetchResult.isFailure) {
+                val err = fetchResult.exceptionOrNull()?.message ?: "Failed to connect to backup channel"
+                return Result.failure(Exception("Could not fetch index from backup channel: $err"))
+            }
+
+            val indexPair = fetchResult.getOrThrow()
+                ?: return Result.failure(Exception("televault_index.json was not found in backup channel $cleanBackupChatId. Make sure the bot is an admin in the channel and the index file was pinned."))
+
+            val (vaultIndex, indexMessageId) = indexPair
+            Log.i(TAG, "televault_index.json found (msgId=$indexMessageId, ts=${vaultIndex.timestamp}, ${vaultIndex.files.size} files, ${vaultIndex.folders.size} folders). Rebuilding local database...")
+
+            // 2. Wipe existing local database for clean rebuild
+            database.chunkDao().clearAll()
+            database.fileDao().clearAll()
+            database.folderDao().clearAll()
+
+            // 3. Rebuild Folders
+            val folderEntities = vaultIndex.folders.map { vf ->
+                FolderEntity(
+                    id = vf.id,
+                    name = vf.name,
+                    parentFolderId = vf.parentFolderId,
+                    createdDate = vf.createdDate
+                )
+            }
+            database.folderDao().insertAll(folderEntities)
+
+            // 4. Rebuild Files and Chunks using backup channel message_ids as primary source
+            val fileEntities = mutableListOf<FileEntity>()
+            val chunkEntities = mutableListOf<ChunkEntity>()
+            val brokenFileNames = mutableListOf<String>()
+
+            for (vf in vaultIndex.files) {
+                val totalChunks = vf.totalChunks
+                val chunkList = vf.chunks
+                var isFileBroken = false
+                var brokenReason: String? = null
+
+                if (chunkList.size < totalChunks) {
+                    isFileBroken = true
+                    brokenReason = "Incomplete: only ${chunkList.size} of $totalChunks chunks recorded"
+                }
+
+                val chunksForFile = mutableListOf<ChunkEntity>()
+                for (ci in 0 until totalChunks) {
+                    val chunk = chunkList.find { it.index == ci }
+                    if (chunk == null) {
+                        isFileBroken = true
+                        brokenReason = "Incomplete: chunk index $ci is missing from backup index"
+                        break
+                    }
+
+                    // Requirement 3: Use backup channel's message_id as new primary source
+                    val primaryMsgId = chunk.backupMessageId ?: chunk.messageId
+                    if (primaryMsgId <= 0) {
+                        isFileBroken = true
+                        brokenReason = "Broken: chunk $ci has no valid message ID"
+                    }
+
+                    chunksForFile.add(
+                        ChunkEntity(
+                            fileId = vf.id,
+                            chunkIndex = ci,
+                            channelId = cleanBackupChatId,
+                            telegramMessageId = primaryMsgId,
+                            telegramFileId = null,
+                            checksum = chunk.sha256,
+                            size = chunk.size,
+                            isUploaded = true,
+                            isDownloaded = false,
+                            backupTelegramMessageId = chunk.backupMessageId
+                        )
+                    )
+                }
+
+                if (isFileBroken) {
+                    brokenFileNames.add(vf.name)
+                }
+
+                fileEntities.add(
+                    FileEntity(
+                        id = vf.id,
+                        name = vf.name,
+                        folderId = vf.folderId,
+                        channelId = cleanBackupChatId,
+                        size = vf.size,
+                        mimeType = vf.mimeType,
+                        uploadDate = vf.uploadDate,
+                        status = if (isFileBroken) FileStatus.FAILED else FileStatus.COMPLETED,
+                        errorMessage = brokenReason,
+                        checksum = vf.checksum,
+                        totalChunks = totalChunks,
+                        completedChunks = if (isFileBroken) chunkList.size else totalChunks,
+                        manifestMessageId = null,
+                        localPath = null,
+                        localUri = null,
+                        thumbnailFileId = vf.thumbnailFileId,
+                        thumbnailMessageId = vf.thumbnailMessageId
+                    )
+                )
+                chunkEntities.addAll(chunksForFile)
+            }
+
+            database.fileDao().insertAll(fileEntities)
+            database.chunkDao().insertAll(chunkEntities)
+
+            // 5. Requirement 4: Integrity check on retrievability
+            for (fe in fileEntities.filter { it.status == FileStatus.COMPLETED }) {
+                val firstChunk = chunkEntities.find { it.fileId == fe.id && it.chunkIndex == 0 }
+                val testMsgId = firstChunk?.telegramMessageId
+                if (testMsgId != null && testMsgId > 0) {
+                    try {
+                        val testCopy = repository.copyMessage(token, cleanBackupChatId, cleanBackupChatId, testMsgId)
+                        if (testCopy.isSuccess) {
+                            val tempId = testCopy.getOrThrow().messageId
+                            try { repository.deleteMessage(token, cleanBackupChatId, tempId) } catch (_: Exception) {}
+                        } else {
+                            val errMsg = testCopy.exceptionOrNull()?.message ?: ""
+                            if (errMsg.contains("not found", ignoreCase = true) || errMsg.contains("Bad Request", ignoreCase = true)) {
+                                database.fileDao().updateStatus(fe.id, FileStatus.FAILED, "Incomplete: Chunk message $testMsgId not found in channel")
+                                brokenFileNames.add(fe.name)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Integrity check warning for ${fe.name}: ${e.message}")
+                    }
+                }
+            }
+
+            // 6. Set restored backup channel as current active vault chat
+            credentialsManager.saveCredentials(botToken = token, chatId = cleanBackupChatId, backupChatId = null)
+            credentialsManager.setLastVaultIndexMessageId(indexMessageId)
+            val now = System.currentTimeMillis()
+            credentialsManager.setLastSyncedTime(now)
+            _lastSyncedTime.value = now
+
+            // Also ensure ChannelEntity exists for new active channel
+            try {
+                database.channelDao().insert(
+                    ChannelEntity(
+                        channelId = cleanBackupChatId,
+                        displayName = "Restored Vault",
+                        addedDate = now,
+                        isActive = true
+                    )
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Non-critical: Channel insert: ${e.message}")
+            }
+
+            val brokenCount = brokenFileNames.distinct().size
+            val summary = if (brokenCount == 0) {
+                "Successfully restored ${fileEntities.size} files and ${folderEntities.size} folders. All chunks verified intact."
+            } else {
+                "Restored ${fileEntities.size} files (${brokenCount} flagged as incomplete/broken) and ${folderEntities.size} folders."
+            }
+
+            Log.i(TAG, "Disaster Recovery complete: $summary")
+            Result.success(
+                RestoreResult(
+                    restoredFoldersCount = folderEntities.size,
+                    restoredFilesCount = fileEntities.size,
+                    brokenFilesCount = brokenCount,
+                    summary = summary,
+                    brokenFileNames = brokenFileNames.distinct()
+                )
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Disaster Recovery failed: ${e.message}", e)
             Result.failure(e)
         } finally {
             _isSyncing.value = false

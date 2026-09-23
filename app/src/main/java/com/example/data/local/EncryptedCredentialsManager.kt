@@ -44,6 +44,8 @@ class EncryptedCredentialsManager(context: Context) {
         private const val PREF_BOT_HEALTH_HISTORY = "bot_health_history_logs"
         private const val PREF_SHARE_SHEET_ASK_FOLDER = "share_sheet_ask_folder"
         private const val PREF_RELAY_CHAT_ID = "relay_chat_id"
+        private const val PREF_BACKUP_CHAT_ID = "encrypted_backup_chat_id"
+        private const val PREF_LAST_BACKUP_INDEX_MSG_ID = "last_backup_vault_index_message_id"
         // Telegram Bot API allows uploading up to 50MB via sendDocument, BUT strictly limits
         // downloading to 20MB via getFile. If a chunk exceeds 20MB, getFile returns HTTP 400 'Bad Request: file is too big'.
         // We set CHUNK_SIZE_BYTES globally to 18MB to leave safe headroom for multipart boundary overhead and API limits.
@@ -118,7 +120,7 @@ class EncryptedCredentialsManager(context: Context) {
 
     private fun decrypt(encryptedBase64: String): String? = decryptToken(encryptedBase64)
 
-    fun saveCredentials(botToken: String, chatId: String) {
+    fun saveCredentials(botToken: String, chatId: String, backupChatId: String? = null) {
         val cleanToken = botToken.trim()
         val encryptedToken = encrypt(cleanToken)
         val encryptedChatId = encrypt(chatId.trim())
@@ -131,11 +133,16 @@ class EncryptedCredentialsManager(context: Context) {
         val poolSerialized = currentPool.joinToString(POOL_DELIMITER)
         val encryptedPool = encrypt(poolSerialized)
 
-        prefs.edit()
+        val editor = prefs.edit()
             .putString(PREF_TOKEN, encryptedToken)
             .putString(PREF_TOKEN_POOL, encryptedPool)
             .putString(PREF_CHAT_ID, encryptedChatId)
-            .apply()
+
+        if (!backupChatId.isNullOrBlank()) {
+            editor.putString(PREF_BACKUP_CHAT_ID, encrypt(backupChatId.trim()))
+        }
+
+        editor.apply()
     }
 
     fun getBotToken(): String? {
@@ -240,6 +247,30 @@ class EncryptedCredentialsManager(context: Context) {
         return decrypt(encrypted)
     }
 
+    fun getBackupChatId(): String? {
+        val encrypted = prefs.getString(PREF_BACKUP_CHAT_ID, null) ?: return null
+        return decrypt(encrypted)
+    }
+
+    fun setBackupChatId(backupChatId: String?) {
+        val editor = prefs.edit()
+        if (backupChatId.isNullOrBlank()) {
+            editor.remove(PREF_BACKUP_CHAT_ID)
+        } else {
+            editor.putString(PREF_BACKUP_CHAT_ID, encrypt(backupChatId.trim()))
+        }
+        editor.apply()
+    }
+
+    fun getLastBackupVaultIndexMessageId(): Long? {
+        val id = prefs.getLong(PREF_LAST_BACKUP_INDEX_MSG_ID, -1L)
+        return if (id > 0) id else null
+    }
+
+    fun setLastBackupVaultIndexMessageId(messageId: Long?) {
+        prefs.edit().putLong(PREF_LAST_BACKUP_INDEX_MSG_ID, messageId ?: -1L).apply()
+    }
+
     fun hasCredentials(): Boolean {
         val token = getBotToken()
         val chatId = getChatId()
@@ -251,6 +282,8 @@ class EncryptedCredentialsManager(context: Context) {
             .remove(PREF_TOKEN)
             .remove(PREF_TOKEN_POOL)
             .remove(PREF_CHAT_ID)
+            .remove(PREF_BACKUP_CHAT_ID)
+            .remove(PREF_LAST_BACKUP_INDEX_MSG_ID)
             .apply()
     }
 

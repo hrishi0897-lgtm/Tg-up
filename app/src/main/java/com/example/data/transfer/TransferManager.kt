@@ -673,6 +673,28 @@ class TransferManager private constructor(
 
                                     val remoteFileId = uploadedMessage.document?.fileId ?: ""
 
+                                    // Requirement 1: Mirror every chunk to backup channel via copyMessage (server-side copy, zero extra mobile data)
+                                    var backupMsgId: Long? = null
+                                    val backupChatId = credentialsManager.getBackupChatId()?.trim()
+                                    if (!backupChatId.isNullOrEmpty() && backupChatId != chatId) {
+                                        try {
+                                            val copyResult = repository.copyMessage(
+                                                token = token,
+                                                chatId = backupChatId,
+                                                fromChatId = chatId,
+                                                messageId = uploadedMessage.messageId
+                                            )
+                                            if (copyResult.isSuccess) {
+                                                backupMsgId = copyResult.getOrThrow().messageId
+                                                Log.i("TransferManager", "Chunk $chunkIndex mirrored to backup channel $backupChatId (backupMsgId=$backupMsgId)")
+                                            } else {
+                                                Log.w("TransferManager", "Failed to mirror chunk $chunkIndex to backup channel: ${copyResult.exceptionOrNull()?.message}")
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.w("TransferManager", "Error mirroring chunk $chunkIndex to backup channel: ${e.message}")
+                                        }
+                                    }
+
                                     // Persist chunk upload success in Room immediately
                                     database.chunkDao().markChunkUploaded(
                                         fileId = fileId,
@@ -680,7 +702,8 @@ class TransferManager private constructor(
                                         messageId = uploadedMessage.messageId,
                                         fileIdRemote = remoteFileId,
                                         checksum = localSha256,
-                                        channelId = chatId
+                                        channelId = chatId,
+                                        backupMessageId = backupMsgId
                                     )
 
                                     inProgressBytesMap.remove(chunkIndex)

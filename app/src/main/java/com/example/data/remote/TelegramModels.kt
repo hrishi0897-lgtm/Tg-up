@@ -141,6 +141,7 @@ data class VaultIndex(
     @Json(name = "version") val version: Int = 1,
     @Json(name = "timestamp") val timestamp: Long = System.currentTimeMillis(),
     @Json(name = "deviceId") val deviceId: String? = null,
+    @Json(name = "backupChatId") val backupChatId: String? = null,
     @Json(name = "folders") val folders: List<VaultIndexFolder> = emptyList(),
     @Json(name = "files") val files: List<VaultIndexFile> = emptyList()
 )
@@ -150,6 +151,7 @@ data class VaultIndexFolder(
     @Json(name = "id") val id: String,
     @Json(name = "name") val name: String,
     @Json(name = "parentFolderId") val parentFolderId: String? = null,
+    @Json(name = "path") val path: String? = null,
     @Json(name = "createdDate") val createdDate: Long = System.currentTimeMillis()
 )
 
@@ -158,6 +160,7 @@ data class VaultIndexFile(
     @Json(name = "id") val id: String,
     @Json(name = "name") val name: String,
     @Json(name = "folderId") val folderId: String? = null,
+    @Json(name = "folderPath") val folderPath: String? = null,
     @Json(name = "channelId") val channelId: String? = null,
     @Json(name = "size") val size: Long,
     @Json(name = "mimeType") val mimeType: String,
@@ -177,7 +180,8 @@ data class ManifestChunk(
     @Json(name = "channelId") val channelId: String? = null,
     @Json(name = "telegramFileId") val telegramFileId: String? = null,
     @Json(name = "sha256") val sha256: String,
-    @Json(name = "size") val size: Long
+    @Json(name = "size") val size: Long,
+    @Json(name = "backupMessageId") val backupMessageId: Long? = null
 )
 
 /**

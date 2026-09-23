@@ -930,7 +930,7 @@ class TelegramRepository(
         previousIndexMessageId: Long? = null
     ): Result<TelegramMessage> {
         val targetUrl = botUrl(token, "sendDocument")
-        val partName = "vault_index.json"
+        val partName = "televault_index.json"
         val captionText = VAULT_INDEX_CAPTION
 
         val jsonString = vaultIndexAdapter.toJson(vaultIndex)
@@ -1016,7 +1016,7 @@ class TelegramRepository(
                     val doc = pinnedMsg.document
                     val fileName = doc?.fileName
                     Log.i("TelegramRepo", ">>> [fetchLatestVaultIndex] Chat has pinned message msgId=${pinnedMsg.messageId}, caption='$caption', docFileName='$fileName'")
-                    if (doc != null && (caption == VAULT_INDEX_CAPTION || caption?.startsWith(VAULT_INDEX_CAPTION) == true || fileName == "vault_index.json")) {
+                    if (doc != null && (caption == VAULT_INDEX_CAPTION || caption?.startsWith(VAULT_INDEX_CAPTION) == true || fileName == "televault_index.json" || fileName == "vault_index.json")) {
                         Log.i("TelegramRepo", ">>> [fetchLatestVaultIndex] Found VAULT_INDEX in pinned message! Downloading document fileId=${doc.fileId}...")
                         val downloadResult = downloadVaultIndexDocument(token, doc.fileId)
                         if (downloadResult.isSuccess) {
@@ -1043,7 +1043,7 @@ class TelegramRepository(
                     val msg = update.message ?: update.channelPost ?: continue
                     val caption = msg.caption?.trim()
                     val doc = msg.document
-                    if (doc != null && (caption == VAULT_INDEX_CAPTION || caption?.startsWith(VAULT_INDEX_CAPTION) == true || doc.fileName == "vault_index.json")) {
+                    if (doc != null && (caption == VAULT_INDEX_CAPTION || caption?.startsWith(VAULT_INDEX_CAPTION) == true || doc.fileName == "televault_index.json" || doc.fileName == "vault_index.json")) {
                         indexMessages.add(msg)
                     }
                 }

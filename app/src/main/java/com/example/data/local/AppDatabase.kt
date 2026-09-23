@@ -28,7 +28,7 @@ import com.example.data.local.entity.StandbyBotEntity
         StandbyBotEntity::class,
         SharedFileEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -114,6 +114,12 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `files` ADD COLUMN `thumbnailFileId` TEXT")
                 db.execSQL("ALTER TABLE `files` ADD COLUMN `thumbnailMessageId` INTEGER")
                 db.execSQL("ALTER TABLE `files` ADD COLUMN `thumbnailLocalPath` TEXT")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `chunks` ADD COLUMN `backupTelegramMessageId` INTEGER")
             }
         }
 
@@ -231,7 +237,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "televault_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, Migration3To4(appContext), MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, Migration3To4(appContext), MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onOpen(db: SupportSQLiteDatabase) {
                             super.onOpen(db)

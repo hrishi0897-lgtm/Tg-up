@@ -32,9 +32,12 @@ import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -66,6 +69,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.sync.RestoreResult
 import com.example.ui.components.QrScannerDialog
 import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.StatusError
@@ -75,15 +79,24 @@ import com.example.ui.theme.StatusSuccess
 fun OnboardingScreen(
     isValidating: Boolean,
     validationError: String?,
-    onConnect: (token: String, chatId: String) -> Unit,
-    modifier: Modifier = Modifier
+    onConnect: (token: String, chatId: String, backupChatId: String?) -> Unit,
+    modifier: Modifier = Modifier,
+    isRestoringBackup: Boolean = false,
+    restoreError: String? = null,
+    restoreResult: RestoreResult? = null,
+    onRestoreFromBackup: (backupChatId: String, botToken: String?) -> Unit = { _, _ -> },
+    onDismissRestoreResult: () -> Unit = {}
 ) {
     val colors = LocalTeleVaultColors.current
     var botToken by remember { mutableStateOf("") }
     var chatId by remember { mutableStateOf("") }
+    var backupChatId by remember { mutableStateOf("") }
     var isTokenVisible by remember { mutableStateOf(false) }
     var showGuide by remember { mutableStateOf(false) }
     var showScanner by remember { mutableStateOf(false) }
+    var showRestoreDialog by remember { mutableStateOf(false) }
+    var restoreBotTokenInput by remember { mutableStateOf("") }
+    var restoreChannelIdInput by remember { mutableStateOf("") }
 
     val scrollState = rememberScrollState()
 
@@ -254,7 +267,7 @@ fun OnboardingScreen(
                         keyboardActions = KeyboardActions(
                             onDone = {
                                 if (botToken.isNotBlank() && chatId.isNotBlank()) {
-                                    onConnect(botToken, chatId)
+                                    onConnect(botToken, chatId, backupChatId.takeIf { it.isNotBlank() })
                                 }
                             }
                         ),
@@ -272,6 +285,73 @@ fun OnboardingScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("chat_id_input")
+                    )
+
+                    Spacer(modifier = Modifier.height(18.dp))
+
+                    // Backup Channel ID field (Optional)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Backup Channel ID",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = colors.text
+                        )
+                        Text(
+                            text = "Optional · Redundant",
+                            fontSize = 11.sp,
+                            color = colors.teal,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Every chunk is auto-mirrored via copyMessage to this channel with zero extra mobile data.",
+                        fontSize = 11.sp,
+                        color = colors.textDim,
+                        lineHeight = 15.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = backupChatId,
+                        onValueChange = { backupChatId = it },
+                        placeholder = {
+                            Text(
+                                "e.g. -100987654321",
+                                color = colors.textFaint,
+                                fontSize = 13.sp
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Cloud,
+                                contentDescription = null,
+                                tint = colors.textDim,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done
+                        ),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.teal,
+                            unfocusedBorderColor = colors.line,
+                            focusedTextColor = colors.text,
+                            unfocusedTextColor = colors.text,
+                            cursorColor = colors.teal,
+                            focusedContainerColor = colors.bg,
+                            unfocusedContainerColor = colors.bg
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("backup_channel_id_input")
                     )
 
                     // Error display if validation failed
@@ -307,7 +387,7 @@ fun OnboardingScreen(
 
                     // Connect button
                     Button(
-                        onClick = { onConnect(botToken, chatId) },
+                        onClick = { onConnect(botToken, chatId, backupChatId.takeIf { it.isNotBlank() }) },
                         enabled = !isValidating && botToken.isNotBlank() && chatId.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = colors.violet,
@@ -400,7 +480,239 @@ fun OnboardingScreen(
                         showScanner = false
                         botToken = pairing.token
                         chatId = pairing.chatId
-                        onConnect(pairing.token, pairing.chatId)
+                        onConnect(pairing.token, pairing.chatId, null)
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Disaster Recovery Section
+            Card(
+                colors = CardDefaults.cardColors(containerColor = colors.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.teal.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(colors.teal.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Restore,
+                                contentDescription = null,
+                                tint = colors.teal,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "DISASTER RECOVERY",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.teal,
+                                letterSpacing = 1.sp
+                            )
+                            Text(
+                                text = "Restore Vault from Backup Channel",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.text
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Lost your primary bot or channel? Rebuild your entire vault from televault_index.json in your secondary backup channel without needing any previous local data.",
+                        fontSize = 12.sp,
+                        color = colors.textDim,
+                        lineHeight = 17.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(
+                        onClick = {
+                            if (botToken.isNotBlank()) restoreBotTokenInput = botToken
+                            showRestoreDialog = true
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("onboarding_restore_button"),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.teal),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.teal)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Restore,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Restore from Backup Channel",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            if (showRestoreDialog) {
+                AlertDialog(
+                    onDismissRequest = { if (!isRestoringBackup) showRestoreDialog = false },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Restore,
+                                contentDescription = null,
+                                tint = colors.teal,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Disaster Recovery", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        }
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(
+                                text = "Enter your Telegram Bot Token and the Backup Channel ID where chunks and televault_index.json were mirrored.",
+                                fontSize = 13.sp,
+                                color = colors.textDim
+                            )
+
+                            OutlinedTextField(
+                                value = restoreBotTokenInput,
+                                onValueChange = { restoreBotTokenInput = it },
+                                label = { Text("Bot Token") },
+                                placeholder = { Text("123456789:ABCdef...") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("restore_bot_token_input")
+                            )
+
+                            OutlinedTextField(
+                                value = restoreChannelIdInput,
+                                onValueChange = { restoreChannelIdInput = it },
+                                label = { Text("Backup Channel ID") },
+                                placeholder = { Text("-100123456789") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("restore_backup_channel_input")
+                            )
+
+                            if (restoreError != null) {
+                                Text(
+                                    text = restoreError,
+                                    color = StatusError,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val tokenToUse = restoreBotTokenInput.trim().ifBlank { botToken.trim() }
+                                onRestoreFromBackup(
+                                    restoreChannelIdInput.trim(),
+                                    tokenToUse.takeIf { it.isNotBlank() }
+                                )
+                            },
+                            enabled = !isRestoringBackup && restoreChannelIdInput.isNotBlank() && (restoreBotTokenInput.isNotBlank() || botToken.isNotBlank()),
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.teal),
+                            modifier = Modifier.testTag("confirm_restore_button")
+                        ) {
+                            if (isRestoringBackup) {
+                                CircularProgressIndicator(
+                                    strokeWidth = 2.dp,
+                                    color = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Rebuilding Vault...")
+                            } else {
+                                Text("Rebuild Vault")
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        if (!isRestoringBackup) {
+                            TextButton(onClick = { showRestoreDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    }
+                )
+            }
+
+            if (restoreResult != null) {
+                AlertDialog(
+                    onDismissRequest = {
+                        showRestoreDialog = false
+                        onDismissRestoreResult()
+                    },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = if (restoreResult.brokenFilesCount > 0) Icons.Default.Warning else Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = if (restoreResult.brokenFilesCount > 0) colors.amber else colors.mint,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Restore Complete", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Successfully recovered from backup channel!",
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.text,
+                                fontSize = 14.sp
+                            )
+                            Text("• Files restored: ${restoreResult.restoredFilesCount}", fontSize = 13.sp, color = colors.textDim)
+                            Text("• Folders restored: ${restoreResult.restoredFoldersCount}", fontSize = 13.sp, color = colors.textDim)
+                            Text("• Status: ${restoreResult.summary}", fontSize = 13.sp, color = colors.textDim)
+
+                            if (restoreResult.brokenFilesCount > 0) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "⚠️ ${restoreResult.brokenFilesCount} file(s) have missing chunks and are flagged as BROKEN:",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.danger
+                                )
+                                restoreResult.brokenFileNames.take(5).forEach { name ->
+                                    Text("  - $name", fontSize = 12.sp, color = colors.danger)
+                                }
+                                if (restoreResult.brokenFileNames.size > 5) {
+                                    Text("  ...and ${restoreResult.brokenFileNames.size - 5} more", fontSize = 12.sp, color = colors.textFaint)
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showRestoreDialog = false
+                                onDismissRestoreResult()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = colors.teal)
+                        ) {
+                            Text("Open Vault")
+                        }
                     }
                 )
             }

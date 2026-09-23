@@ -29,5 +29,6 @@ data class ChunkEntity(
     val checksum: String, // SHA-256 of the chunk
     val size: Long = 0L,
     val isUploaded: Boolean = false,
-    val isDownloaded: Boolean = false
+    val isDownloaded: Boolean = false,
+    val backupTelegramMessageId: Long? = null
 )

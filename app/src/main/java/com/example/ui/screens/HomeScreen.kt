@@ -1790,7 +1790,7 @@ private fun FileListItem(
         }
 
         Spacer(modifier = Modifier.width(10.dp))
-        FileStatusIndicator(status = file.status)
+        FileStatusIndicator(file = file)
     }
 }
 
@@ -1841,7 +1841,7 @@ private fun FileGridCard(
                             .testTag("grid_checkbox_${file.id}")
                     )
                 } else {
-                    FileStatusIndicator(status = file.status)
+                    FileStatusIndicator(file = file)
                 }
             }
 
@@ -1943,9 +1943,9 @@ fun FileThumbnailView(
 }
 
 @Composable
-private fun FileStatusIndicator(status: FileStatus) {
+private fun FileStatusIndicator(file: FileEntity) {
     val colors = LocalTeleVaultColors.current
-    when (status) {
+    when (file.status) {
         FileStatus.COMPLETED -> {
             Icon(
                 imageVector = Icons.Default.CheckCircle,
@@ -1963,12 +1963,32 @@ private fun FileStatusIndicator(status: FileStatus) {
             )
         }
         FileStatus.FAILED -> {
-            Icon(
-                imageVector = Icons.Default.Error,
-                contentDescription = "Failed",
-                tint = colors.danger,
-                modifier = Modifier.size(16.dp)
-            )
+            val isBroken = file.errorMessage?.contains("Incomplete", ignoreCase = true) == true ||
+                file.errorMessage?.contains("Broken", ignoreCase = true) == true
+            if (isBroken) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(colors.danger.copy(alpha = 0.15f))
+                        .border(1.dp, colors.danger.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "BROKEN",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colors.danger,
+                        letterSpacing = 0.5.sp
+                    )
+                }
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Error,
+                    contentDescription = "Failed",
+                    tint = colors.danger,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
         }
         FileStatus.PAUSED -> {
             Icon(

@@ -31,15 +31,19 @@ interface ChunkDao {
     @Query("SELECT COUNT(*) FROM chunks WHERE fileId = :fileId AND isDownloaded = 1")
     suspend fun getDownloadedChunkCount(fileId: String): Int
 
-    @Query("UPDATE chunks SET channelId = :channelId, telegramMessageId = :messageId, telegramFileId = :fileIdRemote, checksum = :checksum, isUploaded = 1 WHERE fileId = :fileId AND chunkIndex = :chunkIndex")
+    @Query("UPDATE chunks SET channelId = COALESCE(:channelId, channelId), telegramMessageId = :messageId, telegramFileId = :fileIdRemote, checksum = :checksum, isUploaded = 1, backupTelegramMessageId = COALESCE(:backupMessageId, backupTelegramMessageId) WHERE fileId = :fileId AND chunkIndex = :chunkIndex")
     suspend fun markChunkUploaded(
         fileId: String,
         chunkIndex: Int,
         messageId: Long,
         fileIdRemote: String,
         checksum: String,
-        channelId: String? = null
+        channelId: String? = null,
+        backupMessageId: Long? = null
     )
+
+    @Query("UPDATE chunks SET backupTelegramMessageId = :backupMessageId WHERE fileId = :fileId AND chunkIndex = :chunkIndex")
+    suspend fun updateBackupMessageId(fileId: String, chunkIndex: Int, backupMessageId: Long)
 
     @Query("UPDATE chunks SET telegramFileId = :fileIdRemote WHERE fileId = :fileId AND chunkIndex = :chunkIndex")
     suspend fun updateRemoteFileId(fileId: String, chunkIndex: Int, fileIdRemote: String)
