@@ -1,11 +1,10 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,39 +14,28 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.ClearAll
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -65,15 +53,22 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.entity.FileStatus
 import com.example.domain.ChecksumUtil
 import com.example.domain.model.TransferProgress
-import androidx.compose.animation.core.snap
-import androidx.compose.material3.MaterialTheme
 import com.example.ui.components.TeleVaultBottomNav
 import com.example.ui.theme.LocalReduceMotion
-import com.example.ui.theme.LocalTeleVaultColors
-import com.example.ui.theme.StatusError
-import com.example.ui.theme.StatusSuccess
 import com.example.ui.theme.pressScale
 import com.example.ui.viewmodel.AppScreen
+
+// Pure OLED Palette
+private val OledBlack = Color(0xFF000000)
+private val ElectricCyan = Color(0xFF00E5FF)
+private val TextWhite = Color(0xFFFFFFFF)
+private val TextDimmedDone = Color(0xFFA0A0A0)
+private val TextMutedGrey = Color(0xFF8E8E93)
+private val StateMutedGreen = Color(0xFF4CAF50)
+private val StateRed = Color(0xFFFF5252)
+private val StateGreyscale = Color(0xFF666666)
+private val TrackDark = Color(0xFF141414)
+private val DividerLowAlpha = Color(0x1AFFFFFF)
 
 @Composable
 fun TransfersScreen(
@@ -89,7 +84,6 @@ fun TransfersScreen(
     onClearCompleted: () -> Unit,
     onNavigateToVault: () -> Unit
 ) {
-    val colors = LocalTeleVaultColors.current
     val activeCount = transfers.count {
         it.status == FileStatus.UPLOADING || it.status == FileStatus.DOWNLOADING || it.status == FileStatus.PENDING
     }
@@ -100,8 +94,8 @@ fun TransfersScreen(
     Scaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(colors.bg),
-        containerColor = colors.bg,
+            .background(OledBlack),
+        containerColor = OledBlack,
         topBar = {
             TransfersTopBar(
                 activeCount = activeCount,
@@ -125,9 +119,9 @@ fun TransfersScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .background(OledBlack)
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 16.dp)
         ) {
             item(key = "header_spacer") {
                 Spacer(modifier = Modifier.height(4.dp))
@@ -135,66 +129,64 @@ fun TransfersScreen(
 
             if (transfers.isEmpty() && recentlyCompleted.isEmpty()) {
                 item(key = "empty_transfers") {
-                    Box(modifier = Modifier.animateItem()) {
-                        EmptyTransfersView()
-                    }
+                    EmptyTransfersView()
                 }
             } else {
                 if (transfers.isNotEmpty()) {
                     item(key = "active_header") {
-                        Box(modifier = Modifier.animateItem()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "ACTIVE TRANSFERS (${transfers.size})",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = colors.textFaint,
-                                    letterSpacing = 1.sp
-                                )
-                            }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "ACTIVE TRANSFERS (${transfers.size})",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextMutedGrey,
+                                letterSpacing = 1.sp
+                            )
                         }
                     }
 
+                    // Overall Batch Progress (when multiple items in queue):
+                    // Slim accent bar, smaller less-dominant percentage/count
                     if (transfers.size > 1) {
                         val completedCount = transfers.count { it.status == FileStatus.COMPLETED }
-                        val failedCount = transfers.count { it.status == FileStatus.FAILED }
+                        val totalCount = transfers.size
                         item(key = "batch_progress_banner") {
-                            Box(modifier = Modifier.animateItem()) {
-                                BatchProgressBanner(
-                                    completedCount = completedCount,
-                                    totalCount = transfers.size,
-                                    failedCount = failedCount
-                                )
-                            }
+                            BatchProgressHeader(
+                                completedCount = completedCount,
+                                totalCount = totalCount
+                            )
                         }
                     }
 
-                    items(transfers, key = { it.fileId }) { transfer ->
-                        Box(modifier = Modifier.animateItem()) {
-                            TransferRowCard(
-                                transfer = transfer,
-                                onPause = { onPause(transfer.fileId) },
-                                onResume = { onResume(transfer.fileId, transfer.isUpload) },
-                                onCancel = { onCancel(transfer.fileId) },
-                                onRetry = { onRetry(transfer.fileId) }
-                            )
+                    itemsIndexed(transfers, key = { _, item -> item.fileId }) { index, transfer ->
+                        TransferRowCard(
+                            transfer = transfer,
+                            onPause = { onPause(transfer.fileId) },
+                            onResume = { onResume(transfer.fileId, transfer.isUpload) },
+                            onCancel = { onCancel(transfer.fileId) },
+                            onRetry = { onRetry(transfer.fileId) }
+                        )
+                        if (index < transfers.size - 1) {
+                            HorizontalDivider(color = DividerLowAlpha, thickness = 1.dp)
                         }
                     }
                 }
 
                 if (recentlyCompleted.isNotEmpty()) {
                     item(key = "completed_header") {
-                        Box(modifier = Modifier.animateItem()) {
+                        Column {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider(color = DividerLowAlpha, thickness = 1.dp)
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(top = 16.dp, bottom = 4.dp),
+                                    .padding(top = 16.dp, bottom = 6.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -202,13 +194,13 @@ fun TransfersScreen(
                                     text = "RECENTLY COMPLETED",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = colors.textFaint,
+                                    color = StateGreyscale,
                                     letterSpacing = 1.sp
                                 )
                                 Text(
                                     text = "Clear",
                                     fontSize = 12.sp,
-                                    color = colors.violet,
+                                    color = ElectricCyan,
                                     fontWeight = FontWeight.Medium,
                                     modifier = Modifier
                                         .pressScale(0.90f)
@@ -220,9 +212,10 @@ fun TransfersScreen(
                         }
                     }
 
-                    items(recentlyCompleted, key = { "completed_${it.fileId}" }) { item ->
-                        Box(modifier = Modifier.animateItem()) {
-                            CompletedTransferCard(item = item)
+                    itemsIndexed(recentlyCompleted, key = { _, item -> "completed_${item.fileId}" }) { index, item ->
+                        CompletedTransferRow(item = item)
+                        if (index < recentlyCompleted.size - 1) {
+                            HorizontalDivider(color = DividerLowAlpha, thickness = 1.dp)
                         }
                     }
                 }
@@ -245,9 +238,8 @@ private fun TransfersTopBar(
     onPauseAll: () -> Unit,
     onResumeAll: () -> Unit
 ) {
-    val colors = LocalTeleVaultColors.current
     Surface(
-        color = colors.bg,
+        color = OledBlack,
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
@@ -255,19 +247,20 @@ private fun TransfersTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
+                .padding(horizontal = 4.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
                 onClick = onBack,
                 modifier = Modifier
-                    .size(48.dp)
+                    .size(40.dp)
                     .testTag("btn_back_to_vault")
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back to Vault",
-                    tint = colors.text
+                    tint = TextWhite,
+                    modifier = Modifier.size(20.dp)
                 )
             }
 
@@ -277,10 +270,10 @@ private fun TransfersTopBar(
                     .padding(start = 4.dp)
             ) {
                 Text(
-                    text = "Active Transfers",
-                    fontSize = 18.sp,
+                    text = "Transfer Queue",
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
-                    color = colors.text
+                    color = TextWhite
                 )
                 Text(
                     text = if (totalCount == 0) {
@@ -290,8 +283,8 @@ private fun TransfersTopBar(
                     } else {
                         "$totalCount items in queue"
                     },
-                    fontSize = 12.sp,
-                    color = colors.textDim
+                    fontSize = 11.sp,
+                    color = TextMutedGrey
                 )
             }
 
@@ -299,32 +292,84 @@ private fun TransfersTopBar(
                 IconButton(
                     onClick = onPauseAll,
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(36.dp)
                         .pressScale(0.88f)
                         .testTag("btn_pause_all")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Pause,
                         contentDescription = "Pause All",
-                        tint = colors.textDim
+                        tint = TextMutedGrey,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             } else if (hasPausedTransfers) {
                 IconButton(
                     onClick = onResumeAll,
                     modifier = Modifier
-                        .size(48.dp)
+                        .size(36.dp)
                         .pressScale(0.88f)
                         .testTag("btn_resume_all")
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = "Resume All",
-                        tint = colors.violet
+                        tint = ElectricCyan,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun BatchProgressHeader(
+    completedCount: Int,
+    totalCount: Int
+) {
+    val percent = if (totalCount > 0) (completedCount * 100) / totalCount else 0
+    val animatedBatchProgress by animateFloatAsState(
+        targetValue = (completedCount.toFloat() / totalCount.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 250, easing = LinearOutSlowInEasing),
+        label = "screen_batch_progress_anim"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .testTag("batch_progress_banner")
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Overall Batch Progress",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Normal,
+                color = TextMutedGrey
+            )
+            Text(
+                text = "$completedCount of $totalCount · $percent%",
+                fontSize = 11.sp,
+                color = TextMutedGrey
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        LinearProgressIndicator(
+            progress = { animatedBatchProgress },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(2.5.dp)
+                .clip(RoundedCornerShape(1.dp)),
+            color = ElectricCyan,
+            trackColor = TrackDark
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        HorizontalDivider(color = DividerLowAlpha, thickness = 1.dp)
     }
 }
 
@@ -336,340 +381,291 @@ private fun TransferRowCard(
     onCancel: () -> Unit,
     onRetry: () -> Unit
 ) {
-    val colors = LocalTeleVaultColors.current
     val reduceMotion = LocalReduceMotion.current
+    val isDone = transfer.status == FileStatus.COMPLETED
     val isFailed = transfer.status == FileStatus.FAILED
+    val isQueued = transfer.status == FileStatus.PENDING
+    val isActive = transfer.status == FileStatus.UPLOADING || transfer.status == FileStatus.DOWNLOADING || transfer.status == FileStatus.PAUSED
     val percent = (transfer.progressFraction * 100).toInt().coerceIn(0, 100)
 
     val animatedProgress by animateFloatAsState(
         targetValue = transfer.progressFraction.coerceIn(0f, 1f),
-        animationSpec = if (reduceMotion) snap() else tween(durationMillis = 400, easing = LinearOutSlowInEasing),
+        animationSpec = if (reduceMotion) snap() else tween(durationMillis = 350, easing = LinearOutSlowInEasing),
         label = "transfer_progress_${transfer.fileId}"
     )
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = colors.surface),
-        shape = RoundedCornerShape(14.dp),
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            if (isFailed) StatusError.copy(alpha = 0.5f) else colors.line
-        ),
+    Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(OledBlack)
             .clickable(enabled = isFailed, onClick = onRetry)
-            .testTag("transfer_item_${transfer.fileId}")
+            .padding(vertical = 11.dp)
+            .testTag("transfer_item_${transfer.fileId}"),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Row 1: Icon, File Name, and Controls
+        // Left: small status icon (cloud-up for queued/uploading, checkmark for done, alert for failed)
+        Icon(
+            imageVector = when {
+                isDone -> Icons.Default.Check
+                isFailed -> Icons.Default.Error
+                !transfer.isUpload -> Icons.Default.CloudDownload
+                else -> Icons.Default.CloudUpload
+            },
+            contentDescription = if (transfer.isUpload) "Upload" else "Download",
+            tint = when {
+                isDone -> StateMutedGreen
+                isFailed -> StateRed
+                isQueued -> StateGreyscale
+                else -> ElectricCyan
+            },
+            modifier = Modifier.size(18.dp)
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Center column: filename + subtext + slim progress bar directly under subtext
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = transfer.fileName,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = if (isDone) TextDimmedDone else TextWhite,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            // Subtext: size · status · speed (tightly condensed single line)
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isFailed) StatusError.copy(alpha = 0.15f)
-                            else colors.violet.copy(alpha = 0.15f)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (transfer.isUpload) Icons.Default.CloudUpload else Icons.Default.CloudDownload,
-                        contentDescription = if (transfer.isUpload) "Upload" else "Download",
-                        tint = if (isFailed) StatusError else colors.violet,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
+                Text(
+                    text = ChecksumUtil.formatBytes(transfer.totalBytes),
+                    fontSize = 11.sp,
+                    color = TextMutedGrey
+                )
+                Text(text = "·", fontSize = 11.sp, color = StateGreyscale)
 
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = transfer.fileName,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.text,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = when {
-                                transfer.isChunking -> "Chunking…"
-                                transfer.status == FileStatus.UPLOADING -> if (transfer.speedBytesPerSec > 0) "Uploading…" else "Connecting to Telegram…"
-                                transfer.status == FileStatus.DOWNLOADING -> if (transfer.speedBytesPerSec > 0) "Downloading…" else "Connecting to Telegram…"
-                                transfer.status == FileStatus.PAUSED -> "Paused"
-                                transfer.status == FileStatus.PENDING -> "Queued"
-                                transfer.status == FileStatus.FAILED -> "Failed — tap to retry"
-                                transfer.status == FileStatus.COMPLETED -> "Done"
-                                else -> "Queued"
-                            },
-                            fontSize = 12.sp,
-                            fontWeight = if (isFailed) FontWeight.Medium else FontWeight.Normal,
-                            color = when (transfer.status) {
-                                FileStatus.FAILED -> StatusError
-                                FileStatus.COMPLETED -> StatusSuccess
-                                FileStatus.UPLOADING, FileStatus.DOWNLOADING -> colors.violet
-                                FileStatus.PAUSED -> colors.textDim
-                                else -> colors.textFaint
-                            }
-                        )
-                        Text(
-                            text = " · ${ChecksumUtil.formatBytes(transfer.totalBytes)}",
-                            fontSize = 12.sp,
-                            color = colors.textDim
-                        )
-                    }
-                }
-
-                // Action Controls with guaranteed 48dp minimum touch targets
                 when (transfer.status) {
-                    FileStatus.UPLOADING, FileStatus.DOWNLOADING -> {
-                        IconButton(
-                            onClick = onPause,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_pause_${transfer.fileId}")
-                        ) {
-                            Icon(
-                                Icons.Default.Pause,
-                                contentDescription = "Pause transfer",
-                                tint = colors.textDim,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = onCancel,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_cancel_${transfer.fileId}")
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Cancel transfer",
-                                tint = colors.textDim,
-                                modifier = Modifier.size(20.dp)
+                    FileStatus.UPLOADING -> {
+                        Text(
+                            text = "Uploading…",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = ElectricCyan
+                        )
+                        Text(text = "·", fontSize = 11.sp, color = StateGreyscale)
+                        Text(
+                            text = "Chunk ${transfer.currentChunk} of ${transfer.totalChunks} · $percent%",
+                            fontSize = 11.sp,
+                            color = TextMutedGrey
+                        )
+                        if (transfer.speedBytesPerSec > 0) {
+                            Text(text = "·", fontSize = 11.sp, color = StateGreyscale)
+                            Text(
+                                text = ChecksumUtil.formatSpeed(transfer.speedBytesPerSec),
+                                fontSize = 11.sp,
+                                color = TextMutedGrey
                             )
                         }
                     }
-                    FileStatus.PAUSED -> {
-                        IconButton(
-                            onClick = onResume,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_resume_${transfer.fileId}")
-                        ) {
-                            Icon(
-                                Icons.Default.PlayArrow,
-                                contentDescription = "Resume transfer",
-                                tint = colors.violet,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = onCancel,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_cancel_${transfer.fileId}")
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Cancel transfer",
-                                tint = colors.textDim,
-                                modifier = Modifier.size(20.dp)
+                    FileStatus.DOWNLOADING -> {
+                        Text(
+                            text = "Downloading…",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = ElectricCyan
+                        )
+                        Text(text = "·", fontSize = 11.sp, color = StateGreyscale)
+                        Text(
+                            text = "Chunk ${transfer.currentChunk} of ${transfer.totalChunks} · $percent%",
+                            fontSize = 11.sp,
+                            color = TextMutedGrey
+                        )
+                        if (transfer.speedBytesPerSec > 0) {
+                            Text(text = "·", fontSize = 11.sp, color = StateGreyscale)
+                            Text(
+                                text = ChecksumUtil.formatSpeed(transfer.speedBytesPerSec),
+                                fontSize = 11.sp,
+                                color = TextMutedGrey
                             )
                         }
                     }
                     FileStatus.FAILED -> {
-                        IconButton(
-                            onClick = onRetry,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_retry_${transfer.fileId}")
-                        ) {
-                            Icon(
-                                Icons.Default.Replay,
-                                contentDescription = "Retry transfer",
-                                tint = colors.violet,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        IconButton(
-                            onClick = onCancel,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_cancel_${transfer.fileId}")
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Dismiss error",
-                                tint = colors.textDim,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    FileStatus.PENDING -> {
-                        IconButton(
-                            onClick = onCancel,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_cancel_${transfer.fileId}")
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Cancel queued transfer",
-                                tint = colors.textDim,
-                                modifier = Modifier.size(20.dp)
+                        Text(
+                            text = "Failed — tap to retry",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = StateRed
+                        )
+                        if (!transfer.errorMessage.isNullOrBlank()) {
+                            Text(text = "·", fontSize = 11.sp, color = StateGreyscale)
+                            Text(
+                                text = transfer.errorMessage,
+                                fontSize = 11.sp,
+                                color = TextMutedGrey,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
                     FileStatus.COMPLETED -> {
-                        Icon(
-                            Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = StatusSuccess,
-                            modifier = Modifier
-                                .padding(12.dp)
-                                .size(24.dp)
+                        Text(
+                            text = "Done",
+                            fontSize = 11.sp,
+                            color = StateMutedGreen
+                        )
+                    }
+                    FileStatus.PAUSED -> {
+                        Text(
+                            text = "Paused",
+                            fontSize = 11.sp,
+                            color = TextMutedGrey
+                        )
+                    }
+                    else -> {
+                        Text(
+                            text = if (transfer.isChunking) "Chunking" else "Queued",
+                            fontSize = 11.sp,
+                            color = StateGreyscale
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // Smooth Animated Progress Bar
-            LinearProgressIndicator(
-                progress = { animatedProgress },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = when {
-                    isFailed -> StatusError
-                    transfer.status == FileStatus.COMPLETED -> StatusSuccess
-                    else -> colors.violet
-                },
-                trackColor = colors.surfaceHi,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Primary Metrics Row: Chunk progress, overall percent, transferred / total bytes
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val chunkProgressLabel = when {
-                    transfer.isUpload && transfer.status == FileStatus.UPLOADING && transfer.activeConcurrentChunks > 0 -> {
-                        "${transfer.activeConcurrentChunks} of ${transfer.totalChunks} chunks uploading, ${transfer.completedChunksCount} complete · $percent%"
-                    }
-                    transfer.isUpload && transfer.completedChunksCount > 0 -> {
-                        "Chunk ${transfer.completedChunksCount} of ${transfer.totalChunks} complete · $percent%"
-                    }
-                    else -> "Chunk ${transfer.currentChunk} of ${transfer.totalChunks} · $percent%"
-                }
-
-                Text(
-                    text = chunkProgressLabel,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = colors.text
-                )
-
-                Text(
-                    text = "${ChecksumUtil.formatBytes(transfer.bytesTransferred)} / ${ChecksumUtil.formatBytes(transfer.totalBytes)}",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = colors.textDim
-                )
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // Secondary Metrics Row: Live Transfer Speed & Estimated Time Remaining (ETA)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val speedText = when (transfer.status) {
-                    FileStatus.UPLOADING, FileStatus.DOWNLOADING -> {
-                        if (transfer.speedBytesPerSec > 0) {
-                            "${if (transfer.isUpload) "↑" else "↓"} ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
-                        } else {
-                            "Connecting…"
-                        }
-                    }
-                    FileStatus.PAUSED -> "Paused"
-                    FileStatus.COMPLETED -> "Finished"
-                    FileStatus.FAILED -> "Failed"
-                    else -> "Queued"
-                }
-
-                Text(
-                    text = speedText,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = if (transfer.status == FileStatus.UPLOADING || transfer.status == FileStatus.DOWNLOADING) colors.violet else colors.textFaint
-                )
-
-                val etaText = when (transfer.status) {
-                    FileStatus.UPLOADING, FileStatus.DOWNLOADING -> {
-                        if (transfer.speedBytesPerSec > 0 && transfer.etaSeconds != null) {
-                            ChecksumUtil.formatEta(transfer.etaSeconds)
-                        } else if (transfer.bytesTransferred >= transfer.totalBytes && transfer.totalBytes > 0) {
-                            "Finalizing…"
-                        } else {
-                            "Estimating…"
-                        }
-                    }
-                    FileStatus.PAUSED -> {
-                        val remaining = (transfer.totalBytes - transfer.bytesTransferred).coerceAtLeast(0L)
-                        "${ChecksumUtil.formatBytes(remaining)} left"
-                    }
-                    FileStatus.COMPLETED -> "Verified SHA-256"
-                    else -> ""
-                }
-
-                if (etaText.isNotEmpty()) {
-                    Text(
-                        text = etaText,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = colors.textFaint
-                    )
-                }
-            }
-
-            // Visible Failure Reason
-            if (isFailed && !transfer.errorMessage.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
+            // Progress bar: thin (2–3px), accent-colored, directly under the subtext — not a separate thick bar
+            if (isActive) {
+                Spacer(modifier = Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { animatedProgress },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(StatusError.copy(alpha = 0.1f))
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                        .height(2.5.dp)
+                        .clip(RoundedCornerShape(1.dp)),
+                    color = if (transfer.status == FileStatus.PAUSED) StateGreyscale else ElectricCyan,
+                    trackColor = TrackDark
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Right: minimal ghost/outline icons, small and unobtrusive, not full-size buttons
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End
+        ) {
+            when {
+                transfer.status == FileStatus.UPLOADING || transfer.status == FileStatus.DOWNLOADING -> {
+                    IconButton(
+                        onClick = onPause,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("btn_pause_${transfer.fileId}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Pause,
+                            contentDescription = "Pause transfer",
+                            tint = TextMutedGrey,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onCancel,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("btn_cancel_${transfer.fileId}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Cancel transfer",
+                            tint = TextMutedGrey,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                transfer.status == FileStatus.PAUSED -> {
+                    IconButton(
+                        onClick = onResume,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("btn_resume_${transfer.fileId}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Resume transfer",
+                            tint = ElectricCyan,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onCancel,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("btn_cancel_${transfer.fileId}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Cancel transfer",
+                            tint = TextMutedGrey,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                isFailed -> {
+                    // Red accent icon + retry button inline replacing the pause icon
+                    IconButton(
+                        onClick = onRetry,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("btn_retry_${transfer.fileId}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Replay,
+                            contentDescription = "Retry transfer",
+                            tint = StateRed,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    IconButton(
+                        onClick = onCancel,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("btn_cancel_${transfer.fileId}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss error",
+                            tint = TextMutedGrey,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                isQueued -> {
+                    IconButton(
+                        onClick = onCancel,
+                        modifier = Modifier
+                            .size(28.dp)
+                            .testTag("btn_cancel_${transfer.fileId}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Cancel queued transfer",
+                            tint = TextMutedGrey,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+                isDone -> {
                     Icon(
-                        imageVector = Icons.Default.Error,
-                        contentDescription = null,
-                        tint = StatusError,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = transfer.errorMessage,
-                        fontSize = 11.sp,
-                        color = StatusError,
-                        maxLines = 4,
-                        overflow = TextOverflow.Ellipsis
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Completed",
+                        tint = StateMutedGreen,
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .size(16.dp)
                     )
                 }
             }
@@ -678,52 +674,44 @@ private fun TransferRowCard(
 }
 
 @Composable
-private fun CompletedTransferCard(item: TransferProgress) {
-    val colors = LocalTeleVaultColors.current
-    Card(
-        colors = CardDefaults.cardColors(containerColor = colors.surface),
-        shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
-        modifier = Modifier.fillMaxWidth()
+private fun CompletedTransferRow(item: TransferProgress) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(OledBlack)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.CheckCircle,
-                contentDescription = "Completed",
-                tint = colors.mint,
-                modifier = Modifier.size(20.dp)
+        Icon(
+            imageVector = Icons.Default.Check,
+            contentDescription = "Completed",
+            tint = StateMutedGreen,
+            modifier = Modifier.size(18.dp)
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.fileName,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = TextDimmedDone,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.fileName,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = colors.text,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "${if (item.isUpload) "Uploaded" else "Downloaded"} · ${ChecksumUtil.formatBytes(item.totalBytes)} · Verified",
-                    fontSize = 11.sp,
-                    color = colors.textDim
-                )
-            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "${ChecksumUtil.formatBytes(item.totalBytes)} · Done",
+                fontSize = 11.sp,
+                color = TextMutedGrey
+            )
         }
     }
 }
 
 @Composable
 private fun EmptyTransfersView() {
-    val colors = LocalTeleVaultColors.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -733,105 +721,29 @@ private fun EmptyTransfersView() {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(colors.surfaceHi),
+                    .size(56.dp)
+                    .background(Color.Transparent),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.CloudDone,
                     contentDescription = null,
-                    tint = colors.textDim,
+                    tint = StateGreyscale,
                     modifier = Modifier.size(32.dp)
                 )
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "No active transfers",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = colors.text
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = TextWhite
             )
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Files you upload or download will appear here\nwith live chunk progress and resumption controls.",
-                fontSize = 13.sp,
-                color = colors.textDim,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                lineHeight = 18.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun BatchProgressBanner(
-    completedCount: Int,
-    totalCount: Int,
-    failedCount: Int
-) {
-    val colors = LocalTeleVaultColors.current
-    val percent = if (totalCount > 0) (completedCount * 100) / totalCount else 0
-    Card(
-        colors = CardDefaults.cardColors(containerColor = colors.surface),
-        shape = RoundedCornerShape(14.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("batch_progress_banner")
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(colors.teal.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CloudUpload,
-                            contentDescription = null,
-                            tint = colors.teal,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "Batch Progress",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.text
-                        )
-                        Text(
-                            text = "$completedCount of $totalCount files uploaded${if (failedCount > 0) " · $failedCount failed" else ""}",
-                            fontSize = 11.sp,
-                            color = if (failedCount > 0) StatusError else colors.textDim
-                        )
-                    }
-                }
-                Text(
-                    text = "$percent%",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colors.teal
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            LinearProgressIndicator(
-                progress = { (completedCount.toFloat() / totalCount.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = colors.teal,
-                trackColor = colors.surfaceHi
+                text = "Queue clear",
+                fontSize = 12.sp,
+                color = TextMutedGrey
             )
         }
     }
