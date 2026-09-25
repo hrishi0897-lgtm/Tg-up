@@ -82,8 +82,21 @@ data class TransferProgress(
     val errorMessage: String? = null,
     val etaSeconds: Long? = null,
     val activeConcurrentChunks: Int = 0,
-    val completedChunksCount: Int = 0
-)
+    val completedChunksCount: Int = 0,
+    val isChunking: Boolean = false
+) {
+    val displayStatus: String
+        get() = when {
+            isChunking -> "Chunking"
+            status == FileStatus.PENDING -> "Queued"
+            status == FileStatus.UPLOADING -> if (speedBytesPerSec > 0) "Uploading…" else "Connecting to Telegram…"
+            status == FileStatus.COMPLETED -> "Done"
+            status == FileStatus.FAILED -> "Failed — tap to retry"
+            status == FileStatus.PAUSED -> "Paused"
+            status == FileStatus.DOWNLOADING -> if (speedBytesPerSec > 0) "Downloading…" else "Connecting to Telegram…"
+            else -> "Queued"
+        }
+}
 
 data class BotHealthInfo(
     val token: String,

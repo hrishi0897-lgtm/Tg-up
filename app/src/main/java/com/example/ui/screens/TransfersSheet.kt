@@ -142,6 +142,51 @@ fun TransfersSheet(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    if (transfers.size > 1) {
+                        val completedCount = transfers.count { it.status == FileStatus.COMPLETED }
+                        val totalCount = transfers.size
+                        val percent = if (totalCount > 0) (completedCount * 100) / totalCount else 0
+                        item(key = "sheet_batch_header") {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = colors.bg),
+                                shape = RoundedCornerShape(10.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Overall Batch Progress",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = colors.text
+                                        )
+                                        Text(
+                                            text = "$completedCount of $totalCount files uploaded ($percent%)",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = colors.teal
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    LinearProgressIndicator(
+                                        progress = { (completedCount.toFloat() / totalCount.toFloat()).coerceIn(0f, 1f) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(4.dp)
+                                            .clip(RoundedCornerShape(2.dp)),
+                                        color = colors.teal,
+                                        trackColor = colors.surfaceHi
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     items(transfers, key = { it.fileId }) { transfer ->
                         TransferItemCard(
                             transfer = transfer,
@@ -197,23 +242,31 @@ private fun TransferItemCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = when (transfer.status) {
-                            FileStatus.UPLOADING -> {
-                                if (transfer.activeConcurrentChunks > 0) {
-                                    "${transfer.activeConcurrentChunks} of ${transfer.totalChunks} chunks uploading, ${transfer.completedChunksCount} complete · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
-                                } else {
-                                    "Uploading chunk ${transfer.currentChunk}/${transfer.totalChunks} · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
-                                }
+                    val statusDesc = when {
+                        transfer.isChunking -> "Chunking"
+                        transfer.status == FileStatus.PENDING -> "Queued"
+                        transfer.status == FileStatus.UPLOADING -> {
+                            if (transfer.activeConcurrentChunks > 0) {
+                                "Uploading · ${transfer.completedChunksCount}/${transfer.totalChunks} chunks · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
+                            } else {
+                                "Uploading · chunk ${transfer.currentChunk}/${transfer.totalChunks} · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
                             }
-                            FileStatus.DOWNLOADING -> "Downloading chunk ${transfer.currentChunk}/${transfer.totalChunks} · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
-                            FileStatus.PAUSED -> "Paused (Chunk ${transfer.currentChunk}/${transfer.totalChunks})"
-                            FileStatus.FAILED -> "Failed: ${transfer.errorMessage ?: "Transfer error"}"
-                            FileStatus.COMPLETED -> "Verified & Stored"
-                            FileStatus.PENDING -> "Queued"
-                        },
+                        }
+                        transfer.status == FileStatus.DOWNLOADING -> "Downloading · chunk ${transfer.currentChunk}/${transfer.totalChunks} · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}"
+                        transfer.status == FileStatus.PAUSED -> "Paused (Chunk ${transfer.currentChunk}/${transfer.totalChunks})"
+                        transfer.status == FileStatus.FAILED -> "Failed: ${transfer.errorMessage ?: "Transfer error"}"
+                        transfer.status == FileStatus.COMPLETED -> "Done"
+                        else -> "Queued"
+                    }
+                    Text(
+                        text = "${ChecksumUtil.formatBytes(transfer.totalBytes)} · $statusDesc",
                         fontSize = 11.sp,
-                        color = if (transfer.status == FileStatus.FAILED) StatusError else colors.textDim,
+                        color = when (transfer.status) {
+                            FileStatus.FAILED -> StatusError
+                            FileStatus.COMPLETED -> StatusSuccess
+                            FileStatus.UPLOADING, FileStatus.DOWNLOADING -> colors.violet
+                            else -> colors.textDim
+                        },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )

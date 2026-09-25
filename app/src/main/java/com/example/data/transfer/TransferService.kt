@@ -103,6 +103,7 @@ class TransferService : Service() {
                     it.status == com.example.data.local.entity.FileStatus.UPLOADING ||
                             it.status == com.example.data.local.entity.FileStatus.DOWNLOADING
                 }
+                val hasPending = transfersMap.values.any { it.status == com.example.data.local.entity.FileStatus.PENDING }
 
                 if (activeList.isNotEmpty()) {
                     acquireWakeLock()
@@ -112,17 +113,21 @@ class TransferService : Service() {
                     val actionLabel = if (active.isUpload) "Uploading" else "Downloading"
 
                     val totalTransfers = transfersMap.size
+                    val completedCount = transfersMap.values.count { it.status == com.example.data.local.entity.FileStatus.COMPLETED }
+                    val currentNum = (completedCount + 1).coerceAtMost(totalTransfers)
+
                     val title = if (totalTransfers > 1) {
-                        val activeIndex = (transfersMap.values.indexOf(active) + 1).coerceIn(1, totalTransfers)
-                        "$actionLabel $activeIndex of $totalTransfers files — $percent%"
+                        "$actionLabel $currentNum of $totalTransfers files — $percent%"
                     } else {
                         "$actionLabel ${active.fileName} — $percent%"
                     }
 
-                    val content = if (active.activeConcurrentChunks > 1) {
-                        "${active.activeConcurrentChunks} chunks uploading (${active.completedChunksCount}/${active.totalChunks} done) · $speed"
+                    val content = if (active.isChunking) {
+                        "Preparing & chunking ${active.fileName}…"
+                    } else if (active.activeConcurrentChunks > 1) {
+                        "${active.fileName} · ${active.activeConcurrentChunks} chunks (${active.completedChunksCount}/${active.totalChunks} done) · $speed"
                     } else {
-                        "Chunk ${active.currentChunk} of ${active.totalChunks} · $speed"
+                        "${active.fileName} · Chunk ${active.currentChunk} of ${active.totalChunks} · $speed"
                     }
 
                     val updatedNotification = buildNotification(
@@ -139,6 +144,20 @@ class TransferService : Service() {
                         lastNotifiedStatus = active.status
                         notificationManager.notify(NOTIFICATION_ID, updatedNotification)
                     }
+                } else if (hasPending) {
+                    acquireWakeLock()
+                    val totalTransfers = transfersMap.size
+                    val completedCount = transfersMap.values.count { it.status == com.example.data.local.entity.FileStatus.COMPLETED }
+                    val percent = if (totalTransfers > 0) (completedCount * 100) / totalTransfers else 0
+
+                    val queuedNotification = buildNotification(
+                        title = "Upload Queue: $completedCount of $totalTransfers completed",
+                        progress = percent,
+                        maxProgress = 100,
+                        content = "Processing next file in queue…",
+                        isOngoing = true
+                    )
+                    notificationManager.notify(NOTIFICATION_ID, queuedNotification)
                 } else {
                     val failedTransfer = transfersMap.values.firstOrNull { it.status == com.example.data.local.entity.FileStatus.FAILED }
                     val hasPaused = transfersMap.values.any { it.status == com.example.data.local.entity.FileStatus.PAUSED }

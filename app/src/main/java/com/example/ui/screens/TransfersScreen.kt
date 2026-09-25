@@ -161,6 +161,20 @@ fun TransfersScreen(
                         }
                     }
 
+                    if (transfers.size > 1) {
+                        val completedCount = transfers.count { it.status == FileStatus.COMPLETED }
+                        val failedCount = transfers.count { it.status == FileStatus.FAILED }
+                        item(key = "batch_progress_banner") {
+                            Box(modifier = Modifier.animateItem()) {
+                                BatchProgressBanner(
+                                    completedCount = completedCount,
+                                    totalCount = transfers.size,
+                                    failedCount = failedCount
+                                )
+                            }
+                        }
+                    }
+
                     items(transfers, key = { it.fileId }) { transfer ->
                         Box(modifier = Modifier.animateItem()) {
                             TransferRowCard(
@@ -381,24 +395,34 @@ private fun TransferRowCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = when (transfer.status) {
-                            FileStatus.UPLOADING -> if (transfer.speedBytesPerSec > 0) "Uploading…" else "Connecting to Telegram…"
-                            FileStatus.DOWNLOADING -> if (transfer.speedBytesPerSec > 0) "Downloading…" else "Connecting to Telegram…"
-                            FileStatus.PAUSED -> "Paused"
-                            FileStatus.PENDING -> "Queued"
-                            FileStatus.FAILED -> "Failed — tap to retry"
-                            FileStatus.COMPLETED -> "Completed"
-                        },
-                        fontSize = 12.sp,
-                        fontWeight = if (isFailed) FontWeight.Medium else FontWeight.Normal,
-                        color = when (transfer.status) {
-                            FileStatus.FAILED -> StatusError
-                            FileStatus.UPLOADING, FileStatus.DOWNLOADING -> colors.violet
-                            FileStatus.PAUSED -> colors.textDim
-                            else -> colors.textFaint
-                        }
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = when {
+                                transfer.isChunking -> "Chunking…"
+                                transfer.status == FileStatus.UPLOADING -> if (transfer.speedBytesPerSec > 0) "Uploading…" else "Connecting to Telegram…"
+                                transfer.status == FileStatus.DOWNLOADING -> if (transfer.speedBytesPerSec > 0) "Downloading…" else "Connecting to Telegram…"
+                                transfer.status == FileStatus.PAUSED -> "Paused"
+                                transfer.status == FileStatus.PENDING -> "Queued"
+                                transfer.status == FileStatus.FAILED -> "Failed — tap to retry"
+                                transfer.status == FileStatus.COMPLETED -> "Done"
+                                else -> "Queued"
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = if (isFailed) FontWeight.Medium else FontWeight.Normal,
+                            color = when (transfer.status) {
+                                FileStatus.FAILED -> StatusError
+                                FileStatus.COMPLETED -> StatusSuccess
+                                FileStatus.UPLOADING, FileStatus.DOWNLOADING -> colors.violet
+                                FileStatus.PAUSED -> colors.textDim
+                                else -> colors.textFaint
+                            }
+                        )
+                        Text(
+                            text = " · ${ChecksumUtil.formatBytes(transfer.totalBytes)}",
+                            fontSize = 12.sp,
+                            color = colors.textDim
+                        )
+                    }
                 }
 
                 // Action Controls with guaranteed 48dp minimum touch targets
@@ -735,6 +759,79 @@ private fun EmptyTransfersView() {
                 color = colors.textDim,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 lineHeight = 18.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun BatchProgressBanner(
+    completedCount: Int,
+    totalCount: Int,
+    failedCount: Int
+) {
+    val colors = LocalTeleVaultColors.current
+    val percent = if (totalCount > 0) (completedCount * 100) / totalCount else 0
+    Card(
+        colors = CardDefaults.cardColors(containerColor = colors.surface),
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("batch_progress_banner")
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(colors.teal.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CloudUpload,
+                            contentDescription = null,
+                            tint = colors.teal,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "Batch Progress",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.text
+                        )
+                        Text(
+                            text = "$completedCount of $totalCount files uploaded${if (failedCount > 0) " · $failedCount failed" else ""}",
+                            fontSize = 11.sp,
+                            color = if (failedCount > 0) StatusError else colors.textDim
+                        )
+                    }
+                }
+                Text(
+                    text = "$percent%",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.teal
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            LinearProgressIndicator(
+                progress = { (completedCount.toFloat() / totalCount.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = colors.teal,
+                trackColor = colors.surfaceHi
             )
         }
     }

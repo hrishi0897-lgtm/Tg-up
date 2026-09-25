@@ -46,6 +46,7 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import com.example.data.transfer.TransferService
 import com.example.data.transfer.TransferWorker
+import com.example.ui.screens.BatchUploadFolderDialog
 import com.example.ui.screens.BulkDeleteDialog
 import com.example.ui.screens.BulkMoveDialog
 import com.example.ui.screens.CreateFolderDialog
@@ -283,16 +284,16 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
     val isDarkTheme by viewModel.isDarkTheme.collectAsState()
     val recoveryState by viewModel.recoveryState.collectAsState()
 
-    // File upload picker
+    // Multi-select file upload picker using Storage Access Framework (ACTION_OPEN_DOCUMENT with EXTRA_ALLOW_MULTIPLE)
     val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            viewModel.uploadFile(uri)
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.onFilesSelectedForUpload(uris)
         }
     }
 
-    val onUploadFileClick = remember(filePickerLauncher) { { filePickerLauncher.launch("*/*") } }
+    val onUploadFileClick = remember(filePickerLauncher) { { filePickerLauncher.launch(arrayOf("*/*")) } }
 
     val context = LocalContext.current
     LaunchedEffect(uiState.transferErrorMessage) {
@@ -540,6 +541,20 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                 ShareSheetFolderDialogContainer(
                     viewModel = viewModel,
                     items = uiState.pendingShareSheetUpload!!
+                )
+            }
+
+            // Batch Upload Destination Folder Dialog
+            if (uiState.pendingBatchUpload != null) {
+                val allFolders by viewModel.allFolders.collectAsState()
+                BatchUploadFolderDialog(
+                    items = uiState.pendingBatchUpload!!.items,
+                    folders = allFolders,
+                    initialFolderId = uiState.pendingBatchUpload!!.defaultFolderId ?: uiState.currentFolderId,
+                    onDismiss = { viewModel.dismissBatchUpload() },
+                    onConfirmUpload = { targetFolderId ->
+                        viewModel.confirmBatchUpload(targetFolderId)
+                    }
                 )
             }
 

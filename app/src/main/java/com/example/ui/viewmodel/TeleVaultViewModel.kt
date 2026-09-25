@@ -35,6 +35,8 @@ import com.example.domain.model.StorageCategory
 import com.example.domain.model.StorageStats
 import com.example.domain.model.TransferProgress
 import com.example.domain.model.classifyFileCategory
+import com.example.ui.screens.BatchUploadItem
+import com.example.ui.screens.PendingBatchUpload
 import com.example.ui.screens.SharedFileItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -112,6 +114,7 @@ data class UiState(
     val primaryBotAlert: BotRevocationAlert? = null,
     val standbyBotToRecover: StandbyBotEntity? = null,
     val pendingShareSheetUpload: List<SharedFileItem>? = null,
+    val pendingBatchUpload: PendingBatchUpload? = null,
     val fileForSharing: FileEntity? = null,
     val activeShareForCurrentFile: SharedFileEntity? = null,
     val isGeneratingShareLink: Boolean = false,
@@ -935,27 +938,41 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     // Transfer Actions
-    fun uploadFile(uri: Uri) {
-        val (fileName, fileSize) = resolveUriMetadata(uri)
-        val chunkSizeMb = creds.getChunkSizeMb().coerceAtMost(18)
-        val chunkSizeBytes = chunkSizeMb * 1024 * 1024L
-        val estimatedChunks = ((fileSize + chunkSizeBytes - 1) / chunkSizeBytes).toInt().coerceAtLeast(1)
-
-        // Threshold for warning: files >= 100MB (multi-chunk transfers)
-        if (fileSize >= 100 * 1024 * 1024L || estimatedChunks >= 6) {
-            _uiState.update {
-                it.copy(
-                    pendingUploadWarning = PendingUploadWarning(
-                        uri = uri,
-                        fileName = fileName,
-                        fileSize = fileSize,
-                        estimatedChunks = estimatedChunks
-                    )
-                )
-            }
-        } else {
-            confirmUploadFile(uri)
+    fun onFilesSelectedForUpload(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        val currentFolder = _uiState.value.currentFolderId
+        val items = uris.map { uri ->
+            val (name, size) = resolveUriMetadata(uri)
+            BatchUploadItem(uri = uri, name = name, size = size)
         }
+        _uiState.update {
+            it.copy(
+                pendingBatchUpload = PendingBatchUpload(
+                    items = items,
+                    defaultFolderId = currentFolder
+                )
+            )
+        }
+    }
+
+    fun confirmBatchUpload(targetFolderId: String?) {
+        val batch = _uiState.value.pendingBatchUpload ?: return
+        val uris = batch.items.map { it.uri }
+        transferManager.enqueueBatchUpload(uris, targetFolderId)
+        _uiState.update {
+            it.copy(
+                pendingBatchUpload = null,
+                showTransfersSheet = true
+            )
+        }
+    }
+
+    fun dismissBatchUpload() {
+        _uiState.update { it.copy(pendingBatchUpload = null) }
+    }
+
+    fun uploadFile(uri: Uri) {
+        onFilesSelectedForUpload(listOf(uri))
     }
 
     fun confirmUploadFile(uri: Uri) {

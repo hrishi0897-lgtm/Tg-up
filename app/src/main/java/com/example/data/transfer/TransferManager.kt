@@ -34,6 +34,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -59,6 +60,7 @@ import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -94,6 +96,12 @@ class TransferManager private constructor(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeJobs = ConcurrentHashMap<String, Job>()
     private val pauseRequestedFiles = ConcurrentHashMap.newKeySet<String>()
+
+    // Sequential Upload Queue & Batch Indexing State
+    private val uploadQueue = ConcurrentLinkedQueue<String>()
+    private val isUploadingActive = AtomicBoolean(false)
+    private val activeUploadFileId = AtomicReference<String?>(null)
+    private val completedInCurrentBatch = AtomicInteger(0)
 
     private val moshi: Moshi = Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()
     private val manifestAdapter = moshi.adapter(FileManifest::class.java)
@@ -207,169 +215,187 @@ class TransferManager private constructor(
     }
 
     /**
-     * Prepares and starts a chunked upload from a content Uri.
+     * Enqueues a batch of files for sequential upload to Telegram.
+     * All files are added to the visible upload queue in PENDING ("Queued") state.
+     * Uploads execute strictly sequentially (one full file at a time, including chunks,
+     * backup-channel copy, and manifest).
      */
-    fun enqueueUpload(uri: Uri, folderId: String?, customChunkSizeBytes: Long? = null): String {
-        val fileId = UUID.randomUUID().toString()
-        scope.launch {
-            try {
-                // 1. Resolve file name and size from content provider
-                val (fileName, fileSize) = resolveUriMetadata(uri)
-                val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+    fun enqueueBatchUpload(uris: List<Uri>, folderId: String?, customChunkSizeBytes: Long? = null): List<String> {
+        val fileIds = mutableListOf<String>()
+        for (uri in uris) {
+            val fileId = UUID.randomUUID().toString()
+            fileIds.add(fileId)
+            val (fileName, fileSize) = resolveUriMetadata(uri)
+            val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
 
-                // Check device storage before copying and splitting
-                if (fileSize > 0) {
-                    val initialStorageCheck = StorageUtil.checkStorageForUpload(context, fileSize, stagingFileExists = false)
-                    if (!initialStorageCheck.isSufficient) {
-                        val errMsg = initialStorageCheck.errorMessage ?: "Insufficient device storage for upload"
-                        Log.e("TransferManager", "Storage check failed before copying: $errMsg")
-                        _transferErrorEvents.tryEmit(errMsg)
-                        throw IllegalStateException(errMsg)
-                    }
-                }
-
-                // 2. Cache Uri stream into a local staging file for safe random-access chunking
-                val stagingDir = File(context.cacheDir, "upload_staging").apply { mkdirs() }
-                val stagingFile = File(stagingDir, "$fileId.tmp")
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    FileOutputStream(stagingFile).use { output ->
-                        input.copyTo(output)
-                    }
-                } ?: throw IllegalStateException("Unable to read selected file stream")
-
-                val actualSize = stagingFile.length()
-
-                // Re-verify storage capacity with actual size on disk
-                val actualStorageCheck = StorageUtil.checkStorageForUpload(context, actualSize, stagingFileExists = true)
-                if (!actualStorageCheck.isSufficient) {
-                    stagingFile.delete()
-                    val errMsg = actualStorageCheck.errorMessage ?: "Insufficient storage for chunking"
-                    Log.e("TransferManager", "Storage check failed after caching staging file: $errMsg")
-                    _transferErrorEvents.tryEmit(errMsg)
-                    throw IllegalStateException(errMsg)
-                }
-
-                val overallChecksum = withContext(Dispatchers.Default) {
-                    ChecksumUtil.computeSha256(stagingFile)
-                }
-
-                // 3. Compute chunk count based on global safe chunk size CHUNK_SIZE_BYTES (18MB) or custom override
-                // and compute balanced target chunk size (total file size divided by number of chunks)
-                val maxChunkSize = customChunkSizeBytes ?: minOf(credentialsManager.getChunkSizeMb() * 1024 * 1024L, CHUNK_SIZE_BYTES)
-                val totalChunks = ((actualSize + maxChunkSize - 1) / maxChunkSize).toInt().coerceAtLeast(1)
-                val targetChunkSize = ((actualSize + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
-
-                Log.i(
-                    "TransferManager",
-                    "Enqueueing upload for $fileName: actualSize=$actualSize bytes (${ChecksumUtil.formatBytes(actualSize)}), " +
-                    "totalChunks=$totalChunks, targetChunkSize=$targetChunkSize bytes (${ChecksumUtil.formatBytes(targetChunkSize)})"
-                )
-
-                // Generate downscaled thumbnail locally before upload if file is media (image or video)
-                val thumbFile = if (ThumbnailUtil.isMedia(mimeType)) {
-                    try {
-                        ThumbnailUtil.generateThumbnail(context, stagingFile, mimeType, fileId)
-                    } catch (e: Exception) {
-                        Log.w("TransferManager", "Thumbnail generation failed for $fileName", e)
-                        null
-                    }
-                } else null
-
-                // 4. Register file in Room database
-                val fileEntity = FileEntity(
-                    id = fileId,
-                    name = fileName,
-                    folderId = folderId,
-                    size = actualSize,
-                    mimeType = mimeType,
-                    status = FileStatus.PENDING,
-                    checksum = overallChecksum,
-                    totalChunks = totalChunks,
-                    completedChunks = 0,
-                    localPath = stagingFile.absolutePath,
-                    thumbnailLocalPath = thumbFile?.absolutePath
-                )
+            val fileEntity = FileEntity(
+                id = fileId,
+                name = fileName,
+                folderId = folderId,
+                size = fileSize,
+                mimeType = mimeType,
+                status = FileStatus.PENDING,
+                checksum = "",
+                totalChunks = 1,
+                completedChunks = 0,
+                localPath = null,
+                localUri = uri.toString()
+            )
+            scope.launch {
                 database.fileDao().insert(fileEntity)
-
-                // Pre-populate in-memory transfers flow immediately with PENDING state
-                updateProgressState(
-                    TransferProgress(
-                        fileId = fileId,
-                        fileName = fileName,
-                        isUpload = true,
-                        currentChunk = 1,
-                        totalChunks = totalChunks,
-                        progressFraction = 0f,
-                        bytesTransferred = 0L,
-                        totalBytes = actualSize,
-                        speedBytesPerSec = 0L,
-                        status = FileStatus.PENDING
-                    )
-                )
-
-                // 5. Clean up any stale chunk files from a previous attempt
-                val chunksDir = File(context.cacheDir, "upload_chunks/$fileId")
-                if (chunksDir.exists()) {
-                    Log.d("TransferManager", "Cleaning up stale chunk directory for fileId=$fileId: ${chunksDir.absolutePath}")
-                    chunksDir.deleteRecursively()
-                }
-                chunksDir.mkdirs()
-
-                // Pre-generate chunk entities in database.
-                // Discrete chunk files and their individual SHA-256 digests are computed strictly on-demand
-                // as each chunk is written to disk for upload to avoid multiple read passes over large files.
-                val chunkEntities = mutableListOf<ChunkEntity>()
-                for (i in 0 until totalChunks) {
-                    val offset = i * targetChunkSize
-                    val chunkLength = minOf(targetChunkSize, (actualSize - offset).coerceAtLeast(0L))
-
-                    chunkEntities.add(
-                        ChunkEntity(
-                            fileId = fileId,
-                            chunkIndex = i,
-                            checksum = "", // Computed on-demand when writing chunk file
-                            size = chunkLength,
-                            isUploaded = false
-                        )
-                    )
-                }
-                database.chunkDao().insertAll(chunkEntities)
-
-                // 6. Launch the upload
-                startUpload(fileId)
-
-            } catch (e: Throwable) {
-                val errMsg = e.message ?: "Upload preparation failed (${e::class.java.simpleName})"
-                Log.e("TransferManager", "Failed during enqueueUpload: $errMsg", e)
-                database.fileDao().updateStatus(fileId, FileStatus.FAILED, errMsg)
-                updateProgressState(
-                    TransferProgress(
-                        fileId = fileId,
-                        fileName = "Upload",
-                        isUpload = true,
-                        currentChunk = 1,
-                        totalChunks = 1,
-                        progressFraction = 0f,
-                        bytesTransferred = 0L,
-                        totalBytes = 0L,
-                        speedBytesPerSec = 0L,
-                        status = FileStatus.FAILED,
-                        errorMessage = errMsg
-                    )
-                )
-                _transferErrorEvents.tryEmit(errMsg)
             }
+
+            updateProgressState(
+                TransferProgress(
+                    fileId = fileId,
+                    fileName = fileName,
+                    isUpload = true,
+                    currentChunk = 0,
+                    totalChunks = 1,
+                    progressFraction = 0f,
+                    bytesTransferred = 0L,
+                    totalBytes = fileSize,
+                    speedBytesPerSec = 0L,
+                    status = FileStatus.PENDING,
+                    isChunking = false
+                )
+            )
+
+            uploadQueue.add(fileId)
         }
-        return fileId
+
+        notifyService("Upload batch queued (${uris.size} files)")
+        processNextUploadInQueue()
+        return fileIds
     }
 
     /**
-     * Executes or resumes a chunked upload.
+     * Prepares and starts a chunked upload from a content Uri (single-file convenience method).
+     */
+    fun enqueueUpload(uri: Uri, folderId: String?, customChunkSizeBytes: Long? = null): String {
+        return enqueueBatchUpload(listOf(uri), folderId, customChunkSizeBytes).firstOrNull() ?: ""
+    }
+
+    /**
+     * Executes or resumes a chunked upload by adding it to the sequential upload queue.
      */
     fun startUpload(fileId: String) {
         pauseRequestedFiles.remove(fileId)
-        val job = scope.launch {
+        scope.launch {
             val fileEntity = database.fileDao().getById(fileId)
+            if (fileEntity != null) {
+                database.fileDao().updateStatus(fileId, FileStatus.PENDING, null)
+                updateProgressState(
+                    TransferProgress(
+                        fileId = fileId,
+                        fileName = fileEntity.name,
+                        isUpload = true,
+                        currentChunk = fileEntity.completedChunks,
+                        totalChunks = fileEntity.totalChunks,
+                        progressFraction = if (fileEntity.size > 0) (fileEntity.completedChunks.toFloat() / fileEntity.totalChunks.toFloat()) else 0f,
+                        bytesTransferred = 0L,
+                        totalBytes = fileEntity.size,
+                        speedBytesPerSec = 0L,
+                        status = FileStatus.PENDING,
+                        errorMessage = null,
+                        isChunking = false
+                    )
+                )
+                if (!uploadQueue.contains(fileId) && activeUploadFileId.get() != fileId) {
+                    uploadQueue.add(fileId)
+                }
+                notifyService("Processing upload")
+                processNextUploadInQueue()
+            }
+        }
+    }
+
+    fun retryUpload(fileId: String) {
+        startUpload(fileId)
+    }
+
+    /**
+     * Sequentially pulls and processes items from the upload queue.
+     * Guarantees one file completes fully (all chunks, backup mirroring, manifest)
+     * before the next begins, avoiding rate-limiting or data exhaustion.
+     * Batches index regeneration to run once when the queue is drained.
+     */
+    private fun processNextUploadInQueue() {
+        scope.launch {
+            if (!isUploadingActive.compareAndSet(false, true)) {
+                Log.d("TransferManager", "processNextUploadInQueue: upload already active, remaining in queue: ${uploadQueue.size}")
+                return@launch
+            }
+
+            try {
+                while (isActive) {
+                    val nextFileId = uploadQueue.poll() ?: break
+
+                    if (pauseRequestedFiles.contains(nextFileId)) {
+                        pauseRequestedFiles.remove(nextFileId)
+                        continue
+                    }
+
+                    val entity = database.fileDao().getById(nextFileId)
+                    if (entity == null || entity.status == FileStatus.PAUSED || entity.status == FileStatus.COMPLETED) {
+                        continue
+                    }
+
+                    activeUploadFileId.set(nextFileId)
+                    try {
+                        coroutineScope {
+                            val uploadJob = coroutineContext.job
+                            activeJobs[nextFileId] = uploadJob
+                            executeSingleFileUpload(nextFileId)
+                        }
+                    } catch (ce: CancellationException) {
+                        Log.i("TransferManager", "Upload job paused or cancelled for $nextFileId")
+                    } catch (t: Throwable) {
+                        val errMsg = t.message ?: "Upload failed (${t::class.java.simpleName})"
+                        Log.e("TransferManager", "Resilience: Per-file upload failure for $nextFileId (${entity.name}): $errMsg", t)
+                        database.fileDao().updateStatus(nextFileId, FileStatus.FAILED, errMsg)
+                        updateProgressState(
+                            TransferProgress(
+                                fileId = nextFileId,
+                                fileName = entity.name,
+                                isUpload = true,
+                                currentChunk = entity.completedChunks,
+                                totalChunks = entity.totalChunks,
+                                progressFraction = 0f,
+                                bytesTransferred = 0L,
+                                totalBytes = entity.size,
+                                speedBytesPerSec = 0L,
+                                status = FileStatus.FAILED,
+                                errorMessage = errMsg,
+                                isChunking = false
+                            )
+                        )
+                        _transferErrorEvents.tryEmit(errMsg)
+                        notifyService("Upload failed: ${entity.name}")
+                    } finally {
+                        activeJobs.remove(nextFileId)
+                        activeUploadFileId.set(null)
+                    }
+                }
+            } finally {
+                isUploadingActive.set(false)
+                val completedCount = completedInCurrentBatch.getAndSet(0)
+                if (completedCount > 0) {
+                    Log.i("TransferManager", "Upload batch finished ($completedCount file(s) completed). Scheduling single batched VaultIndex auto-publish.")
+                    VaultSyncManager.getInstance(context).scheduleAutoPublish(debounceDelayMs = 1500L)
+                }
+                if (uploadQueue.isNotEmpty()) {
+                    processNextUploadInQueue()
+                }
+            }
+        }
+    }
+
+    /**
+     * Executes the per-file upload flow.
+     */
+    private suspend fun executeSingleFileUpload(fileId: String) = coroutineScope {
+            var fileEntity = database.fileDao().getById(fileId)
             val fileName = fileEntity?.name ?: "File"
             val totalBytes = fileEntity?.size ?: 0L
             val totalChunks = fileEntity?.totalChunks ?: 1
@@ -395,10 +421,10 @@ class TransferManager private constructor(
                     )
                 )
                 _transferErrorEvents.tryEmit(errorMsg)
-                return@launch
+                return@coroutineScope
             }
 
-            if (fileEntity == null) return@launch
+            if (fileEntity == null) return@coroutineScope
 
             // Check Wi-Fi only restriction if enabled in settings
             if (credentialsManager.isWifiOnly() && !StorageUtil.isConnectedToWifi(context)) {
@@ -417,34 +443,116 @@ class TransferManager private constructor(
                         totalBytes = fileEntity.size,
                         speedBytesPerSec = 0L,
                         status = FileStatus.PAUSED,
-                        errorMessage = wifiError
+                        errorMessage = wifiError,
+                        isChunking = false
                     )
                 )
                 _transferErrorEvents.tryEmit(wifiError)
-                return@launch
+                return@coroutineScope
             }
 
-            val stagingFile = fileEntity.localPath?.let { File(it) } ?: File(context.cacheDir, "upload_staging/$fileId.tmp")
+            var stagingFile = fileEntity.localPath?.let { File(it) } ?: File(context.cacheDir, "upload_staging/$fileId.tmp")
             if (!stagingFile.exists() || stagingFile.length() == 0L) {
-                val errorMsg = "Source staging file missing"
-                database.fileDao().updateStatus(fileId, FileStatus.FAILED, errorMsg)
-                updateProgressState(
-                    TransferProgress(
-                        fileId = fileId,
-                        fileName = fileEntity.name,
-                        isUpload = true,
-                        currentChunk = fileEntity.completedChunks,
-                        totalChunks = fileEntity.totalChunks,
-                        progressFraction = 0f,
-                        bytesTransferred = 0L,
-                        totalBytes = fileEntity.size,
-                        speedBytesPerSec = 0L,
-                        status = FileStatus.FAILED,
-                        errorMessage = errorMsg
+                val uriString = fileEntity.localUri
+                if (uriString != null) {
+                    // Update UI to Chunking state
+                    updateProgressState(
+                        TransferProgress(
+                            fileId = fileId,
+                            fileName = fileEntity.name,
+                            isUpload = true,
+                            currentChunk = 0,
+                            totalChunks = fileEntity.totalChunks,
+                            progressFraction = 0f,
+                            bytesTransferred = 0L,
+                            totalBytes = fileEntity.size,
+                            speedBytesPerSec = 0L,
+                            status = FileStatus.UPLOADING,
+                            isChunking = true
+                        )
                     )
-                )
-                _transferErrorEvents.tryEmit(errorMsg)
-                return@launch
+
+                    val uri = Uri.parse(uriString)
+                    val stagingDir = File(context.cacheDir, "upload_staging").apply { mkdirs() }
+                    stagingFile = File(stagingDir, "$fileId.tmp")
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        FileOutputStream(stagingFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    } ?: throw IllegalStateException("Unable to read selected file stream: ${fileEntity.name}")
+
+                    val actualSize = stagingFile.length()
+                    val actualStorageCheck = StorageUtil.checkStorageForUpload(context, actualSize, stagingFileExists = true)
+                    if (!actualStorageCheck.isSufficient) {
+                        stagingFile.delete()
+                        val errMsg = actualStorageCheck.errorMessage ?: "Insufficient storage for chunking"
+                        throw IllegalStateException(errMsg)
+                    }
+
+                    val overallChecksum = withContext(Dispatchers.Default) {
+                        ChecksumUtil.computeSha256(stagingFile)
+                    }
+
+                    val maxChunkSize = minOf(credentialsManager.getChunkSizeMb() * 1024 * 1024L, CHUNK_SIZE_BYTES)
+                    val totalChunks = ((actualSize + maxChunkSize - 1) / maxChunkSize).toInt().coerceAtLeast(1)
+                    val targetChunkSize = ((actualSize + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
+
+                    val thumbFile = if (ThumbnailUtil.isMedia(fileEntity.mimeType)) {
+                        try {
+                            ThumbnailUtil.generateThumbnail(context, stagingFile, fileEntity.mimeType, fileId)
+                        } catch (e: Exception) {
+                            Log.w("TransferManager", "Thumbnail generation failed for $fileName", e)
+                            null
+                        }
+                    } else null
+
+                    fileEntity = fileEntity.copy(
+                        size = actualSize,
+                        checksum = overallChecksum,
+                        totalChunks = totalChunks,
+                        localPath = stagingFile.absolutePath,
+                        thumbnailLocalPath = thumbFile?.absolutePath
+                    )
+                    database.fileDao().update(fileEntity)
+
+                    database.chunkDao().deleteForFile(fileId)
+                    val chunkEntities = mutableListOf<ChunkEntity>()
+                    for (i in 0 until totalChunks) {
+                        val offset = i * targetChunkSize
+                        val chunkLength = minOf(targetChunkSize, (actualSize - offset).coerceAtLeast(0L))
+                        chunkEntities.add(
+                            ChunkEntity(
+                                fileId = fileId,
+                                chunkIndex = i,
+                                checksum = "",
+                                size = chunkLength,
+                                isUploaded = false
+                            )
+                        )
+                    }
+                    database.chunkDao().insertAll(chunkEntities)
+                } else {
+                    val errorMsg = "Source staging file missing"
+                    database.fileDao().updateStatus(fileId, FileStatus.FAILED, errorMsg)
+                    updateProgressState(
+                        TransferProgress(
+                            fileId = fileId,
+                            fileName = fileEntity.name,
+                            isUpload = true,
+                            currentChunk = fileEntity.completedChunks,
+                            totalChunks = fileEntity.totalChunks,
+                            progressFraction = 0f,
+                            bytesTransferred = 0L,
+                            totalBytes = fileEntity.size,
+                            speedBytesPerSec = 0L,
+                            status = FileStatus.FAILED,
+                            errorMessage = errorMsg,
+                            isChunking = false
+                        )
+                    )
+                    _transferErrorEvents.tryEmit(errorMsg)
+                    return@coroutineScope
+                }
             }
 
             var chunks = database.chunkDao().getChunksForFile(fileId)
@@ -488,7 +596,8 @@ class TransferManager private constructor(
             fun publishProgress(
                 force: Boolean = false,
                 status: FileStatus = FileStatus.UPLOADING,
-                errorMessage: String? = null
+                errorMessage: String? = null,
+                isChunking: Boolean = false
             ) {
                 val now = SystemClock.elapsedRealtime()
                 val last = lastUiEmissionMs.get()
@@ -530,13 +639,14 @@ class TransferManager private constructor(
                         errorMessage = errorMessage,
                         etaSeconds = etaSec,
                         activeConcurrentChunks = activeCount,
-                        completedChunksCount = completed
+                        completedChunksCount = completed,
+                        isChunking = isChunking
                     )
                 )
             }
 
             database.fileDao().updateStatus(fileId, FileStatus.UPLOADING)
-            publishProgress(force = true, status = FileStatus.UPLOADING)
+            publishProgress(force = true, status = FileStatus.UPLOADING, isChunking = false)
             notifyService("Uploading ${fileEntity.name}")
 
             val chunksDir = File(context.cacheDir, "upload_chunks/$fileId").apply { mkdirs() }
@@ -729,7 +839,7 @@ class TransferManager private constructor(
                     pauseRequestedFiles.remove(fileId)
                     database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused by user")
                     publishProgress(force = true, status = FileStatus.PAUSED)
-                    return@launch
+                    return@coroutineScope
                 }
 
                 // Check failure condition
@@ -740,7 +850,7 @@ class TransferManager private constructor(
                     publishProgress(force = true, status = FileStatus.FAILED, errorMessage = failure)
                     _transferErrorEvents.tryEmit(failure)
                     notifyService("Upload failed: ${fileEntity.name}")
-                    return@launch
+                    return@coroutineScope
                 }
 
                 // Verify all chunks are done
@@ -751,7 +861,7 @@ class TransferManager private constructor(
                     publishProgress(force = true, status = FileStatus.FAILED, errorMessage = errMsg)
                     _transferErrorEvents.tryEmit(errMsg)
                     notifyService("Upload failed: ${fileEntity.name}")
-                    return@launch
+                    return@coroutineScope
                 }
 
                 // All chunks successfully uploaded!
@@ -833,10 +943,10 @@ class TransferManager private constructor(
                     val err = manifestResult.exceptionOrNull()?.message ?: "Manifest upload failed"
                     manifestFile.delete()
                     database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
-                    publishProgress(force = true, status = FileStatus.FAILED, errorMessage = err)
+                    publishProgress(force = true, status = FileStatus.FAILED, errorMessage = err, isChunking = false)
                     _transferErrorEvents.tryEmit(err)
                     notifyService("Manifest upload failed: ${fileEntity.name}")
-                    return@launch
+                    return@coroutineScope
                 }
 
                 // Clean up temporary manifest file on disk
@@ -845,9 +955,6 @@ class TransferManager private constructor(
                 val manifestMessage = manifestResult.getOrThrow()
                 database.fileDao().updateManifestId(fileId, manifestMessage.messageId, chatId)
                 database.fileDao().updateStatus(fileId, FileStatus.COMPLETED)
-
-                // Debounced auto-publish fresh VaultIndex to Telegram so other devices stay in sync
-                VaultSyncManager.getInstance(context).scheduleAutoPublish()
 
                 val completedProgress = TransferProgress(
                     fileId = fileId,
@@ -859,15 +966,18 @@ class TransferManager private constructor(
                     bytesTransferred = fileEntity.size,
                     totalBytes = fileEntity.size,
                     speedBytesPerSec = 0L,
-                    status = FileStatus.COMPLETED
+                    status = FileStatus.COMPLETED,
+                    isChunking = false
                 )
 
-                // Remove from active transfers so it doesn't linger at 100%
-                _transfers.update { it - fileId }
+                // Retain in active transfers as COMPLETED ("Done") for batch visibility
+                updateProgressState(completedProgress)
                 // Add to recently completed list (capped at 5)
                 _recentlyCompleted.update { current ->
                     (listOf(completedProgress) + current.filter { it.fileId != fileId }).take(5)
                 }
+
+                completedInCurrentBatch.incrementAndGet()
 
                 // Safe cleanup of temporary staging file and discrete chunks directory
                 stagingFile.delete()
@@ -876,17 +986,16 @@ class TransferManager private constructor(
             } catch (e: CancellationException) {
                 Log.i("TransferManager", "Upload paused for fileId=$fileId")
                 database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Upload paused by user")
+                publishProgress(force = true, status = FileStatus.PAUSED, isChunking = false)
             } catch (e: Throwable) {
                 val err = e.message ?: "Upload failed (${e::class.java.simpleName})"
                 Log.e("TransferManager", "Fatal error during upload for $fileId (${fileEntity.name}): $err", e)
                 database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
-                publishProgress(force = true, status = FileStatus.FAILED, errorMessage = err)
+                publishProgress(force = true, status = FileStatus.FAILED, errorMessage = err, isChunking = false)
                 _transferErrorEvents.tryEmit(err)
             } finally {
                 activeJobs.remove(fileId)
             }
-        }
-        activeJobs[fileId] = job
     }
 
     /**
@@ -1427,6 +1536,7 @@ class TransferManager private constructor(
      */
     fun pauseTransfer(fileId: String) {
         pauseRequestedFiles.add(fileId)
+        uploadQueue.remove(fileId)
         // Immediately reflect Paused state in UI
         _transfers.update { current ->
             val existing = current[fileId] ?: return@update current
@@ -1444,6 +1554,7 @@ class TransferManager private constructor(
      * Pauses all active or pending transfers.
      */
     fun pauseAll() {
+        uploadQueue.clear()
         val activeIds = _transfers.value.filter {
             it.value.status == FileStatus.UPLOADING ||
                     it.value.status == FileStatus.DOWNLOADING ||
@@ -1476,6 +1587,7 @@ class TransferManager private constructor(
      */
     fun cancelTransfer(fileId: String) {
         pauseRequestedFiles.remove(fileId)
+        uploadQueue.remove(fileId)
         activeJobs[fileId]?.cancel()
         activeJobs.remove(fileId)
         scope.launch {
@@ -1496,6 +1608,7 @@ class TransferManager private constructor(
      */
     fun clearRecentlyCompleted() {
         _recentlyCompleted.value = emptyList()
+        _transfers.update { current -> current.filter { it.value.status != FileStatus.COMPLETED } }
     }
 
     /**
