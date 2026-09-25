@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,6 +69,9 @@ fun TransfersSheet(
     onRetry: (fileId: String) -> Unit
 ) {
     val colors = LocalTeleVaultColors.current
+    val activeItems = remember(transfers) {
+        transfers.filter { it.status != FileStatus.COMPLETED }
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -105,7 +109,7 @@ fun TransfersSheet(
                     color = colors.text
                 )
                 Text(
-                    text = "${transfers.size} items",
+                    text = "${activeItems.size} items",
                     fontSize = 12.sp,
                     fontFamily = BodySansFont,
                     color = colors.textDim
@@ -115,12 +119,12 @@ fun TransfersSheet(
             Spacer(modifier = Modifier.height(14.dp))
 
             // Overall Batch Progress banner when multiple transfers are present
-            if (transfers.size > 1) {
-                val completedCount = transfers.count { it.status == FileStatus.COMPLETED }
-                val totalCount = transfers.size
-                val percent = if (totalCount > 0) (completedCount * 100) / totalCount else 0
+            if (activeItems.size > 1) {
+                val totalCount = activeItems.size
+                val failedCount = activeItems.count { it.status == FileStatus.FAILED }
+                val percent = 0
                 val animatedProgress by animateFloatAsState(
-                    targetValue = (completedCount.toFloat() / totalCount.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f),
+                    targetValue = 0f,
                     animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
                     label = "sheet_batch_progress_anim"
                 )
@@ -145,7 +149,7 @@ fun TransfersSheet(
                                 color = colors.text
                             )
                             Text(
-                                text = "$completedCount of $totalCount ($percent%)",
+                                text = "$totalCount items in queue",
                                 fontSize = 11.sp,
                                 fontFamily = NumericMonoFont,
                                 fontWeight = FontWeight.Bold,
@@ -167,7 +171,7 @@ fun TransfersSheet(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
-            if (transfers.isEmpty()) {
+            if (activeItems.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -211,7 +215,7 @@ fun TransfersSheet(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(transfers, key = { it.fileId }) { transfer ->
+                    items(activeItems, key = { it.fileId }) { transfer ->
                         TransferItemCard(
                             transfer = transfer,
                             onPause = { onPause(transfer.fileId) },

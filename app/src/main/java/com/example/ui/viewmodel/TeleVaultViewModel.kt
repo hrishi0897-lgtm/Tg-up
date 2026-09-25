@@ -582,6 +582,9 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
         // 1. In-memory transfers (live byte rates, chunk status)
         for (item in inMemoryMap.values) {
+            // Strictly exclude completed transfers from active list
+            if (item.status == FileStatus.COMPLETED) continue
+
             val dbFile = dbNonCompletedFiles.find { it.id == item.fileId }
             // If Room database reports FAILED or PAUSED, the database status
             // strictly takes precedence over any stale in-memory UPLOADING/DOWNLOADING state!
@@ -594,12 +597,15 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             } else {
                 item
             }
-            result.add(reconciledItem)
-            seenFileIds.add(item.fileId)
+            if (reconciledItem.status != FileStatus.COMPLETED) {
+                result.add(reconciledItem)
+                seenFileIds.add(item.fileId)
+            }
         }
 
         // 2. Persisted non-completed files from Room (ensures failed/stuck files are never invisible)
         for (file in dbNonCompletedFiles) {
+            if (file.status == FileStatus.COMPLETED) continue
             if (!seenFileIds.contains(file.id)) {
                 val fraction = if (file.totalChunks > 0) {
                     (file.completedChunks.toFloat() / file.totalChunks.toFloat()).coerceIn(0f, 1f)
@@ -623,7 +629,7 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 seenFileIds.add(file.id)
             }
         }
-        result
+        result.filter { it.status != FileStatus.COMPLETED }
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),

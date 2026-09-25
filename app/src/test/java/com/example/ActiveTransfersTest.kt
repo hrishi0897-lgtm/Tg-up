@@ -155,4 +155,61 @@ class ActiveTransfersTest {
         // Screenshot verification
         composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/transfers_empty_screen.png")
     }
+
+    @Test
+    fun testCompletedTransfersExclusivelyShownInRecentlyCompleted() {
+        // file-done has finished and should only appear in Recently Completed, never in Active Transfers
+        val completedItem = TransferProgress(
+            fileId = "file-done",
+            fileName = "finished_photo.jpg",
+            totalBytes = 5L * 1024L * 1024L,
+            bytesTransferred = 5L * 1024L * 1024L,
+            currentChunk = 1,
+            totalChunks = 1,
+            progressFraction = 1f,
+            isUpload = true,
+            status = FileStatus.COMPLETED,
+            speedBytesPerSec = 0L
+        )
+
+        val activeItem = TransferProgress(
+            fileId = "file-active",
+            fileName = "in_progress_video.mp4",
+            totalBytes = 50L * 1024L * 1024L,
+            bytesTransferred = 10L * 1024L * 1024L,
+            currentChunk = 1,
+            totalChunks = 5,
+            progressFraction = 0.2f,
+            isUpload = true,
+            status = FileStatus.UPLOADING,
+            speedBytesPerSec = 2L * 1024L * 1024L
+        )
+
+        composeTestRule.setContent {
+            TeleVaultTheme {
+                TransfersScreen(
+                    // Even if transfers list contained the completed item, it must be excluded from Active Transfers
+                    transfers = listOf(activeItem, completedItem),
+                    recentlyCompleted = listOf(completedItem),
+                    onBack = {},
+                    onPause = {},
+                    onResume = { _, _ -> },
+                    onCancel = {},
+                    onRetry = {},
+                    onPauseAll = {},
+                    onResumeAll = {},
+                    onClearCompleted = {},
+                    onNavigateToVault = {}
+                )
+            }
+        }
+
+        // Active Transfers count must be 1, NOT 2
+        composeTestRule.onNodeWithText("ACTIVE TRANSFERS (1)").assertIsDisplayed()
+        composeTestRule.onNodeWithText("in_progress_video.mp4").assertIsDisplayed()
+
+        // Recently Completed section should display the completed item
+        composeTestRule.onNodeWithText("RECENTLY COMPLETED").assertIsDisplayed()
+        composeTestRule.onNodeWithText("finished_photo.jpg").assertIsDisplayed()
+    }
 }

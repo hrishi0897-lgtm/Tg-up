@@ -45,6 +45,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,10 +83,14 @@ fun TransfersScreen(
     onNavigateToVault: () -> Unit
 ) {
     val colors = LocalTeleVaultColors.current
-    val activeCount = transfers.count {
+    // Active transfers strictly contain only in-progress/queued/paused/failed items, never completed
+    val activeItems = remember(transfers) {
+        transfers.filter { it.status != FileStatus.COMPLETED }
+    }
+    val activeCount = activeItems.count {
         it.status == FileStatus.UPLOADING || it.status == FileStatus.DOWNLOADING || it.status == FileStatus.PENDING
     }
-    val pausedCount = transfers.count { it.status == FileStatus.PAUSED }
+    val pausedCount = activeItems.count { it.status == FileStatus.PAUSED }
     val hasActiveTransfers = activeCount > 0
     val hasPausedTransfers = pausedCount > 0
 
@@ -97,7 +102,7 @@ fun TransfersScreen(
         topBar = {
             TransfersTopBar(
                 activeCount = activeCount,
-                totalCount = transfers.size,
+                totalCount = activeItems.size,
                 hasActiveTransfers = hasActiveTransfers,
                 hasPausedTransfers = hasPausedTransfers,
                 onBack = onBack,
@@ -108,7 +113,7 @@ fun TransfersScreen(
         bottomBar = {
             TeleVaultBottomNav(
                 currentScreen = AppScreen.TRANSFERS,
-                activeTransferCount = transfers.size,
+                activeTransferCount = activeItems.size,
                 onVaultSelected = onNavigateToVault,
                 onTransfersSelected = { /* Already on Transfers */ }
             )
@@ -126,12 +131,12 @@ fun TransfersScreen(
                 Spacer(modifier = Modifier.height(4.dp))
             }
 
-            if (transfers.isEmpty() && recentlyCompleted.isEmpty()) {
+            if (activeItems.isEmpty() && recentlyCompleted.isEmpty()) {
                 item(key = "empty_transfers") {
                     EmptyTransfersView()
                 }
             } else {
-                if (transfers.isNotEmpty()) {
+                if (activeItems.isNotEmpty()) {
                     item(key = "active_header") {
                         Row(
                             modifier = Modifier
@@ -141,7 +146,7 @@ fun TransfersScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "ACTIVE TRANSFERS (${transfers.size})",
+                                text = "ACTIVE TRANSFERS (${activeItems.size})",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = BodySansFont,
@@ -151,20 +156,21 @@ fun TransfersScreen(
                         }
                     }
 
-                    // Overall Batch Progress banner when multiple transfers are queued
-                    if (transfers.size > 1) {
-                        val completedCount = transfers.count { it.status == FileStatus.COMPLETED }
-                        val failedCount = transfers.count { it.status == FileStatus.FAILED }
+                    // Overall Batch Progress banner when multiple transfers are queued or in progress
+                    if (activeItems.size + recentlyCompleted.size > 1 && activeItems.isNotEmpty()) {
+                        val completedCount = recentlyCompleted.size
+                        val totalCount = activeItems.size + recentlyCompleted.size
+                        val failedCount = activeItems.count { it.status == FileStatus.FAILED }
                         item(key = "batch_progress_banner") {
                             BatchProgressCard(
                                 completedCount = completedCount,
-                                totalCount = transfers.size,
+                                totalCount = totalCount,
                                 failedCount = failedCount
                             )
                         }
                     }
 
-                    items(transfers, key = { it.fileId }) { transfer ->
+                    items(activeItems, key = { it.fileId }) { transfer ->
                         TransferRowCard(
                             transfer = transfer,
                             onPause = { onPause(transfer.fileId) },

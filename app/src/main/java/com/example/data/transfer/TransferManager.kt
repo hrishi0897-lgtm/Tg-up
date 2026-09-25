@@ -970,8 +970,8 @@ class TransferManager private constructor(
                     isChunking = false
                 )
 
-                // Retain in active transfers as COMPLETED ("Done") for batch visibility
-                updateProgressState(completedProgress)
+                // Remove from active transfers immediately upon completion
+                _transfers.update { it - fileId }
                 // Add to recently completed list (capped at 5)
                 _recentlyCompleted.update { current ->
                     (listOf(completedProgress) + current.filter { it.fileId != fileId }).take(5)
