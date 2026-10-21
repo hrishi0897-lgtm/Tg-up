@@ -92,7 +92,11 @@ import java.util.concurrent.Executors
 @Composable
 fun QrScannerDialog(
     onDismiss: () -> Unit,
-    onScanned: (PairingData) -> Unit
+    onScanned: (PairingData) -> Unit = {},
+    onRawScanned: ((String) -> Unit)? = null,
+    scannerTitle: String = "Pairing Scanner",
+    bottomTitle: String = "Scan Pairing QR Code",
+    bottomSubtitle: String = "Point the camera at the QR code displayed under Settings > Pair another device on your existing device."
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -283,6 +287,16 @@ fun QrScannerDialog(
                                                     for (barcode in barcodes) {
                                                         val raw = barcode.rawValue
                                                         if (!raw.isNullOrBlank()) {
+                                                            if (onRawScanned != null && !hasDetectedCode) {
+                                                                hasDetectedCode = true
+                                                                try {
+                                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                } catch (_: Exception) {}
+                                                                previewView.post {
+                                                                    onRawScanned(raw)
+                                                                }
+                                                                break
+                                                            }
                                                             val parsed = QrCodeUtil.parsePairingPayload(raw)
                                                             if (parsed != null && !hasDetectedCode) {
                                                                 hasDetectedCode = true
@@ -418,7 +432,7 @@ fun QrScannerDialog(
                                 modifier = Modifier.size(15.dp)
                             )
                             Text(
-                                text = "Pairing Scanner",
+                                text = scannerTitle,
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -461,7 +475,7 @@ fun QrScannerDialog(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            "Scan Pairing QR Code",
+                            bottomTitle,
                             color = Color.White,
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
@@ -469,7 +483,7 @@ fun QrScannerDialog(
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            "Point the camera at the QR code displayed under Settings > Pair another device on your existing device.",
+                            bottomSubtitle,
                             color = Color.LightGray,
                             fontSize = 13.sp,
                             fontFamily = BodySansFont,

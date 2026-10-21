@@ -31,40 +31,50 @@ data class TeleVaultColors(
 )
 
 val DarkTeleVaultColors = TeleVaultColors(
-    bg = Color(0xFF0B0D14),
-    surface = Color(0xFF141826),
-    surfaceHi = Color(0xFF1B2033),
-    line = Color(0xFF262C42),
-    text = Color(0xFFF2F3F8),
-    textDim = Color(0xFF8890A8),
-    textFaint = Color(0xFF545C77),
-    heroGlow = Color(0xFF191F35),
-    navBg = Color(0xEB0B0D14),
-    btnEdge = Color(0xFF0C0F1A),
-    searchBg = Color(0xFF0E1120),
-    bodyBg = Color(0xFF05060A),
+    bg = Color(0xFF000000),
+    surface = Color(0xFF0A0C12),
+    surfaceHi = Color(0xFF121622),
+    line = Color(0xFF1E2436),
+    text = Color(0xFFF8FAFC),
+    textDim = Color(0xFF94A3B8),
+    textFaint = Color(0xFF566078),
+    heroGlow = Color(0xFF0F1322),
+    navBg = Color(0xF2000000),
+    btnEdge = Color(0xFF090B12),
+    searchBg = Color(0xFF080A10),
+    bodyBg = Color(0xFF000000),
+    violet = Color(0xFF7C6BFF),
     violetDim = Color(0xFF4A4180),
+    teal = Color(0xFF20D6B5),
+    amber = Color(0xFFF5A623),
+    mint = Color(0xFF10B981),
+    danger = Color(0xFFEF4444),
     isDark = true
 )
 
 val LightTeleVaultColors = TeleVaultColors(
-    bg = Color(0xFFF3F4FA),
+    bg = Color(0xFFF7F8FC),
     surface = Color(0xFFFFFFFF),
-    surfaceHi = Color(0xFFECEEF6),
-    line = Color(0xFFE1E4EE),
-    text = Color(0xFF14161F),
-    textDim = Color(0xFF5B6178),
-    textFaint = Color(0xFF98A0B8),
+    surfaceHi = Color(0xFFEEF1F8),
+    line = Color(0xFFE2E6F0),
+    text = Color(0xFF0B0D14),
+    textDim = Color(0xFF52586E),
+    textFaint = Color(0xFF8C93A8),
     heroGlow = Color(0xFFFFFFFF),
-    navBg = Color(0xD9FFFFFF),
-    btnEdge = Color(0xFFCBCFDE),
-    searchBg = Color(0xFFECEEF6),
-    bodyBg = Color(0xFFE7E9F2),
-    violetDim = Color(0xFF7364DE),
+    navBg = Color(0xF2FFFFFF),
+    btnEdge = Color(0xFFD5D9E8),
+    searchBg = Color(0xFFEEF1F8),
+    bodyBg = Color(0xFFEBEEF7),
+    violet = Color(0xFF6B59F5),
+    violetDim = Color(0xFF5646D9),
+    teal = Color(0xFF0FB89A),
+    amber = Color(0xFFE09112),
+    mint = Color(0xFF0D9F6E),
+    danger = Color(0xFFE53935),
     isDark = false
 )
 
-val LocalTeleVaultColors = staticCompositionLocalOf { LightTeleVaultColors }
+val LocalTeleVaultColors = staticCompositionLocalOf { DarkTeleVaultColors }
 
 // Category Storage Donut Colors
 val CategoryViolet = Color(0xFF8C7CFF)

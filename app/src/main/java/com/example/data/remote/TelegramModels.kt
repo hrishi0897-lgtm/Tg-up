@@ -129,7 +129,10 @@ data class FileManifest(
     @Json(name = "uploadDate") val uploadDate: Long = System.currentTimeMillis(),
     @Json(name = "chunks") val chunks: List<ManifestChunk>,
     @Json(name = "thumbnailMessageId") val thumbnailMessageId: Long? = null,
-    @Json(name = "thumbnailFileId") val thumbnailFileId: String? = null
+    @Json(name = "thumbnailFileId") val thumbnailFileId: String? = null,
+    @Json(name = "isEncrypted") val isEncrypted: Boolean = false,
+    @Json(name = "encryptionKeyBase64") val encryptionKeyBase64: String? = null,
+    @Json(name = "tags") val tags: String = ""
 )
 
 /**
@@ -170,7 +173,10 @@ data class VaultIndexFile(
     @Json(name = "manifestMessageId") val manifestMessageId: Long? = null,
     @Json(name = "chunks") val chunks: List<ManifestChunk> = emptyList(),
     @Json(name = "thumbnailMessageId") val thumbnailMessageId: Long? = null,
-    @Json(name = "thumbnailFileId") val thumbnailFileId: String? = null
+    @Json(name = "thumbnailFileId") val thumbnailFileId: String? = null,
+    @Json(name = "isEncrypted") val isEncrypted: Boolean = false,
+    @Json(name = "encryptionKeyBase64") val encryptionKeyBase64: String? = null,
+    @Json(name = "tags") val tags: String = ""
 )
 
 @JsonClass(generateAdapter = true)

@@ -12,12 +12,14 @@ import com.example.data.local.dao.FileDao
 import com.example.data.local.dao.FolderDao
 import com.example.data.local.dao.SharedFileDao
 import com.example.data.local.dao.StandbyBotDao
+import com.example.data.local.dao.SyncFolderDao
 import com.example.data.local.entity.ChannelEntity
 import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FolderEntity
 import com.example.data.local.entity.SharedFileEntity
 import com.example.data.local.entity.StandbyBotEntity
+import com.example.data.local.entity.SyncFolderEntity
 
 @Database(
     entities = [
@@ -26,9 +28,10 @@ import com.example.data.local.entity.StandbyBotEntity
         FolderEntity::class,
         ChannelEntity::class,
         StandbyBotEntity::class,
-        SharedFileEntity::class
+        SharedFileEntity::class,
+        SyncFolderEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -39,6 +42,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun channelDao(): ChannelDao
     abstract fun standbyBotDao(): StandbyBotDao
     abstract fun sharedFileDao(): SharedFileDao
+    abstract fun syncFolderDao(): SyncFolderDao
 
     companion object {
         @Volatile
@@ -120,6 +124,32 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `chunks` ADD COLUMN `backupTelegramMessageId` INTEGER")
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `files` ADD COLUMN `isEncrypted` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `files` ADD COLUMN `encryptionKeyBase64` TEXT")
+                db.execSQL("ALTER TABLE `files` ADD COLUMN `tags` TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `sync_folders` (
+                        `id` TEXT NOT NULL,
+                        `localTreeUri` TEXT NOT NULL,
+                        `localDisplayName` TEXT NOT NULL,
+                        `targetVaultFolderId` TEXT,
+                        `targetVaultFolderName` TEXT NOT NULL,
+                        `lastSyncedAt` INTEGER NOT NULL,
+                        `autoSyncEnabled` INTEGER NOT NULL,
+                        `encryptOnSync` INTEGER NOT NULL,
+                        `defaultTags` TEXT NOT NULL,
+                        `syncedFilesCount` INTEGER NOT NULL,
+                        `syncedSignaturesJson` TEXT NOT NULL,
+                        PRIMARY KEY(`id`)
+                    )
+                    """.trimIndent()
+                )
             }
         }
 
@@ -237,7 +267,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "televault_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, Migration3To4(appContext), MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, Migration3To4(appContext), MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onOpen(db: SupportSQLiteDatabase) {
                             super.onOpen(db)

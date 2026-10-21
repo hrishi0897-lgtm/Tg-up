@@ -163,6 +163,9 @@ fun SettingsScreen(
     onPairDeviceClick: (() -> Unit)? = null,
     trashCount: Int = 0,
     onNavigateToTrash: (() -> Unit)? = null,
+    onNavigateToAnalytics: (() -> Unit)? = null,
+    onNavigateToFolderSync: (() -> Unit)? = null,
+    onImportSharedLink: (() -> Unit)? = null,
     onDisconnect: () -> Unit,
     onDismiss: () -> Unit,
     onStartTestTransfer: (() -> Unit)? = null
@@ -1178,6 +1181,176 @@ fun SettingsScreen(
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 0. Vault Pro Suite (Analytics, Auto Folder Sync, Encrypted Share Import, Multi-Bot Pool)
+            if (onNavigateToAnalytics != null || onNavigateToFolderSync != null || onImportSharedLink != null) {
+                SettingsCard(
+                    icon = Icons.Default.Shield,
+                    title = "VAULT PRO SUITE & AUTOMATION",
+                    colors = colors
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // Multi-Bot Load Balancer Status Pill
+                        val totalActiveWorkers = 1 + verifiedStandbyBotsCount + (botTokenPool.size - 1).coerceAtLeast(0)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(colors.teal.copy(alpha = 0.1f))
+                                .border(1.dp, colors.teal.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Multi-Bot Parallel Load Balancer",
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.teal
+                                )
+                                Text(
+                                    text = "Distributes chunks across active & verified standby bots with adaptive HTTP 429 backoff",
+                                    fontSize = 11.sp,
+                                    color = colors.textDim
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(colors.teal.copy(alpha = 0.2f))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "$totalActiveWorkers ${if (totalActiveWorkers == 1) "Worker" else "Workers"}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = colors.teal
+                                )
+                            }
+                        }
+
+                        if (onNavigateToAnalytics != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.surfaceHi.copy(alpha = 0.65f))
+                                    .border(1.dp, colors.line, RoundedCornerShape(10.dp))
+                                    .clickable { onNavigateToAnalytics() }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                                    .testTag("settings_open_analytics_button")
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Storage Analytics & Duplicate Scanner",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = colors.text
+                                        )
+                                        Text(
+                                            text = "Category breakdown, largest files, and SHA-256 duplicate cleanup",
+                                            fontSize = 11.sp,
+                                            color = colors.textDim
+                                        )
+                                    }
+                                    Text(
+                                        text = "Open ➔",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.violet
+                                    )
+                                }
+                            }
+                        }
+
+                        if (onNavigateToFolderSync != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.surfaceHi.copy(alpha = 0.65f))
+                                    .border(1.dp, colors.line, RoundedCornerShape(10.dp))
+                                    .clickable { onNavigateToFolderSync() }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                                    .testTag("settings_open_folder_sync_button")
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Auto Folder Sync & Camera Backup",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = colors.text
+                                        )
+                                        Text(
+                                            text = "Watch local folders & schedule background AES-256 encrypted sync",
+                                            fontSize = 11.sp,
+                                            color = colors.textDim
+                                        )
+                                    }
+                                    Text(
+                                        text = "Configure ➔",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.violet
+                                    )
+                                }
+                            }
+                        }
+
+                        if (onImportSharedLink != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.surfaceHi.copy(alpha = 0.65f))
+                                    .border(1.dp, colors.line, RoundedCornerShape(10.dp))
+                                    .clickable { onImportSharedLink() }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp)
+                                    .testTag("settings_import_share_link_button")
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Import Zero-Knowledge Shared Link / QR",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = colors.text
+                                        )
+                                        Text(
+                                            text = "Import televault://share links or scan encrypted QR codes",
+                                            fontSize = 11.sp,
+                                            color = colors.textDim
+                                        )
+                                    }
+                                    Text(
+                                        text = "Import ➔",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.teal
+                                    )
+                                }
                             }
                         }
                     }

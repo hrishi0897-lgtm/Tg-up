@@ -16,16 +16,21 @@ import com.example.data.local.entity.FileStatus
 import com.example.data.local.entity.FolderEntity
 import com.example.data.local.entity.SharedFileEntity
 import com.example.data.local.entity.StandbyBotEntity
+import com.example.data.local.entity.SyncFolderEntity
 import com.example.data.remote.TelegramRepository
 import com.example.data.remote.TelegramUser
+import com.example.data.sync.FolderSyncManager
 import com.example.data.sync.RestoreResult
 import com.example.data.sync.VaultSyncManager
 import com.example.data.sync.VaultSyncWorker
+import com.example.data.transfer.BotWorkerMetric
+import com.example.data.transfer.MultiBotLoadBalancer
 import com.example.data.transfer.RelayShareManager
 import com.example.data.transfer.StandbyRecoveryManager
 import com.example.data.transfer.StandbyRecoveryState
 import com.example.data.transfer.ThumbnailManager
 import com.example.data.transfer.TransferManager
+import com.example.domain.EncryptedShareCodec
 import com.example.domain.QrCodeUtil
 import com.example.domain.model.BotHealthInfo
 import com.example.domain.model.BotRevocationAlert
@@ -63,7 +68,9 @@ enum class AppScreen {
     SETTINGS,
     FOLDER_MANAGEMENT,
     TRASH,
-    PREVIEW
+    PREVIEW,
+    ANALYTICS,
+    FOLDER_SYNC
 }
 
 data class PendingUploadWarning(
@@ -128,7 +135,11 @@ data class UiState(
     val restoreResult: RestoreResult? = null,
     val restoreError: String? = null,
     val previewFile: FileEntity? = null,
-    val isGeneratingPreview: Boolean = false
+    val isGeneratingPreview: Boolean = false,
+    val showImportSharedLinkDialog: Boolean = false,
+    val importShareError: String? = null,
+    val importShareSuccess: String? = null,
+    val selectedFileSharingChunks: List<ChunkEntity> = emptyList()
 )
 
 class TeleVaultViewModel(application: Application) : AndroidViewModel(application) {
@@ -140,9 +151,24 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     private val thumbnailManager = ThumbnailManager.getInstance(application)
     private val vaultSyncManager = VaultSyncManager.getInstance(application)
     private val relayShareManager = RelayShareManager.getInstance(application)
+    private val multiBotLoadBalancer = MultiBotLoadBalancer.getInstance(application)
+    private val folderSyncManager = FolderSyncManager.getInstance(application)
 
     val sharedFiles: StateFlow<List<SharedFileEntity>> = relayShareManager.getAllSharesFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allCompletedFiles: StateFlow<List<FileEntity>> = db.fileDao().observeAll()
+        .map { list -> list.filter { it.status == FileStatus.COMPLETED && it.deletedAt == null } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val syncFolders: StateFlow<List<SyncFolderEntity>> = db.syncFolderDao().observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val multiBotStatuses: StateFlow<List<BotWorkerMetric>> = multiBotLoadBalancer.botMetrics
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val isRunningFolderSync: StateFlow<Boolean> = folderSyncManager.isSyncingFolders
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private val _uiState = MutableStateFlow(
         UiState(
@@ -961,15 +987,44 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun confirmBatchUpload(targetFolderId: String?) {
+    fun confirmBatchUpload(
+        targetFolderId: String?,
+        encryptBeforeUpload: Boolean = true,
+        tags: String = ""
+    ) {
         val batch = _uiState.value.pendingBatchUpload ?: return
         val uris = batch.items.map { it.uri }
-        transferManager.enqueueBatchUpload(uris, targetFolderId)
+        transferManager.enqueueBatchUpload(
+            uris = uris,
+            folderId = targetFolderId,
+            encryptBeforeUpload = encryptBeforeUpload,
+            tags = tags
+        )
         _uiState.update {
             it.copy(
                 pendingBatchUpload = null,
                 showTransfersSheet = true
             )
+        }
+    }
+
+    fun updateFileTags(fileId: String, tagsList: List<String>) {
+        val serialized = tagsList.map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString(",")
+        viewModelScope.launch {
+            db.fileDao().updateTags(fileId, serialized)
+            _uiState.update { state ->
+                val updatedDetail = state.selectedFileForDetail?.let {
+                    if (it.id == fileId) it.copy(tags = serialized) else it
+                }
+                val updatedPreview = state.previewFile?.let {
+                    if (it.id == fileId) it.copy(tags = serialized) else it
+                }
+                state.copy(
+                    selectedFileForDetail = updatedDetail,
+                    previewFile = updatedPreview
+                )
+            }
+            vaultSyncManager.scheduleAutoPublish()
         }
     }
 
@@ -1054,16 +1109,66 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(shareSheetAskFolder = ask) }
     }
 
-    // Relay File Sharing (Feature 2)
+    // Relay File Sharing & Zero-Knowledge QR (Feature 2)
     fun openShareFileDialog(file: FileEntity) {
         viewModelScope.launch {
             val activeShare = relayShareManager.getActiveShareForFile(file.id)
+            val chunks = db.chunkDao().getChunksForFile(file.id)
             _uiState.update {
                 it.copy(
                     fileForSharing = file,
                     activeShareForCurrentFile = activeShare,
+                    selectedFileSharingChunks = chunks,
                     isGeneratingShareLink = false,
                     shareLinkError = null
+                )
+            }
+        }
+    }
+
+    fun openImportSharedLinkDialog() {
+        _uiState.update {
+            it.copy(
+                showImportSharedLinkDialog = true,
+                importShareError = null,
+                importShareSuccess = null
+            )
+        }
+    }
+
+    fun dismissImportSharedLinkDialog() {
+        _uiState.update {
+            it.copy(
+                showImportSharedLinkDialog = false,
+                importShareError = null,
+                importShareSuccess = null
+            )
+        }
+    }
+
+    fun importSharedFileLink(rawInput: String, downloadImmediately: Boolean = false) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val decodeResult = EncryptedShareCodec.decodeShareUri(rawInput, creds.getChatId())
+            if (decodeResult.isFailure) {
+                val err = decodeResult.exceptionOrNull()?.message ?: "Invalid TeleVault share link"
+                _uiState.update { it.copy(importShareError = err, importShareSuccess = null) }
+                return@launch
+            }
+            val decoded = decodeResult.getOrThrow()
+            val targetFolder = _uiState.value.currentFolderId
+            val importedFile = decoded.fileEntity.copy(folderId = targetFolder)
+            db.fileDao().insert(importedFile)
+            if (decoded.chunks.isNotEmpty()) {
+                db.chunkDao().insertAll(decoded.chunks)
+            }
+            vaultSyncManager.scheduleAutoPublish()
+            if (downloadImmediately) {
+                transferManager.startDownload(importedFile.id)
+            }
+            _uiState.update {
+                it.copy(
+                    importShareError = null,
+                    importShareSuccess = "Imported \"${importedFile.name}\" (${decoded.chunks.size} chunk${if (decoded.chunks.size == 1) "" else "s"}) into your Vault!"
                 )
             }
         }
@@ -1217,6 +1322,95 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun navigateToTrashScreen() {
         _uiState.update { it.copy(currentScreen = AppScreen.TRASH) }
+    }
+
+    fun navigateToAnalyticsScreen() {
+        viewModelScope.launch(Dispatchers.IO) {
+            multiBotLoadBalancer.getActiveBotPool()
+        }
+        _uiState.update { it.copy(currentScreen = AppScreen.ANALYTICS) }
+    }
+
+    fun navigateToFolderSyncScreen() {
+        _uiState.update { it.copy(currentScreen = AppScreen.FOLDER_SYNC) }
+    }
+
+    // Automated Folder Sync & Camera Roll Backup
+    fun addSyncFolder(
+        treeUri: Uri,
+        targetFolderId: String?,
+        targetFolderName: String,
+        autoSync: Boolean,
+        encryptOnSync: Boolean,
+        defaultTags: String
+    ) {
+        viewModelScope.launch {
+            try {
+                val entity = folderSyncManager.registerSyncFolder(
+                    treeUri = treeUri,
+                    targetVaultFolderId = targetFolderId,
+                    targetVaultFolderName = targetFolderName,
+                    autoSyncEnabled = autoSync,
+                    encryptOnSync = encryptOnSync,
+                    defaultTags = defaultTags
+                )
+                folderSyncManager.syncFolderNow(entity.id)
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(transferErrorMessage = e.message ?: "Failed to link folder")
+                }
+            }
+        }
+    }
+
+    fun toggleSyncFolderAutoSync(id: String, enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.syncFolderDao().setAutoSyncEnabled(id, enabled)
+        }
+    }
+
+    fun toggleSyncFolderEncrypt(id: String, enabled: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.syncFolderDao().setEncryptOnSync(id, enabled)
+        }
+    }
+
+    fun deleteSyncFolder(id: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            db.syncFolderDao().deleteById(id)
+        }
+    }
+
+    fun syncSingleWatchedFolder(syncFolderId: String) {
+        viewModelScope.launch {
+            val res = folderSyncManager.syncFolderNow(syncFolderId)
+            val summary = res.getOrNull()
+            _uiState.update {
+                it.copy(
+                    transferNotificationMessage = if (summary != null && summary.newFilesQueued > 0) {
+                        "Queued ${summary.newFilesQueued} new file(s) from synced folder"
+                    } else {
+                        "Synced folder is already up to date"
+                    }
+                )
+            }
+        }
+    }
+
+    fun syncAllWatchedFoldersNow() {
+        viewModelScope.launch {
+            val res = folderSyncManager.syncAllEnabledFolders(onlyAutoSync = false)
+            val summary = res.getOrNull()
+            _uiState.update {
+                it.copy(
+                    transferNotificationMessage = if (summary != null && summary.newFilesQueued > 0) {
+                        "Queued ${summary.newFilesQueued} new file(s) from synced folders"
+                    } else {
+                        "All synced folders are up to date"
+                    }
+                )
+            }
+        }
     }
 
     fun setFolderToDelete(folder: FolderEntity?) {
@@ -1389,8 +1583,14 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     fun onFileItemClick(file: FileEntity) {
         val hasThumb = !file.thumbnailLocalPath.isNullOrBlank() || !file.thumbnailFileId.isNullOrBlank()
         val isMedia = com.example.domain.ThumbnailUtil.isMedia(file.mimeType)
+        val isDocPreviewable = file.mimeType.equals("application/pdf", ignoreCase = true) ||
+            file.mimeType.startsWith("text/", ignoreCase = true) ||
+            file.mimeType.startsWith("audio/", ignoreCase = true) ||
+            file.name.substringAfterLast('.', "").lowercase() in setOf(
+                "pdf", "txt", "md", "json", "csv", "log", "xml", "kt", "java", "py", "js", "ts", "html", "css", "mp3", "wav", "m4a", "ogg"
+            )
         val hasLocalDownload = file.localPath != null || file.localUri != null
-        if (hasThumb || (isMedia && hasLocalDownload)) {
+        if (hasThumb || ((isMedia || isDocPreviewable) && hasLocalDownload)) {
             openPreview(file)
         } else {
             inspectFile(file)
@@ -1494,6 +1694,9 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 vaultSyncManager.checkPrimaryBotHealth()
             }
             syncVault(onlyIfNewer = true, isManual = false)
+            viewModelScope.launch(Dispatchers.IO) {
+                folderSyncManager.syncAllEnabledFolders(onlyAutoSync = true)
+            }
         }
     }
 

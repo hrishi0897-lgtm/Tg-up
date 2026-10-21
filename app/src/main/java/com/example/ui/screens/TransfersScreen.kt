@@ -539,6 +539,40 @@ private fun TransferRowCard(
                             color = colors.textDim,
                             maxLines = 1
                         )
+                        if (transfer.isEncrypted) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(colors.mint.copy(alpha = 0.14f))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = "AES-256",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = NumericMonoFont,
+                                    color = colors.mint
+                                )
+                            }
+                        }
+                        if (transfer.activeBotWorkers > 1) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(colors.teal.copy(alpha = 0.14f))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = "⚡${transfer.activeBotWorkers}x Bots",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = NumericMonoFont,
+                                    color = colors.teal
+                                )
+                            }
+                        }
                     }
                 }
 

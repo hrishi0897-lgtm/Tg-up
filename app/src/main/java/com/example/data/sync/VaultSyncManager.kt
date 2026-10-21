@@ -260,7 +260,10 @@ class VaultSyncManager private constructor(private val context: Context) {
                     manifestMessageId = file.manifestMessageId,
                     chunks = chunks,
                     thumbnailMessageId = file.thumbnailMessageId,
-                    thumbnailFileId = file.thumbnailFileId
+                    thumbnailFileId = file.thumbnailFileId,
+                    isEncrypted = file.isEncrypted,
+                    encryptionKeyBase64 = file.encryptionKeyBase64,
+                    tags = file.tags
                 )
             }
 
@@ -437,7 +440,10 @@ class VaultSyncManager private constructor(private val context: Context) {
                             localPath = null, // Download on-demand
                             localUri = null,
                             thumbnailFileId = remoteFile.thumbnailFileId,
-                            thumbnailMessageId = remoteFile.thumbnailMessageId
+                            thumbnailMessageId = remoteFile.thumbnailMessageId,
+                            isEncrypted = remoteFile.isEncrypted,
+                            encryptionKeyBase64 = remoteFile.encryptionKeyBase64,
+                            tags = remoteFile.tags
                         )
                         database.fileDao().insert(newEntity)
 
@@ -460,10 +466,11 @@ class VaultSyncManager private constructor(private val context: Context) {
                         }
                         newDiscoveredFiles++
                     } else {
-                        // File already exists locally: update name & folderId if changed remotely
+                        // File already exists locally: update name, folderId, tags, & encryption info if changed remotely
                         val fileChannelId = remoteFile.channelId ?: existing.channelId ?: chatId
                         val needsThumbnailUpdate = existing.thumbnailFileId == null && remoteFile.thumbnailFileId != null
-                        if (existing.name != remoteFile.name || existing.folderId != remoteFile.folderId || existing.channelId != fileChannelId || needsThumbnailUpdate) {
+                        val needsMetaUpdate = existing.tags != remoteFile.tags || existing.isEncrypted != remoteFile.isEncrypted || (existing.encryptionKeyBase64 == null && remoteFile.encryptionKeyBase64 != null)
+                        if (existing.name != remoteFile.name || existing.folderId != remoteFile.folderId || existing.channelId != fileChannelId || needsThumbnailUpdate || needsMetaUpdate) {
                             Log.i(TAG, "Rebuilding local database: Updating file placement/metadata: ${existing.name} -> ${remoteFile.name}")
                             database.fileDao().update(
                                 existing.copy(
@@ -471,7 +478,10 @@ class VaultSyncManager private constructor(private val context: Context) {
                                     folderId = remoteFile.folderId,
                                     channelId = fileChannelId,
                                     thumbnailFileId = existing.thumbnailFileId ?: remoteFile.thumbnailFileId,
-                                    thumbnailMessageId = existing.thumbnailMessageId ?: remoteFile.thumbnailMessageId
+                                    thumbnailMessageId = existing.thumbnailMessageId ?: remoteFile.thumbnailMessageId,
+                                    isEncrypted = existing.isEncrypted || remoteFile.isEncrypted,
+                                    encryptionKeyBase64 = existing.encryptionKeyBase64 ?: remoteFile.encryptionKeyBase64,
+                                    tags = if (remoteFile.tags.isNotBlank()) remoteFile.tags else existing.tags
                                 )
                             )
                         }
@@ -713,7 +723,10 @@ class VaultSyncManager private constructor(private val context: Context) {
                         localPath = null,
                         localUri = null,
                         thumbnailFileId = vf.thumbnailFileId,
-                        thumbnailMessageId = vf.thumbnailMessageId
+                        thumbnailMessageId = vf.thumbnailMessageId,
+                        isEncrypted = vf.isEncrypted,
+                        encryptionKeyBase64 = vf.encryptionKeyBase64,
+                        tags = vf.tags
                     )
                 )
                 chunkEntities.addAll(chunksForFile)

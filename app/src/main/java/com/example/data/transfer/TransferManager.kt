@@ -20,6 +20,7 @@ import com.example.data.remote.ManifestChunk
 import com.example.data.remote.TelegramApiException
 import com.example.data.remote.TelegramRepository
 import com.example.domain.ChecksumUtil
+import com.example.domain.CryptoStreamEngine
 import com.example.domain.DownloadStorageManager
 import com.example.domain.RollingSpeedEstimator
 import com.example.domain.StorageUtil
@@ -175,7 +176,8 @@ class TransferManager private constructor(
                         totalBytes = file.size,
                         speedBytesPerSec = 0L,
                         status = restoredStatus,
-                        errorMessage = file.errorMessage
+                        errorMessage = file.errorMessage,
+                        isEncrypted = file.isEncrypted
                     )
                 }
                 if (restoredMap.isNotEmpty()) {
@@ -220,13 +222,20 @@ class TransferManager private constructor(
      * Uploads execute strictly sequentially (one full file at a time, including chunks,
      * backup-channel copy, and manifest).
      */
-    fun enqueueBatchUpload(uris: List<Uri>, folderId: String?, customChunkSizeBytes: Long? = null): List<String> {
+    fun enqueueBatchUpload(
+        uris: List<Uri>,
+        folderId: String?,
+        customChunkSizeBytes: Long? = null,
+        encryptBeforeUpload: Boolean = false,
+        tags: String = ""
+    ): List<String> {
         val fileIds = mutableListOf<String>()
         for (uri in uris) {
             val fileId = UUID.randomUUID().toString()
             fileIds.add(fileId)
             val (fileName, fileSize) = resolveUriMetadata(uri)
             val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
+            val aesKey = if (encryptBeforeUpload) CryptoStreamEngine.generateKeyBase64() else null
 
             val fileEntity = FileEntity(
                 id = fileId,
@@ -239,7 +248,10 @@ class TransferManager private constructor(
                 totalChunks = 1,
                 completedChunks = 0,
                 localPath = null,
-                localUri = uri.toString()
+                localUri = uri.toString(),
+                isEncrypted = encryptBeforeUpload,
+                encryptionKeyBase64 = aesKey,
+                tags = tags.trim()
             )
             scope.launch {
                 database.fileDao().insert(fileEntity)
@@ -257,7 +269,8 @@ class TransferManager private constructor(
                     totalBytes = fileSize,
                     speedBytesPerSec = 0L,
                     status = FileStatus.PENDING,
-                    isChunking = false
+                    isChunking = false,
+                    isEncrypted = encryptBeforeUpload
                 )
             )
 
@@ -272,8 +285,14 @@ class TransferManager private constructor(
     /**
      * Prepares and starts a chunked upload from a content Uri (single-file convenience method).
      */
-    fun enqueueUpload(uri: Uri, folderId: String?, customChunkSizeBytes: Long? = null): String {
-        return enqueueBatchUpload(listOf(uri), folderId, customChunkSizeBytes).firstOrNull() ?: ""
+    fun enqueueUpload(
+        uri: Uri,
+        folderId: String?,
+        customChunkSizeBytes: Long? = null,
+        encryptBeforeUpload: Boolean = false,
+        tags: String = ""
+    ): String {
+        return enqueueBatchUpload(listOf(uri), folderId, customChunkSizeBytes, encryptBeforeUpload, tags).firstOrNull() ?: ""
     }
 
     /**
@@ -493,7 +512,8 @@ class TransferManager private constructor(
                         ChecksumUtil.computeSha256(stagingFile)
                     }
 
-                    val maxChunkSize = minOf(credentialsManager.getChunkSizeMb() * 1024 * 1024L, CHUNK_SIZE_BYTES)
+                    val rawMaxChunkSize = minOf(credentialsManager.getChunkSizeMb() * 1024 * 1024L, CHUNK_SIZE_BYTES)
+                    val maxChunkSize = if (fileEntity.isEncrypted) (rawMaxChunkSize - 4096L).coerceAtLeast(1024L) else rawMaxChunkSize
                     val totalChunks = ((actualSize + maxChunkSize - 1) / maxChunkSize).toInt().coerceAtLeast(1)
                     val targetChunkSize = ((actualSize + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
 
@@ -506,12 +526,19 @@ class TransferManager private constructor(
                         }
                     } else null
 
+                    val ensuredKey = if (fileEntity.isEncrypted && fileEntity.encryptionKeyBase64.isNullOrBlank()) {
+                        CryptoStreamEngine.generateKeyBase64()
+                    } else {
+                        fileEntity.encryptionKeyBase64
+                    }
+
                     fileEntity = fileEntity.copy(
                         size = actualSize,
                         checksum = overallChecksum,
                         totalChunks = totalChunks,
                         localPath = stagingFile.absolutePath,
-                        thumbnailLocalPath = thumbFile?.absolutePath
+                        thumbnailLocalPath = thumbFile?.absolutePath,
+                        encryptionKeyBase64 = ensuredKey
                     )
                     database.fileDao().update(fileEntity)
 
@@ -640,7 +667,9 @@ class TransferManager private constructor(
                         etaSeconds = etaSec,
                         activeConcurrentChunks = activeCount,
                         completedChunksCount = completed,
-                        isChunking = isChunking
+                        isChunking = isChunking,
+                        isEncrypted = fileEntity.isEncrypted,
+                        activeBotWorkers = MultiBotLoadBalancer.getInstance(context).botMetrics.value.size.coerceAtLeast(1)
                     )
                 )
             }
@@ -649,6 +678,10 @@ class TransferManager private constructor(
             publishProgress(force = true, status = FileStatus.UPLOADING, isChunking = false)
             notifyService("Uploading ${fileEntity.name}")
 
+            val loadBalancer = MultiBotLoadBalancer.getInstance(context)
+            val botPool = loadBalancer.getActiveBotPool()
+            val workerCount = maxOf(3, minOf(botPool.size * 2, 6))
+
             val chunksDir = File(context.cacheDir, "upload_chunks/$fileId").apply { mkdirs() }
             val incompleteChunks = chunks.filter { !it.isUploaded }.sortedBy { it.chunkIndex }
             val chunkQueue = ConcurrentLinkedQueue(incompleteChunks)
@@ -656,11 +689,12 @@ class TransferManager private constructor(
             try {
                 if (incompleteChunks.isNotEmpty()) {
                     coroutineScope {
-                        val workers = (0 until 3).map { workerId ->
+                        val workers = (0 until workerCount).map { workerId ->
                             launch(Dispatchers.IO) {
                                 while (isActive && !chunkQueue.isEmpty() && !pauseRequestedFiles.contains(fileId) && uploadFailedReason.get() == null) {
-                                    // Dynamic load & thermal-aware concurrency: drop from 3 to 1 under system load
-                                    val allowedConcurrency = getEffectiveMaxConcurrency(context)
+                                    // Dynamic load & thermal-aware concurrency: scale with available bot pool
+                                    val baseAllowed = getEffectiveMaxConcurrency(context)
+                                    val allowedConcurrency = if (botPool.size > 1 && baseAllowed >= 3) workerCount else baseAllowed
                                     if (workerId >= allowedConcurrency) {
                                         delay(300L)
                                         continue
@@ -681,17 +715,32 @@ class TransferManager private constructor(
                                         break
                                     }
 
-                                    val chunkFile = File(chunksDir, "chunk_$chunkIndex.tpart")
-                                    val (readyChunkFile, localSha256) = if (!chunkFile.exists() || chunkFile.length() != chunkLength) {
-                                        if (chunkFile.exists()) chunkFile.delete()
+                                    val rawChunkFile = File(chunksDir, "chunk_$chunkIndex.tpart")
+                                    val (plainChunkFile, plainSha256) = if (!rawChunkFile.exists() || rawChunkFile.length() != chunkLength) {
+                                        if (rawChunkFile.exists()) rawChunkFile.delete()
                                         writeChunkFileOnDisk(stagingFile, chunksDir, chunkIndex, offset, chunkLength)
                                     } else {
-                                        val existingSha256 = if (chunk.checksum.isNotEmpty()) chunk.checksum else ChecksumUtil.computeSha256(chunkFile)
-                                        Pair(chunkFile, existingSha256)
+                                        val existingSha256 = if (chunk.checksum.isNotEmpty() && !fileEntity.isEncrypted) chunk.checksum else ChecksumUtil.computeSha256(rawChunkFile)
+                                        Pair(rawChunkFile, existingSha256)
+                                    }
+
+                                    // Client-side AES-256-GCM encryption if enabled for this file
+                                    val (readyChunkFile, localSha256) = if (fileEntity.isEncrypted && !fileEntity.encryptionKeyBase64.isNullOrBlank()) {
+                                        val encFile = File(chunksDir, "chunk_${chunkIndex}.enc.tpart")
+                                        val encSha256 = CryptoStreamEngine.encryptChunkFile(
+                                            plainChunkFile = plainChunkFile,
+                                            encryptedOutFile = encFile,
+                                            keyBase64 = fileEntity.encryptionKeyBase64!!,
+                                            chunkIndex = chunkIndex
+                                        )
+                                        plainChunkFile.delete()
+                                        Pair(encFile, encSha256)
+                                    } else {
+                                        Pair(plainChunkFile, plainSha256)
                                     }
 
                                     val actualFileSizeOnDisk = readyChunkFile.length()
-                                    val expectedChunkSize = ((fileEntity.size + totalChunks - 1) / totalChunks).coerceAtLeast(1L)
+                                    val expectedChunkSize = actualFileSizeOnDisk.coerceAtLeast(1L)
 
                                     if (actualFileSizeOnDisk > 50 * 1024 * 1024L) {
                                         val errMsg = "Chunk ${chunkIndex + 1} size ($actualFileSizeOnDisk bytes) exceeds Telegram Bot 50MB limit!"
@@ -714,26 +763,36 @@ class TransferManager private constructor(
 
                                         if (pauseRequestedFiles.contains(fileId)) break
 
-                                        val uploadResult = repository.uploadChunk(
-                                            token = token,
-                                            chatId = chatId,
-                                            fileId = fileId,
-                                            fileName = fileEntity.name,
-                                            chunkIndex = chunkIndex,
-                                            totalChunks = fileEntity.totalChunks,
-                                            chunkFile = readyChunkFile,
-                                            chunkSha256 = localSha256,
-                                            expectedChunkSize = expectedChunkSize
-                                        ) { bytesWritten, _ ->
-                                            inProgressBytesMap[chunkIndex] = bytesWritten
-                                            publishProgress(force = false)
+                                        val workerBotToken = loadBalancer.acquireBotForChunk(token)
+                                        val uploadResult = try {
+                                            repository.uploadChunk(
+                                                token = workerBotToken,
+                                                chatId = chatId,
+                                                fileId = fileId,
+                                                fileName = fileEntity.name,
+                                                chunkIndex = chunkIndex,
+                                                totalChunks = fileEntity.totalChunks,
+                                                chunkFile = readyChunkFile,
+                                                chunkSha256 = localSha256,
+                                                expectedChunkSize = expectedChunkSize
+                                            ) { bytesWritten, _ ->
+                                                inProgressBytesMap[chunkIndex] = minOf(bytesWritten, chunkLength)
+                                                publishProgress(force = false)
+                                            }
+                                        } finally {
+                                            // Released below after checking result
                                         }
 
                                         if (uploadResult.isSuccess) {
+                                            loadBalancer.releaseBotForChunk(workerBotToken, chunkLength, true)
                                             chunkSuccess = true
                                             uploadedMessage = uploadResult.getOrThrow()
                                         } else {
+                                            loadBalancer.releaseBotForChunk(workerBotToken, 0L, false)
                                             val exception = uploadResult.exceptionOrNull()
+                                            if (exception is TelegramApiException && exception.errorCode == 429) {
+                                                loadBalancer.markRateLimited(workerBotToken, 15)
+                                            }
                                             lastError = exception?.message ?: "Network error"
                                             val isTransient = isTransientNetworkError(exception)
                                             Log.w("TransferManager", "Chunk upload attempt $attempt/$maxRetries for chunk ${chunkIndex + 1}/$totalChunks failed (isTransient=$isTransient): $lastError", exception)
@@ -923,7 +982,10 @@ class TransferManager private constructor(
                     uploadDate = System.currentTimeMillis(),
                     chunks = manifestChunks,
                     thumbnailMessageId = thumbnailMessageId,
-                    thumbnailFileId = thumbnailFileId
+                    thumbnailFileId = thumbnailFileId,
+                    isEncrypted = fileEntity.isEncrypted,
+                    encryptionKeyBase64 = fileEntity.encryptionKeyBase64,
+                    tags = fileEntity.tags
                 )
 
                 // Write manifest JSON to a small local file for upload via sendDocument
@@ -1447,17 +1509,30 @@ class TransferManager private constructor(
                     }
                 }
 
-                // Concatenate all chunks sequentially into temporary reassembly file
+                // Concatenate all chunks sequentially into temporary reassembly file (decrypting AES-256-GCM if encrypted)
                 FileOutputStream(tempReassembledFile).use { output ->
                     val buffer = ByteArray(64 * 1024)
                     for (chunk in chunks) {
                         val chunkTempFile = File(downloadTempDir, "chunk_${chunk.chunkIndex}.part")
-                        FileInputStream(chunkTempFile).use { input ->
+                        val sourcePartFile = if (fileEntity.isEncrypted && !fileEntity.encryptionKeyBase64.isNullOrBlank()) {
+                            val decFile = File(downloadTempDir, "chunk_${chunk.chunkIndex}.dec.part")
+                            CryptoStreamEngine.decryptChunkFile(
+                                encryptedChunkFile = chunkTempFile,
+                                plainOutFile = decFile,
+                                keyBase64 = fileEntity.encryptionKeyBase64!!
+                            )
+                            chunkTempFile.delete()
+                            decFile
+                        } else {
+                            chunkTempFile
+                        }
+                        FileInputStream(sourcePartFile).use { input ->
                             var read: Int
                             while (input.read(buffer).also { read = it } != -1) {
                                 output.write(buffer, 0, read)
                             }
                         }
+                        sourcePartFile.delete()
                     }
                 }
 

@@ -42,5 +42,11 @@ data class FileEntity(
     val deletedAt: Long? = null, // Timestamp when file was moved to Trash; null = active file
     val thumbnailFileId: String? = null, // Telegram document file_id for thumbnail chunk
     val thumbnailMessageId: Long? = null, // Telegram message_id for thumbnail chunk
-    val thumbnailLocalPath: String? = null // Local cached path of generated thumbnail
-)
+    val thumbnailLocalPath: String? = null, // Local cached path of generated thumbnail
+    val isEncrypted: Boolean = false, // True if chunks are encrypted with client-side AES-256-GCM
+    val encryptionKeyBase64: String? = null, // Per-file 256-bit AES key encoded as Base64
+    val tags: String = "" // Comma-separated custom tags (e.g. "Work,Receipts,Important")
+) {
+    val tagList: List<String>
+        get() = if (tags.isBlank()) emptyList() else tags.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+}

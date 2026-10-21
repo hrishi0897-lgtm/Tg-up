@@ -83,11 +83,13 @@ data class TransferProgress(
     val etaSeconds: Long? = null,
     val activeConcurrentChunks: Int = 0,
     val completedChunksCount: Int = 0,
-    val isChunking: Boolean = false
+    val isChunking: Boolean = false,
+    val isEncrypted: Boolean = false,
+    val activeBotWorkers: Int = 1
 ) {
     val displayStatus: String
         get() = when {
-            isChunking -> "Chunking"
+            isChunking -> if (isEncrypted) "Encrypting & Chunking (AES-256)…" else "Chunking"
             status == FileStatus.PENDING -> "Queued"
             status == FileStatus.UPLOADING -> if (speedBytesPerSec > 0) "Uploading…" else "Connecting to Telegram…"
             status == FileStatus.COMPLETED -> "Done"

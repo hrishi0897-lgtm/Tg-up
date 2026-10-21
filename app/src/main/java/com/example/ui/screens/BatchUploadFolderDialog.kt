@@ -70,10 +70,14 @@ fun BatchUploadFolderDialog(
     folders: List<FolderEntity>,
     initialFolderId: String? = null,
     onDismiss: () -> Unit,
-    onConfirmUpload: (targetFolderId: String?) -> Unit
+    onConfirmUpload: (targetFolderId: String?) -> Unit = {},
+    onConfirmUploadWithOptions: ((targetFolderId: String?, encryptBeforeUpload: Boolean, tags: String) -> Unit)? = null
 ) {
     val colors = LocalTeleVaultColors.current
     var selectedFolderId by remember { mutableStateOf<String?>(initialFolderId) }
+    var encryptBeforeUpload by remember { mutableStateOf(true) }
+    var selectedTags by remember { mutableStateOf(setOf<String>()) }
+    val presetTags = remember { listOf("Work", "Personal", "Photos", "Receipts", "Backup") }
 
     val totalSize = remember(items) { items.sumOf { it.size } }
 
@@ -137,7 +141,7 @@ fun BatchUploadFolderDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 120.dp)
+                        .heightIn(max = 100.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(colors.surfaceHi)
                         .border(1.dp, colors.line, RoundedCornerShape(12.dp))
@@ -179,7 +183,94 @@ fun BatchUploadFolderDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Section 1b: Zero-Knowledge AES-256 Encryption Toggle
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (encryptBeforeUpload) colors.teal.copy(alpha = 0.12f) else colors.surfaceHi)
+                        .border(
+                            1.dp,
+                            if (encryptBeforeUpload) colors.teal.copy(alpha = 0.45f) else colors.line,
+                            RoundedCornerShape(12.dp)
+                        )
+                        .clickable { encryptBeforeUpload = !encryptBeforeUpload }
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                        .testTag("toggle_aes_encryption"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Zero-Knowledge AES-256-GCM",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = BodySansFont,
+                            color = if (encryptBeforeUpload) colors.teal else colors.text
+                        )
+                        Text(
+                            text = if (encryptBeforeUpload) "Chunks encrypted on-device before upload" else "Standard unencrypted chunk upload",
+                            fontSize = 11.sp,
+                            color = colors.textDim
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (encryptBeforeUpload) colors.teal else colors.line)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = if (encryptBeforeUpload) "ON" else "OFF",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = NumericMonoFont,
+                            color = if (encryptBeforeUpload) Color.Black else colors.textDim
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Section 1c: Quick Tags
+                Text(
+                    text = "TAGS (OPTIONAL)",
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = BodySansFont,
+                    color = colors.textFaint,
+                    letterSpacing = 1.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    presetTags.forEach { tag ->
+                        val isTagSelected = selectedTags.contains(tag)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(100.dp))
+                                .background(if (isTagSelected) colors.violet else colors.surfaceHi)
+                                .border(1.dp, if (isTagSelected) colors.violet else colors.line, RoundedCornerShape(100.dp))
+                                .clickable {
+                                    selectedTags = if (isTagSelected) selectedTags - tag else selectedTags + tag
+                                }
+                                .padding(horizontal = 9.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = tag,
+                                fontSize = 11.sp,
+                                fontWeight = if (isTagSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isTagSelected) Color.White else colors.textDim
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Section 2: Destination Folder Selection
                 Text(
@@ -195,7 +286,7 @@ fun BatchUploadFolderDialog(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 170.dp)
+                        .heightIn(max = 140.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .background(colors.surfaceHi)
                         .border(1.dp, colors.line, RoundedCornerShape(12.dp))
@@ -291,7 +382,14 @@ fun BatchUploadFolderDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onConfirmUpload(selectedFolderId) },
+                onClick = {
+                    val tagsCsv = selectedTags.joinToString(",")
+                    if (onConfirmUploadWithOptions != null) {
+                        onConfirmUploadWithOptions(selectedFolderId, encryptBeforeUpload, tagsCsv)
+                    } else {
+                        onConfirmUpload(selectedFolderId)
+                    }
+                },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = colors.teal,
                     contentColor = Color(0xFF05060A)
@@ -302,7 +400,7 @@ fun BatchUploadFolderDialog(
                     .testTag("btn_confirm_batch_upload")
             ) {
                 Text(
-                    text = "Start Upload",
+                    text = if (encryptBeforeUpload) "Encrypt & Upload" else "Start Upload",
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     fontSize = 13.sp

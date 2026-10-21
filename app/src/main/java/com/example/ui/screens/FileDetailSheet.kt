@@ -75,8 +75,10 @@ import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
 import com.example.data.transfer.ThumbnailManager
 import com.example.domain.ChecksumUtil
+import com.example.domain.CryptoStreamEngine
 import com.example.domain.ThumbnailUtil
 import com.example.ui.theme.LocalTeleVaultColors
+import com.example.ui.theme.NumericMonoFont
 import com.example.ui.theme.StatusError
 import com.example.ui.theme.StatusSuccess
 import java.io.File
@@ -95,7 +97,8 @@ fun FileDetailSheet(
     onDelete: () -> Unit,
     onOpenPreview: (() -> Unit)? = null,
     onGeneratePreview: (() -> Unit)? = null,
-    isGeneratingPreview: Boolean = false
+    isGeneratingPreview: Boolean = false,
+    onUpdateTags: ((List<String>) -> Unit)? = null
 ) {
     val colors = LocalTeleVaultColors.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -346,52 +349,130 @@ fun FileDetailSheet(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Verification Status: Clean badge with "Verified" checkmark when checksum passed
-                    if (file.checksum.isNotBlank() && file.status == FileStatus.COMPLETED) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(StatusSuccess.copy(alpha = 0.12f))
-                                .border(1.dp, StatusSuccess.copy(alpha = 0.35f), CircleShape)
-                                .padding(horizontal = 12.dp, vertical = 5.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Verified",
-                                tint = StatusSuccess,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Verified",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = StatusSuccess
-                            )
+                    // Verification & Zero-Knowledge Encryption Badges
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (file.checksum.isNotBlank() && file.status == FileStatus.COMPLETED) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(StatusSuccess.copy(alpha = 0.12f))
+                                    .border(1.dp, StatusSuccess.copy(alpha = 0.35f), CircleShape)
+                                    .padding(horizontal = 12.dp, vertical = 5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = "Verified",
+                                    tint = StatusSuccess,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Verified",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = StatusSuccess
+                                )
+                            }
+                        } else if (file.status == FileStatus.COMPLETED) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(colors.violet.copy(alpha = 0.12f))
+                                    .border(1.dp, colors.violet.copy(alpha = 0.35f), CircleShape)
+                                    .padding(horizontal = 12.dp, vertical = 5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.VerifiedUser,
+                                    contentDescription = "Archived",
+                                    tint = colors.violet,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Archived in Vault",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = colors.violet
+                                )
+                            }
                         }
-                    } else if (file.status == FileStatus.COMPLETED) {
+
+                        if (file.isEncrypted) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(colors.teal.copy(alpha = 0.14f))
+                                    .border(1.dp, colors.teal.copy(alpha = 0.4f), CircleShape)
+                                    .padding(horizontal = 12.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = "AES-256 • ${CryptoStreamEngine.getKeyFingerprint(file.encryptionKeyBase64)}",
+                                    fontSize = 11.5.sp,
+                                    fontFamily = NumericMonoFont,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.teal
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Interactive File Tags Section
+            if (onUpdateTags != null) {
+                Spacer(modifier = Modifier.height(14.dp))
+                val currentTags = remember(file.tags) { file.tagList }
+                val quickTagOptions = remember { listOf("Work", "Personal", "Photos", "Receipts", "Backup", "Important") }
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = colors.bg),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "SMART TAGS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = colors.textDim,
+                            letterSpacing = 0.8.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                         Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(colors.violet.copy(alpha = 0.12f))
-                                .border(1.dp, colors.violet.copy(alpha = 0.35f), CircleShape)
-                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.VerifiedUser,
-                                contentDescription = "Archived",
-                                tint = colors.violet,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Archived in Vault",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = colors.violet
-                            )
+                            quickTagOptions.take(5).forEach { tag ->
+                                val isAssigned = currentTags.any { it.equals(tag, ignoreCase = true) }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(100.dp))
+                                        .background(if (isAssigned) colors.violet else colors.surfaceHi)
+                                        .border(1.dp, if (isAssigned) colors.violet else colors.line, RoundedCornerShape(100.dp))
+                                        .clickable {
+                                            val updated = if (isAssigned) {
+                                                currentTags.filterNot { it.equals(tag, ignoreCase = true) }
+                                            } else {
+                                                currentTags + tag
+                                            }
+                                            onUpdateTags(updated)
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                                ) {
+                                    Text(
+                                        text = if (isAssigned) "✓ $tag" else "+ $tag",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isAssigned) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isAssigned) Color.White else colors.textDim
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -508,6 +589,19 @@ fun FileDetailSheet(
                     }
 
                     HorizontalDivider(color = colors.line, thickness = 0.5.dp)
+
+                    if (onOpenPreview != null) {
+                        ActionItem(
+                            icon = Icons.Default.PlayArrow,
+                            label = "In-App Media & Document Preview",
+                            iconTint = colors.teal,
+                            labelColor = colors.text,
+                            onClick = {
+                                onOpenPreview()
+                            }
+                        )
+                        HorizontalDivider(color = colors.line, thickness = 0.5.dp)
+                    }
 
                     // Action 2: Share
                     ActionItem(

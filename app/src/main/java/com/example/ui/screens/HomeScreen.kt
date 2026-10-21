@@ -234,17 +234,37 @@ fun HomeScreen(
     onBulkDelete: () -> Unit = {},
     trashCount: Int = 0,
     onOpenTrash: () -> Unit = {},
+    onOpenAnalytics: () -> Unit = {},
+    onOpenFolderSync: () -> Unit = {},
+    onImportSharedLink: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTeleVaultColors.current
     var showFabMenu by remember { mutableStateOf(false) }
     var showSortMenu by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf<StorageCategory?>(null) }
+    var selectedSmartFilter by remember { mutableStateOf<String?>(null) } // "ENCRYPTED", "LARGE", "RECENT"
+    var selectedTagFilter by remember { mutableStateOf<String?>(null) }
+
+    val availableTags = remember(files) {
+        files.flatMap { it.tagList }.distinct().sorted()
+    }
 
     val activeCount = activeTransfersCount
-    val displayedFiles = remember(files, selectedCategory) {
-        if (selectedCategory == null) files
-        else files.filter { classifyFileCategory(it.mimeType, it.name) == selectedCategory }
+    val displayedFiles = remember(files, selectedCategory, selectedSmartFilter, selectedTagFilter) {
+        val now = System.currentTimeMillis()
+        val sevenDaysAgo = now - 7L * 24L * 3600L * 1000L
+        files.filter { file ->
+            val catMatch = selectedCategory == null || classifyFileCategory(file.mimeType, file.name) == selectedCategory
+            val smartMatch = when (selectedSmartFilter) {
+                "ENCRYPTED" -> file.isEncrypted
+                "LARGE" -> file.size >= 20L * 1024L * 1024L
+                "RECENT" -> file.uploadDate >= sevenDaysAgo
+                else -> true
+            }
+            val tagMatch = selectedTagFilter == null || file.tagList.any { tag -> tag.equals(selectedTagFilter, ignoreCase = true) }
+            catMatch && smartMatch && tagMatch
+        }
     }
     val filePairs = remember(displayedFiles) { displayedFiles.chunked(2) }
 
@@ -349,6 +369,64 @@ fun HomeScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = "Upload File",
+                                    color = colors.text,
+                                    fontSize = 13.sp,
+                                    fontFamily = BodySansFont,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
+                            // Auto Folder Sync Action
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(colors.surfaceHi)
+                                    .clickable {
+                                        showFabMenu = false
+                                        onOpenFolderSync()
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                                    .testTag("fab_auto_folder_sync")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = null,
+                                    tint = colors.violet,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Auto Folder Sync",
+                                    color = colors.text,
+                                    fontSize = 13.sp,
+                                    fontFamily = BodySansFont,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
+                            // Import Shared QR / Link Action
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(colors.surfaceHi)
+                                    .clickable {
+                                        showFabMenu = false
+                                        onImportSharedLink()
+                                    }
+                                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                                    .testTag("fab_import_shared_link")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = null,
+                                    tint = colors.mint,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Import Shared Link / QR",
                                     color = colors.text,
                                     fontSize = 13.sp,
                                     fontFamily = BodySansFont,
@@ -585,7 +663,8 @@ fun HomeScreen(
                         selectedCategory = if (selectedCategory == clickedCat) null else clickedCat
                     },
                     activeTransfersCount = activeCount,
-                    onTransfersClick = onOpenTransfers
+                    onTransfersClick = onOpenTransfers,
+                    onOpenAnalytics = onOpenAnalytics
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
@@ -712,6 +791,122 @@ fun HomeScreen(
                             modifier = Modifier
                                 .size(16.dp)
                                 .graphicsLayer { rotationZ = viewToggleRot }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Smart Filters & Custom Tag Chips Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val smartFilters = listOf(
+                        null to "All Files",
+                        "ENCRYPTED" to "🔒 AES-256",
+                        "LARGE" to "📦 >20 MB",
+                        "RECENT" to "🕒 Recent 7d"
+                    )
+                    smartFilters.forEach { (key, label) ->
+                        val isSelected = selectedSmartFilter == key && (key != null || selectedTagFilter == null)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(100.dp))
+                                .background(
+                                    if (isSelected) colors.violet.copy(alpha = 0.16f) else colors.surface
+                                )
+                                .border(
+                                    1.dp,
+                                    if (isSelected) colors.violet else colors.line,
+                                    RoundedCornerShape(100.dp)
+                                )
+                                .clickable {
+                                    if (key == null) {
+                                        selectedSmartFilter = null
+                                        selectedTagFilter = null
+                                    } else {
+                                        selectedSmartFilter = if (selectedSmartFilter == key) null else key
+                                    }
+                                }
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 11.5.sp,
+                                fontFamily = BodySansFont,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) colors.violet else colors.textDim
+                            )
+                        }
+                    }
+
+                    availableTags.forEach { tag ->
+                        val isTagSelected = selectedTagFilter.equals(tag, ignoreCase = true)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(100.dp))
+                                .background(
+                                    if (isTagSelected) colors.teal.copy(alpha = 0.16f) else colors.surface
+                                )
+                                .border(
+                                    1.dp,
+                                    if (isTagSelected) colors.teal else colors.line,
+                                    RoundedCornerShape(100.dp)
+                                )
+                                .clickable {
+                                    selectedTagFilter = if (isTagSelected) null else tag
+                                }
+                                .padding(horizontal = 11.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "#$tag",
+                                fontSize = 11.5.sp,
+                                fontFamily = BodySansFont,
+                                fontWeight = if (isTagSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isTagSelected) colors.teal else colors.textDim
+                            )
+                        }
+                    }
+
+                    // Quick Action Pill: Auto Folder Sync
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(100.dp))
+                            .background(colors.surface)
+                            .border(1.dp, colors.line, RoundedCornerShape(100.dp))
+                            .clickable(onClick = onOpenFolderSync)
+                            .padding(horizontal = 11.dp, vertical = 6.dp)
+                            .testTag("chip_auto_folder_sync")
+                    ) {
+                        Text(
+                            text = "⚡ Auto Sync",
+                            fontSize = 11.5.sp,
+                            fontFamily = BodySansFont,
+                            fontWeight = FontWeight.Medium,
+                            color = colors.textDim
+                        )
+                    }
+
+                    // Quick Action Pill: Import QR / Link
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(100.dp))
+                            .background(colors.surface)
+                            .border(1.dp, colors.line, RoundedCornerShape(100.dp))
+                            .clickable(onClick = onImportSharedLink)
+                            .padding(horizontal = 11.dp, vertical = 6.dp)
+                            .testTag("chip_import_shared_link")
+                    ) {
+                        Text(
+                            text = "🔗 Import Link/QR",
+                            fontSize = 11.5.sp,
+                            fontFamily = BodySansFont,
+                            fontWeight = FontWeight.Medium,
+                            color = colors.textDim
                         )
                     }
                 }
@@ -1786,6 +1981,41 @@ private fun FileListItem(
                     fontFamily = NumericMonoFont,
                     color = colors.textFaint
                 )
+                if (file.isEncrypted) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(colors.mint.copy(alpha = 0.14f))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = "AES-256",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = NumericMonoFont,
+                            color = colors.mint
+                        )
+                    }
+                }
+                val tags = remember(file.tags) { file.tagList.take(2) }
+                tags.forEach { tag ->
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(colors.violet.copy(alpha = 0.14f))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = "#$tag",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = BodySansFont,
+                            color = colors.violet
+                        )
+                    }
+                }
             }
         }
 

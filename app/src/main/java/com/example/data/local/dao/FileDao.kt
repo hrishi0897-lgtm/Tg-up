@@ -125,6 +125,12 @@ interface FileDao {
     @Query("UPDATE files SET thumbnailLocalPath = :localPath WHERE id = :fileId")
     suspend fun updateThumbnailLocalPath(fileId: String, localPath: String?)
 
+    @Query("UPDATE files SET tags = :tags WHERE id = :fileId")
+    suspend fun updateTags(fileId: String, tags: String)
+
+    @Query("UPDATE files SET isEncrypted = :isEncrypted, encryptionKeyBase64 = :encryptionKeyBase64 WHERE id = :fileId")
+    suspend fun updateEncryptionInfo(fileId: String, isEncrypted: Boolean, encryptionKeyBase64: String?)
+
     @Query("DELETE FROM files")
     suspend fun clearAll()
 }

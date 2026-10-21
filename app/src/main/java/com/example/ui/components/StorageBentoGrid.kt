@@ -185,6 +185,7 @@ fun StorageBentoGrid(
     onCategoryClick: (StorageCategory) -> Unit,
     activeTransfersCount: Int = 0,
     onTransfersClick: () -> Unit = {},
+    onOpenAnalytics: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTeleVaultColors.current
@@ -239,10 +240,15 @@ fun StorageBentoGrid(
                 .clip(RoundedCornerShape(22.dp))
                 .background(colors.surface)
                 .border(1.dp, colors.line, RoundedCornerShape(22.dp))
+                .then(
+                    if (onOpenAnalytics != null) {
+                        Modifier.clickable { onOpenAnalytics() }
+                    } else Modifier
+                )
                 .padding(horizontal = 20.dp, vertical = 18.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                // Header row: "Vault storage" caption + "No archive limit" pill badge
+                // Header row: "Vault storage" caption + "No archive limit" / Analytics pill badge
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -256,29 +262,56 @@ fun StorageBentoGrid(
                         color = colors.textDim
                     )
 
-                    // "No archive limit" Pill Badge
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(100.dp))
-                            .background(colors.teal.copy(alpha = 0.12f))
-                            .border(1.dp, colors.teal.copy(alpha = 0.3f), RoundedCornerShape(100.dp))
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Box(
+                        if (onOpenAnalytics != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(100.dp))
+                                    .background(colors.violet.copy(alpha = 0.14f))
+                                    .border(1.dp, colors.violet.copy(alpha = 0.35f), RoundedCornerShape(100.dp))
+                                    .clickable { onOpenAnalytics() }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    .testTag("btn_open_analytics_dashboard")
+                            ) {
+                                Text(
+                                    text = "Analytics ➔",
+                                    fontSize = 11.sp,
+                                    fontFamily = BodySansFont,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = colors.violet
+                                )
+                            }
+                        }
+
+                        // "No archive limit" Pill Badge
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(colors.teal)
-                        )
-                        Text(
-                            text = "No archive limit",
-                            fontSize = 11.5.sp,
-                            fontFamily = BodySansFont,
-                            fontWeight = FontWeight.Medium,
-                            color = colors.teal
-                        )
+                                .clip(RoundedCornerShape(100.dp))
+                                .background(colors.teal.copy(alpha = 0.12f))
+                                .border(1.dp, colors.teal.copy(alpha = 0.3f), RoundedCornerShape(100.dp))
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(colors.teal)
+                            )
+                            Text(
+                                text = "No archive limit",
+                                fontSize = 11.5.sp,
+                                fontFamily = BodySansFont,
+                                fontWeight = FontWeight.Medium,
+                                color = colors.teal
+                            )
+                        }
                     }
                 }
 

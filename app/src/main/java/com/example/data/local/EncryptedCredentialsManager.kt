@@ -331,7 +331,7 @@ class EncryptedCredentialsManager(context: Context) {
     }
 
     fun getThemeMode(): String {
-        return prefs.getString(PREF_THEME_MODE, "light") ?: "light"
+        return prefs.getString(PREF_THEME_MODE, "dark") ?: "dark"
     }
 
     fun setThemeMode(mode: String) {

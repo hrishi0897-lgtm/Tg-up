@@ -106,6 +106,9 @@ import android.view.WindowManager
 import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.TeleVaultViewModel
 import com.example.ui.screens.TrashScreen
+import com.example.ui.screens.StorageAnalyticsScreen
+import com.example.ui.screens.FolderSyncScreen
+import com.example.ui.screens.ImportSharedLinkDialog
 
 class MainActivity : ComponentActivity() {
 
@@ -274,6 +277,13 @@ class MainActivity : ComponentActivity() {
                     viewModel.handleIncomingSharedUris(list)
                 }
             }
+            Intent.ACTION_VIEW -> {
+                val dataStr = intent.dataString
+                if (!dataStr.isNullOrBlank() && dataStr.startsWith("televault://share", ignoreCase = true)) {
+                    viewModel.openImportSharedLinkDialog()
+                    viewModel.importSharedFileLink(dataStr)
+                }
+            }
         }
     }
 }
@@ -347,6 +357,16 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         viewModel.navigateToVaultScreen()
     }
 
+    // Handle back button for analytics screen
+    BackHandler(enabled = uiState.currentScreen == AppScreen.ANALYTICS) {
+        viewModel.navigateToVaultScreen()
+    }
+
+    // Handle back button for folder sync screen
+    BackHandler(enabled = uiState.currentScreen == AppScreen.FOLDER_SYNC) {
+        viewModel.navigateToVaultScreen()
+    }
+
     // Handle back button for folder hierarchy navigation
     BackHandler(enabled = uiState.currentScreen == AppScreen.VAULT && uiState.breadcrumbs.size > 1) {
         viewModel.navigateUp()
@@ -377,6 +397,8 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                                 AppScreen.FOLDER_MANAGEMENT -> 3
                                 AppScreen.TRASH -> 4
                                 AppScreen.PREVIEW -> 5
+                                AppScreen.ANALYTICS -> 6
+                                AppScreen.FOLDER_SYNC -> 7
                             }
                             val targetOrder = when (targetScreen) {
                                 AppScreen.VAULT -> 0
@@ -385,6 +407,8 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                                 AppScreen.FOLDER_MANAGEMENT -> 3
                                 AppScreen.TRASH -> 4
                                 AppScreen.PREVIEW -> 5
+                                AppScreen.ANALYTICS -> 6
+                                AppScreen.FOLDER_SYNC -> 7
                             }
                             if (targetOrder >= initialOrder) {
                                 (slideInHorizontally(
@@ -466,6 +490,39 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         onRename = { viewModel.setFileToRename(previewFile) },
                         onDelete = { viewModel.deleteFile(previewFile.id) }
                     )
+                } else if (currentScreen == AppScreen.ANALYTICS) {
+                    val storageStats by viewModel.storageStats.collectAsState()
+                    val allCompletedFiles by viewModel.allCompletedFiles.collectAsState()
+                    val botMetrics by viewModel.multiBotStatuses.collectAsState()
+                    StorageAnalyticsScreen(
+                        stats = storageStats,
+                        allFiles = allCompletedFiles,
+                        botMetrics = botMetrics,
+                        onBack = { viewModel.navigateToVaultScreen() },
+                        onInspectFile = { viewModel.inspectFile(it) },
+                        onCleanupDuplicates = { duplicateIds ->
+                            duplicateIds.forEach { id -> viewModel.deleteFile(id) }
+                        }
+                    )
+                } else if (currentScreen == AppScreen.FOLDER_SYNC) {
+                    val syncFolders by viewModel.syncFolders.collectAsState()
+                    val allFolders by viewModel.allFolders.collectAsState()
+                    val isSyncingNow by viewModel.isRunningFolderSync.collectAsState()
+                    FolderSyncScreen(
+                        syncFolders = syncFolders,
+                        vaultFolders = allFolders,
+                        isSyncingFolders = isSyncingNow,
+                        syncStatusMessage = uiState.transferNotificationMessage,
+                        onBack = { viewModel.navigateToVaultScreen() },
+                        onAddSyncFolder = { uri, targetFolderId, targetFolderName, autoSync, encryptOnSync, defaultTags ->
+                            viewModel.addSyncFolder(uri, targetFolderId, targetFolderName, autoSync, encryptOnSync, defaultTags)
+                        },
+                        onSyncFolderNow = { id -> viewModel.syncSingleWatchedFolder(id) },
+                        onSyncAllNow = { viewModel.syncAllWatchedFoldersNow() },
+                        onToggleAutoSync = { id, enabled -> viewModel.toggleSyncFolderAutoSync(id, enabled) },
+                        onToggleEncryptOnSync = { id, enabled -> viewModel.toggleSyncFolderEncrypt(id, enabled) },
+                        onDeleteSyncFolder = { id -> viewModel.deleteSyncFolder(id) }
+                    )
                 } else {
                     HomeScreenContainer(
                         viewModel = viewModel,
@@ -518,7 +575,8 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     onDelete = { viewModel.deleteFile(currentDetailFile.id) },
                     onOpenPreview = { viewModel.openPreview(currentDetailFile) },
                     onGeneratePreview = { viewModel.generatePreviewForFile(currentDetailFile) },
-                    isGeneratingPreview = uiState.isGeneratingPreview
+                    isGeneratingPreview = uiState.isGeneratingPreview,
+                    onUpdateTags = { updatedTags -> viewModel.updateFileTags(currentDetailFile.id, updatedTags) }
                 )
             }
 
@@ -544,7 +602,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                 )
             }
 
-            // Batch Upload Destination Folder Dialog
+            // Batch Upload Destination Folder Dialog (with AES-256 Encryption & Custom Tags)
             if (uiState.pendingBatchUpload != null) {
                 val allFolders by viewModel.allFolders.collectAsState()
                 BatchUploadFolderDialog(
@@ -554,11 +612,14 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     onDismiss = { viewModel.dismissBatchUpload() },
                     onConfirmUpload = { targetFolderId ->
                         viewModel.confirmBatchUpload(targetFolderId)
+                    },
+                    onConfirmUploadWithOptions = { targetFolderId, encryptBeforeUpload, tags ->
+                        viewModel.confirmBatchUpload(targetFolderId, encryptBeforeUpload, tags)
                     }
                 )
             }
 
-            // Share File via Relay Dialog
+            // Share File via Zero-Knowledge QR or Relay Dialog
             if (uiState.fileForSharing != null) {
                 ShareFileDialog(
                     file = uiState.fileForSharing!!,
@@ -571,6 +632,19 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     },
                     onRevokeShare = { shareId ->
                         viewModel.revokeRelayShare(shareId)
+                    },
+                    chunks = uiState.selectedFileSharingChunks
+                )
+            }
+
+            // Import Zero-Knowledge Shared Link / QR Dialog
+            if (uiState.showImportSharedLinkDialog) {
+                ImportSharedLinkDialog(
+                    errorMessage = uiState.importShareError,
+                    successMessage = uiState.importShareSuccess,
+                    onDismiss = { viewModel.dismissImportSharedLinkDialog() },
+                    onImportShareUri = { link, downloadNow ->
+                        viewModel.importSharedFileLink(link, downloadNow)
                     }
                 )
             }
@@ -892,6 +966,9 @@ private fun HomeScreenContainer(
         onOpenTrash = { viewModel.navigateToTrashScreen() },
         trashCount = trashCount,
         onOpenFolderManagement = { viewModel.navigateToFolderManagementScreen() },
+        onOpenAnalytics = { viewModel.navigateToAnalyticsScreen() },
+        onOpenFolderSync = { viewModel.navigateToFolderSyncScreen() },
+        onImportSharedLink = { viewModel.openImportSharedLinkDialog() },
         onResync = { viewModel.manualSyncFromHeader() },
         onDismissResyncMsg = { viewModel.clearResyncMessage() },
         transferErrorMessage = uiState.transferErrorMessage,
@@ -992,6 +1069,18 @@ private fun SettingsScreenContainer(
         onPairDeviceClick = { viewModel.openPairDeviceDialog() },
         trashCount = trashCount,
         onNavigateToTrash = { viewModel.navigateToTrashScreen() },
+        onNavigateToAnalytics = {
+            onDismiss()
+            viewModel.navigateToAnalyticsScreen()
+        },
+        onNavigateToFolderSync = {
+            onDismiss()
+            viewModel.navigateToFolderSyncScreen()
+        },
+        onImportSharedLink = {
+            onDismiss()
+            viewModel.openImportSharedLinkDialog()
+        },
         onAddStandbyBot = { tokenInput, labelInput, onResult ->
             viewModel.addStandbyBot(tokenInput, labelInput, onResult)
         },
