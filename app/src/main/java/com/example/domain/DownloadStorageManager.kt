@@ -11,7 +11,7 @@ import android.util.Log
 import java.io.File
 
 /**
- * Manages saving downloaded and reassembled files into the device's public Downloads/TGC directory.
+ * Manages saving downloaded and reassembled files into the device's dedicated public Download/TGC directory.
  * Adheres strictly to modern Android Scoped Storage using MediaStore.Downloads (API 29+).
  * Does not require legacy WRITE_EXTERNAL_STORAGE permissions.
  */
@@ -19,6 +19,7 @@ object DownloadStorageManager {
 
     private const val TAG = "DownloadStorageManager"
     const val TGC_FOLDER_NAME = "TGC"
+    const val TGC_RELATIVE_PATH = "Download/TGC"
     val RELATIVE_DOWNLOAD_PATH: String
         get() {
             val base = try {
@@ -29,8 +30,13 @@ object DownloadStorageManager {
             return "${if (!base.isNullOrBlank()) base else "Download"}/$TGC_FOLDER_NAME"
         }
 
+    fun getDisplayPath(fileName: String): String {
+        val cleanName = File(fileName).name.ifBlank { "downloaded_file" }
+        return "$RELATIVE_DOWNLOAD_PATH/$cleanName"
+    }
+
     /**
-     * Saves a verified, reassembled source file into the public Downloads/TGC directory.
+     * Saves a verified, reassembled source file directly into the public Download/TGC directory.
      * On Android 10+ (API 29+), uses MediaStore.Downloads with RELATIVE_PATH set to "Download/TGC"
      * and IS_PENDING flags to ensure atomic visibility.
      * Duplicate file names are handled safely without overwriting.
@@ -44,10 +50,11 @@ object DownloadStorageManager {
         sourceFile: File
     ): Uri {
         val resolver = context.contentResolver
+        val cleanFileName = File(fileName).name.ifBlank { "downloaded_file_${System.currentTimeMillis()}" }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.DISPLAY_NAME, cleanFileName)
                 put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                 put(MediaStore.MediaColumns.RELATIVE_PATH, RELATIVE_DOWNLOAD_PATH)
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
@@ -55,7 +62,7 @@ object DownloadStorageManager {
 
             val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
             val insertedUri = resolver.insert(collection, contentValues)
-                ?: throw IllegalStateException("Failed to insert file into MediaStore Downloads/$TGC_FOLDER_NAME")
+                ?: throw IllegalStateException("Failed to insert file into MediaStore $RELATIVE_DOWNLOAD_PATH")
 
             try {
                 resolver.openOutputStream(insertedUri)?.use { outStream ->
@@ -65,12 +72,12 @@ object DownloadStorageManager {
                     outStream.flush()
                 } ?: throw IllegalStateException("Failed to open output stream for MediaStore URI: $insertedUri")
 
-                // Mark file as complete (no longer pending) so it shows up immediately in Downloads app
+                // Mark file as complete (no longer pending) so it shows up immediately in Download/TGC
                 contentValues.clear()
                 contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
                 resolver.update(insertedUri, contentValues, null, null)
 
-                Log.i(TAG, "Successfully saved $fileName to MediaStore Downloads/$TGC_FOLDER_NAME (URI: $insertedUri)")
+                Log.i(TAG, "Successfully saved $cleanFileName to $RELATIVE_DOWNLOAD_PATH (URI: $insertedUri)")
                 return insertedUri
             } catch (e: Exception) {
                 try {
@@ -84,7 +91,7 @@ object DownloadStorageManager {
             // Android 9 and lower fallback
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             val tgcDir = File(downloadsDir, TGC_FOLDER_NAME).apply { mkdirs() }
-            val destFile = getUniqueFile(tgcDir, fileName)
+            val destFile = getUniqueFile(tgcDir, cleanFileName)
 
             sourceFile.copyTo(destFile, overwrite = true)
 
@@ -95,7 +102,7 @@ object DownloadStorageManager {
                 null
             )
 
-            Log.i(TAG, "Successfully saved $fileName to ${destFile.absolutePath}")
+            Log.i(TAG, "Successfully saved $cleanFileName to ${destFile.absolutePath}")
             return Uri.fromFile(destFile)
         }
     }
@@ -104,7 +111,8 @@ object DownloadStorageManager {
      * Determines a unique file handle if a file with the same name already exists in the destination folder.
      */
     fun getUniqueFile(directory: File, originalName: String): File {
-        var file = File(directory, originalName)
+        val cleanName = File(originalName).name.ifBlank { "downloaded_file" }
+        var file = File(directory, cleanName)
         if (!file.exists()) return file
 
         val nameWithoutExt = file.nameWithoutExtension

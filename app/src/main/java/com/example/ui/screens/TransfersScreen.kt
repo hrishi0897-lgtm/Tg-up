@@ -578,7 +578,7 @@ private fun TransferRowCard(
 
                 // Action Controls with guaranteed 48dp minimum touch targets
                 when (transfer.status) {
-                    FileStatus.UPLOADING, FileStatus.DOWNLOADING -> {
+                    FileStatus.UPLOADING, FileStatus.DOWNLOADING, FileStatus.PENDING -> {
                         IconButton(
                             onClick = onPause,
                             modifier = Modifier
@@ -657,21 +657,6 @@ private fun TransferRowCard(
                             Icon(
                                 Icons.Default.Close,
                                 contentDescription = "Dismiss error",
-                                tint = colors.textDim,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    FileStatus.PENDING -> {
-                        IconButton(
-                            onClick = onCancel,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_cancel_${transfer.fileId}")
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Cancel queued transfer",
                                 tint = colors.textDim,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -893,7 +878,11 @@ private fun CompletedTransferCard(item: TransferProgress) {
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${ChecksumUtil.formatBytes(item.totalBytes)} · Done",
+                    text = if (item.isUpload) {
+                        "${ChecksumUtil.formatBytes(item.totalBytes)} · Uploaded"
+                    } else {
+                        "${ChecksumUtil.formatBytes(item.totalBytes)} · Saved in Download/TGC"
+                    },
                     fontSize = 11.sp,
                     fontFamily = NumericMonoFont,
                     color = colors.textDim
@@ -934,15 +923,6 @@ private fun EmptyTransfersView() {
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = BodySansFont,
                 color = colors.text
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Queue clear",
-                fontSize = 13.sp,
-                fontFamily = BodySansFont,
-                color = colors.textDim,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                lineHeight = 18.sp
             )
         }
     }

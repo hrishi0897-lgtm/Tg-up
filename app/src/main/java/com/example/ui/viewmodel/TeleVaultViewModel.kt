@@ -636,20 +636,29 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         for (file in dbNonCompletedFiles) {
             if (file.status == FileStatus.COMPLETED || transferManager.isCancelled(file.id)) continue
             if (!seenFileIds.contains(file.id)) {
-                val fraction = if (file.totalChunks > 0) {
+                val isUpload = file.manifestMessageId == null
+                val chunkFraction = if (file.totalChunks > 0) {
                     (file.completedChunks.toFloat() / file.totalChunks.toFloat()).coerceIn(0f, 1f)
                 } else 0f
-                val bytesEstimate = (fraction * file.size).toLong()
+                val chunkBytesEstimate = (chunkFraction * file.size).toLong()
+                val bytesTransferred = if (!isUpload) {
+                    maxOf(chunkBytesEstimate, transferManager.getSavedDownloadBytesOnDisk(file.id, file.size))
+                } else {
+                    chunkBytesEstimate
+                }
+                val fraction = if (file.size > 0) {
+                    (bytesTransferred.toFloat() / file.size.toFloat()).coerceIn(0f, 1f)
+                } else chunkFraction
                 val effectiveStatus = if (transferManager.isPaused(file.id)) FileStatus.PAUSED else file.status
                 result.add(
                     TransferProgress(
                         fileId = file.id,
                         fileName = file.name,
-                        isUpload = file.manifestMessageId == null,
+                        isUpload = isUpload,
                         currentChunk = file.completedChunks,
                         totalChunks = file.totalChunks,
                         progressFraction = fraction,
-                        bytesTransferred = bytesEstimate,
+                        bytesTransferred = bytesTransferred,
                         totalBytes = file.size,
                         speedBytesPerSec = 0L,
                         status = effectiveStatus,

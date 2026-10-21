@@ -1,76 +1,47 @@
-# TeleVault Transfer Lifecycle Fixes, Human-Crafted UI Polish & Release APK Plan
+# Implementation Plan: Dedicated `Download/TGC` Path & Reliable Pause/Resume
 
-This plan resolves the active upload and download pause/cancel bugs in the transfer engine, strips verbose explanatory text and helper banners across all screens for a crisp human-crafted experience, and configures automated Release APK generation on every build.
-
-## User Review & Critical Decisions
-
-> [!IMPORTANT]
-> **Download Cancellation & Partial Chunks**
-> Per your selection, canceling an active or paused download will immediately abort the network stream and remove the item from the transfer queue, while **preserving already-verified chunk files on disk** and keeping the cloud file entry intact in your Vault so future downloads of that file resume instantly from the saved chunks.
->
-> **Zero-Explanation UI Density**
-> All instructional banners, multi-sentence helper descriptions, and verbose onboarding/settings explanations will be removed across the app in favor of concise labels, scannable metadata badges, and direct controls.
+## Goal
+Ensure all downloaded files are saved into the app's dedicated `Download/TGC` folder and visible/accessible with clear location details, and fix all Pause and Resume issues for both uploads and downloads—including byte-offset resumption within active download chunks and race-free coroutine lifecycle handling.
 
 ---
 
-## 1. Overview & Core Concept
+## Key Changes
 
-TeleVault's transfer engine currently suffers from stream-level race conditions where pausing or canceling an active transfer does not immediately interrupt the underlying HTTP byte stream, and in-flight progress callbacks overwrite the paused/canceled state. Additionally, canceling a download previously invoked the same destructive deletion path as canceling an incomplete upload.
+### 1. Dedicated `Download/TGC` Storage Path & Visibility
+- **`DownloadStorageManager.kt`**:
+  - Ensure all reassembled downloads are saved directly into `Download/TGC/` (using `MediaStore.Downloads` with `RELATIVE_PATH = "Download/TGC/"` on Android 10+ and `/storage/emulated/0/Download/TGC` on older Android versions).
+  - Return both the `content://` MediaStore URI (for opening/sharing via intents) and the human-readable display path (`Download/TGC/<filename>`) so the database stores a clean, verifiable path and `content://` URI.
+  - Provide helper utilities to check whether a downloaded file still exists in `Download/TGC` and to resolve its openable URI.
+- **`SettingsScreen.kt` & `FileDetailSheet.kt` / `TransfersScreen.kt`**:
+  - Display the dedicated download folder path (`Download/TGC`) in Settings and on completed download cards / file detail sheets so users can clearly see where files are stored and open them directly.
 
-This update overhauls the transfer state machine for deterministic pause and cancel control, refines every screen to look 100% human-designed without AI-style explanatory text walls, and ensures a signed Release APK is built alongside compilation.
+### 2. Byte-Accurate Download Pause & Resume (HTTP Range Support)
+- **`TelegramApi.kt` & `TelegramRepository.kt`**:
+  - Add optional `@Header("Range") range: String? = null` support to `downloadFile` in `TelegramApi` and pass `offsetBytes: Long = 0L` in `TelegramRepository.downloadFileStream`.
+- **`TransferManager.kt` (Download Engine)**:
+  - **Preserve Partial Chunks on Pause**: When a download is paused mid-chunk, keep the `.part` file (`chunk_<index>.part`) on disk instead of deleting it, and keep the exact `downloadedBytes + partialChunkBytes` in `_transfers` so the progress bar freezes at the exact percentage where the user paused.
+  - **Byte-Offset Resume**: When resuming a download, check if `chunkTempFile` already has partial bytes (`0 < length < chunk.size`). If so, request `Range: bytes=<existingLength>-` from Telegram's file server:
+    - If the server responds with `206 Partial Content`, append the remaining bytes to `chunkTempFile` (`FileOutputStream(chunkTempFile, true)`) starting progress from `existingLength`.
+    - If the server responds with `200 OK`, rewrite `chunkTempFile` from byte `0`.
+    - Once all bytes for the chunk arrive, compute the SHA-256 over the complete `chunkTempFile` to guarantee end-to-end integrity before marking the chunk downloaded.
+  - **Disk Verification for Completed Chunks**: Verify `chunkTempFile.exists() && chunkTempFile.length() == chunk.size` before skipping a chunk marked `isDownloaded`, preventing `FileNotFoundException` during final file reassembly.
+
+### 3. Race-Free Pause & Resume Lifecycle (Uploads & Downloads)
+- **`TransferManager.kt`**:
+  - **Eliminate Pause/Resume Race Condition**:
+    - When `pauseTransfer(fileId)` is called, mark `pauseRequestedFiles.add(fileId)`, persist `FileStatus.PAUSED` immediately in Room and `_transfers` (preserving exact `bytesTransferred` and `completedChunks`), and cancel the active job.
+    - In `executeSingleFileUpload` and `startDownload`, ensure `catch (e: CancellationException)` only sets `FileStatus.PAUSED` if `pauseRequestedFiles.contains(fileId)` is still true, and ensure `finally` removes the job using `activeJobs.remove(fileId, currentJob)` so an unwinding job never clobbers a newly resumed job.
+    - Before starting a resumed upload or download in `startUpload` / `startDownload`, await cancellation cleanup of any prior job for `fileId`.
+  - **Upload Queue Isolation & Progress Preservation**:
+    - Isolate each file upload inside its own child `Job` in `processNextUploadInQueue()` so pausing an active upload cancels only that file's job without terminating the queue processor loop.
+    - When resuming a paused upload in `startUpload(fileId)`, initialize `bytesTransferred` and `completedChunks` from the already-uploaded chunks in Room instead of resetting to `0`, so the progress bar resumes smoothly from its paused percentage.
+- **`TransferWorker.kt`**:
+  - Exclude `FileStatus.PAUSED` from automatic background worker restarts so user-paused uploads and downloads remain paused until explicitly resumed by the user.
 
 ---
 
-## 2. User Experience & Visual Design
-
-* **Instant Pause & Cancel Feedback:** Tapping **Pause** immediately freezes the progress bar and speed counter without creeping forward or flipping back to active status. Tapping **Cancel** immediately removes the transfer card from the queue.
-* **Zero Helper Banners or Text Walls:**
-  * Remove explanatory paragraphs from the Vault Home header, Folder Sync cards, Storage Analytics cards, Settings sections, Trash header, and Onboarding setup steps.
-  * Replace multi-line descriptions in dialogs (Share Link, Import Link, Pair Device, Batch Upload, File Details) with clean form controls, compact status chips, and direct action buttons.
-* **Refined OLED Black & Rich White Craftsmanship:** Tighter, intentional typography hierarchy where every label is purposeful (1–3 words), paired with crisp 1dp borders, tabular numeric metrics, and balanced spacing.
-
----
-
-## 3. Key Product Decisions & Trade-Offs
-
-* **Stream-Level Interrupts on Pause & Cancel:** Rather than waiting for a 19 MB chunk upload or download to finish before honoring a pause or cancel request, the byte-streaming loops will check cancellation and pause flags on every 8 KB buffer read/write and abort immediately.
-* **Non-Destructive Download Cancellation vs. Clean Upload Cancellation:**
-  * **Cancel Download:** Stops the active stream, deletes only the incomplete in-flight `.part` file, keeps completed `.part` chunks in cache for future resume, removes the item from the Transfer Queue, and restores the Vault file status to `COMPLETED`.
-  * **Cancel Upload:** Stops all parallel bot workers, prevents the `CancellationException` handler from re-inserting the transfer as `PAUSED`, cleans up uploaded Telegram chunk messages and temporary staging files, and removes the incomplete record.
-* **Release APK Generation:** Preserves the project's existing signing configuration so compatibility is never broken, while wiring Release APK assembly into the verification workflow so a ready-to-install Release APK is always produced.
-
----
-
-## 4. Technical Architecture & Data Strategy
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        UI Layer (Jetpack Compose)                       │
-│  TransfersScreen / TransfersSheet / HomeScreen / Dialogs / Settings     │
-│  • Concise human-crafted labels (zero instructional banners)            │
-│  • Pause / Resume / Cancel actions dispatch to TransferManager          │
-└───────────────────┬─────────────────────────────────────┬───────────────┘
-                    │                                     │
-         Pause / Cancel Signal                   StateFlow<Map<Id, Progress>>
-                    ▼                                     ▲
-┌─────────────────────────────────────────────────────────┴───────────────┐
-│                      TransferManager State Machine                      │
-│  • pauseRequestedFiles: ConcurrentSet  • cancelledFiles: ConcurrentSet  │
-│  • State Guard: blocks in-flight callbacks from overwriting PAUSED      │
-│    or re-inserting CANCELLED transfers into _transfers                  │
-└─────────┬───────────────────────────────────────────────┬───────────────┘
-          │                                               │
-   Upload Worker Pool                              Download Stream Loop
-          ▼                                               ▼
-┌───────────────────────────────────┐   ┌─────────────────────────────────┐
-│ CountingRequestBody (8 KB chunks) │   │ ResponseBody.byteStream (8 KB)  │
-│ • Checks coroutine isActive,      │   │ • Checks pauseRequestedFiles &  │
-│   pauseRequestedFiles &           │   │   cancelledFiles every read     │
-│   cancelledFiles every write      │   │ • Rethrows CancellationException│
-│ • Cancel cleans staging & remote  │   │ • Cancel keeps verified .part   │
-│   chunks; never falls back PAUSED │   │   chunks & restores COMPLETED   │
-└───────────────────────────────────┘   └─────────────────────────────────┘
-```
-
-* **State Guard in Progress Publishers:** Both `updateProgressState` and `publishProgress` will check `cancelledFiles` and `pauseRequestedFiles` before mutating `_transfers`. If a file is marked canceled, all late worker emissions are dropped; if marked paused, emissions with `UPLOADING` or `DOWNLOADING` status are ignored unless `force = true` is explicitly passed by the pause handler.
-* **Exception Handling Fix:** All chunk upload and download `catch (e: Throwable)` blocks will explicitly check for `CancellationException` and check `pauseRequestedFiles`/`cancelledFiles` first, exiting the retry loop immediately instead of treating user pause/cancel as a retriable network error.
+## Verification Plan
+- **Compilation & Static Verification**: Run `compile_applet` to verify all Kotlin, Room, Retrofit, and Compose changes compile cleanly.
+- **Functional Flows**:
+  - Upload a multi-chunk file, pause mid-chunk, verify progress freezes in `PAUSED` state, resume, and verify it continues from completed chunks without resetting to 0% or getting stuck.
+  - Download a file, pause mid-chunk, verify partial chunk bytes and progress percentage are retained, resume, and verify it continues from the byte offset, verifies SHA-256, and saves the final file into `Download/TGC`.

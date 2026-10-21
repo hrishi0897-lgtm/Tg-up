@@ -27,24 +27,27 @@ class TransferWorker(
             val db = AppDatabase.getInstance(applicationContext)
             val transferManager = TransferManager.getInstance(applicationContext)
 
-            // Look for any files interrupted mid-transfer (PENDING, PAUSED, UPLOADING, DOWNLOADING)
+            // Look for any files interrupted mid-transfer (PENDING, UPLOADING, DOWNLOADING)
+            // Do NOT auto-resume user-paused (PAUSED) transfers.
             val unfinishedFiles = db.fileDao().getFilesByStatus(
                 listOf(
                     FileStatus.PENDING,
-                    FileStatus.PAUSED,
                     FileStatus.UPLOADING,
                     FileStatus.DOWNLOADING
                 )
             )
 
             for (file in unfinishedFiles) {
+                if (transferManager.isPaused(file.id) || transferManager.isCancelled(file.id)) {
+                    continue
+                }
                 // Resume upload or download depending on missing chunks
                 val chunks = db.chunkDao().getChunksForFile(file.id)
                 val hasUnuploadedChunks = chunks.any { !it.isUploaded }
 
                 if (hasUnuploadedChunks) {
                     transferManager.startUpload(file.id)
-                } else if (file.localPath == null) {
+                } else if (file.localPath == null && file.localUri == null) {
                     transferManager.startDownload(file.id)
                 }
             }

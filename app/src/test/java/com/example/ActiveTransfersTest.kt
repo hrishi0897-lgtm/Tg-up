@@ -106,8 +106,9 @@ class ActiveTransfersTest {
         composeTestRule.onNodeWithText("Failed — tap to retry").assertIsDisplayed()
         composeTestRule.onNodeWithText("Network timeout on chunk 1").assertIsDisplayed()
 
-        // Verify Recently Completed section
+        // Verify Recently Completed section shows Download/TGC path for downloads
         composeTestRule.onNodeWithText("dataset.csv").assertIsDisplayed()
+        composeTestRule.onNodeWithText("12.0 MB · Saved in Download/TGC").assertIsDisplayed()
 
         // Test Pause action on file-1
         composeTestRule.onNodeWithTag("btn_pause_file-1").performClick()
@@ -127,6 +128,55 @@ class ActiveTransfersTest {
 
         // Screenshot verification
         composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/transfers_active_screen.png")
+    }
+
+    @Test
+    fun testPausedTransferResumeAndResumeAllCallbacks() {
+        var resumedFileId: String? = null
+        var resumedIsUpload: Boolean? = null
+        var resumeAllCalled = false
+
+        val pausedDownload = TransferProgress(
+            fileId = "dl-paused-1",
+            fileName = "ubuntu_iso.zip",
+            totalBytes = 100L * 1024L * 1024L,
+            bytesTransferred = 42L * 1024L * 1024L,
+            currentChunk = 3,
+            totalChunks = 6,
+            progressFraction = 0.42f,
+            isUpload = false,
+            status = FileStatus.PAUSED,
+            speedBytesPerSec = 0L
+        )
+
+        composeTestRule.setContent {
+            TeleVaultTheme {
+                TransfersScreen(
+                    transfers = listOf(pausedDownload),
+                    recentlyCompleted = emptyList(),
+                    onBack = {},
+                    onPause = {},
+                    onResume = { id, isUpload ->
+                        resumedFileId = id
+                        resumedIsUpload = isUpload
+                    },
+                    onCancel = {},
+                    onRetry = {},
+                    onPauseAll = {},
+                    onResumeAll = { resumeAllCalled = true },
+                    onClearCompleted = {},
+                    onNavigateToVault = {}
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("ubuntu_iso.zip").assertIsDisplayed()
+        composeTestRule.onNodeWithTag("btn_resume_dl-paused-1").performClick()
+        assertEquals("dl-paused-1", resumedFileId)
+        assertEquals(false, resumedIsUpload)
+
+        composeTestRule.onNodeWithTag("btn_resume_all").performClick()
+        assertTrue(resumeAllCalled)
     }
 
     @Test

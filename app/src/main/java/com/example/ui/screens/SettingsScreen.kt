@@ -1829,13 +1829,37 @@ fun SettingsScreen(
                 }
             }
 
-            // 2. Safe Chunk Size Config Card (Pill-style selector)
+            // 2. Safe Chunk Size & Download Directory Config Card
             SettingsCard(
                 icon = Icons.Default.Tune,
-                title = "CHUNK SLICE SIZE",
+                title = "TRANSFER & STORAGE PATH",
                 colors = colors
             ) {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(colors.surfaceHi.copy(alpha = 0.6f))
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Download Path",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.text
+                        )
+                        Text(
+                            text = com.example.domain.DownloadStorageManager.TGC_RELATIVE_PATH,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = colors.violet
+                        )
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)

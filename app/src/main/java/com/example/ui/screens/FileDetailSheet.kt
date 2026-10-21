@@ -526,7 +526,7 @@ fun FileDetailSheet(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Downloaded & ready on this device",
+                        text = "Saved in ${com.example.domain.DownloadStorageManager.getDisplayPath(file.name)}",
                         color = StatusSuccess,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -578,7 +578,7 @@ fun FileDetailSheet(
                     } else {
                         ActionItem(
                             icon = Icons.Default.Download,
-                            label = "Download",
+                            label = "Download to Download/TGC",
                             iconTint = colors.violet,
                             labelColor = colors.text,
                             onClick = {

@@ -543,19 +543,45 @@ class TelegramRepository(
         }
     }
 
+    data class DownloadStreamResult(
+        val body: ResponseBody,
+        val isPartialContent: Boolean,
+        val responseCode: Int
+    )
+
     /**
-     * Downloads file binary stream by file path.
+     * Downloads file binary stream by file path with optional byte-offset Range resumption.
      */
-    suspend fun downloadFileStream(token: String, filePath: String): Result<ResponseBody> {
+    suspend fun downloadFileStreamWithRange(
+        token: String,
+        filePath: String,
+        startOffset: Long = 0L
+    ): Result<DownloadStreamResult> {
         var attempt = 0
         var currentDelay = BASE_BACKOFF_MS
+        var effectiveOffset = startOffset.coerceAtLeast(0L)
 
         while (attempt < MAX_RETRIES) {
             attempt++
             try {
-                val response = api.downloadFile(fileDownloadUrl(token, filePath))
+                val rangeHeader = if (effectiveOffset > 0L) "bytes=$effectiveOffset-" else null
+                val response = api.downloadFile(fileDownloadUrl(token, filePath), rangeHeader)
                 if (response.isSuccessful && response.body() != null) {
-                    return Result.success(response.body()!!)
+                    val isPartial = response.code() == 206 && effectiveOffset > 0L
+                    return Result.success(
+                        DownloadStreamResult(
+                            body = response.body()!!,
+                            isPartialContent = isPartial,
+                            responseCode = response.code()
+                        )
+                    )
+                }
+                if (response.code() == 416 && effectiveOffset > 0L) {
+                    // Range Not Satisfiable — fallback to full stream from byte 0
+                    Log.w("TelegramRepo", "[Download fileStream] HTTP 416 for offset=$effectiveOffset, falling back to full chunk download")
+                    effectiveOffset = 0L
+                    attempt--
+                    continue
                 }
                 val rawError = try { response.errorBody()?.string() } catch (_: Exception) { null }
                 Log.e("TelegramRepo", "<<< [RAW TELEGRAM HTTP RESPONSE BODY] [Download fileStream] code=${response.code()}: $rawError")
@@ -585,6 +611,13 @@ class TelegramRepository(
             }
         }
         return Result.failure(Exception("[Download fileStream] Failed after $MAX_RETRIES retries."))
+    }
+
+    /**
+     * Downloads file binary stream by file path.
+     */
+    suspend fun downloadFileStream(token: String, filePath: String): Result<ResponseBody> {
+        return downloadFileStreamWithRange(token, filePath, 0L).map { it.body }
     }
 
     /**

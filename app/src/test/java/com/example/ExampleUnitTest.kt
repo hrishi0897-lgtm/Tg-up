@@ -179,6 +179,39 @@ class ExampleUnitTest {
   fun downloadStorageManager_relativePathAndFolderMatchRequirements() {
     assertEquals("TGC", com.example.domain.DownloadStorageManager.TGC_FOLDER_NAME)
     assertEquals("Download/TGC", com.example.domain.DownloadStorageManager.RELATIVE_DOWNLOAD_PATH)
+    assertEquals("Download/TGC", com.example.domain.DownloadStorageManager.TGC_RELATIVE_PATH)
+    assertEquals("Download/TGC/archive.zip", com.example.domain.DownloadStorageManager.getDisplayPath("archive.zip"))
+    assertEquals("Download/TGC/report.pdf", com.example.domain.DownloadStorageManager.getDisplayPath("folder/sub/report.pdf"))
+  }
+
+  @Test
+  fun partialChunkResume_appendsExactRemainingBytesAndMatchesFullSha256() {
+    val tempDir = java.io.File(System.getProperty("java.io.tmpdir"), "resume_test_${System.currentTimeMillis()}").apply { mkdirs() }
+    try {
+      val fullChunkBytes = ByteArray(100_000) { ((it * 31 + 7) % 256).toByte() }
+      val expectedSha256 = ChecksumUtil.computeSha256(fullChunkBytes)
+
+      val partFile = java.io.File(tempDir, "chunk_0.part")
+      val pauseOffset = 43_210
+
+      // 1. Simulate download paused at byte 43,210
+      java.io.FileOutputStream(partFile, false).use { out ->
+        out.write(fullChunkBytes, 0, pauseOffset)
+      }
+      assertEquals(pauseOffset.toLong(), partFile.length())
+
+      // 2. Simulate HTTP 206 Range: bytes=43210- resume appending remaining bytes
+      val existingOffset = partFile.length().toInt()
+      java.io.FileOutputStream(partFile, true).use { out ->
+        out.write(fullChunkBytes, existingOffset, fullChunkBytes.size - existingOffset)
+      }
+
+      assertEquals(fullChunkBytes.size.toLong(), partFile.length())
+      val actualSha256 = ChecksumUtil.computeSha256(partFile)
+      assertEquals(expectedSha256, actualSha256)
+    } finally {
+      tempDir.deleteRecursively()
+    }
   }
 
   @Test

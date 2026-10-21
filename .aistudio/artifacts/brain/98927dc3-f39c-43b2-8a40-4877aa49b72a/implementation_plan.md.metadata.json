@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for fixing upload/download pause and cancel lifecycle bugs, stripping verbose explanatory UI copy for a 100% human-crafted interface, and configuring automated Release APK builds.",
-  "updatedAt":  "2026-10-21T14:08:51.272811208Z",
+  "summary":  "Implementation plan for dedicated Download/TGC storage path and reliable byte-accurate Pause/Resume across uploads and downloads.",
+  "updatedAt":  "2026-10-21T15:03:28.092768336Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
