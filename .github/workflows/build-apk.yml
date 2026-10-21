@@ -1,4 +1,4 @@
-name: Build Debug APK
+name: Build Release APK
 
 on:
   push:
@@ -8,6 +8,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+      STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'televault123' }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'televault123' }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -23,11 +27,26 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Ensure Release Keystore Exists
+        run: |
+          if [ ! -f "$KEYSTORE_PATH" ]; then
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE_PATH" \
+              -alias upload \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass "$STORE_PASSWORD" \
+              -keypass "$KEY_PASSWORD" \
+              -dname "CN=TeleVault, OU=Mobile, O=TeleVault, L=Cloud, S=CA, C=US"
+          fi
 
-      - name: Upload APK artifact
+      - name: Build Release APK
+        run: gradle assembleRelease --stacktrace
+
+      - name: Upload Release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TGC
-          path: app/build/outputs/apk/debug/*.apk
+          name: TGC-Release-APK
+          path: app/build/outputs/apk/release/*.apk
+

@@ -166,12 +166,6 @@ fun StorageAnalyticsScreen(
                     fontFamily = BodySansFont,
                     color = colors.text
                 )
-                Text(
-                    text = "Category breakdown, encryption telemetry & duplicate finder",
-                    fontSize = 12.sp,
-                    fontFamily = BodySansFont,
-                    color = colors.textDim
-                )
             }
         }
 
@@ -461,7 +455,7 @@ fun StorageAnalyticsScreen(
 
                     if (botMetrics.isEmpty()) {
                         Text(
-                            text = "Primary bot active. Add verified standby bots in Settings to multiply parallel chunk upload bandwidth.",
+                            text = "Primary bot active",
                             fontSize = 12.sp,
                             color = colors.textDim
                         )
@@ -592,19 +586,12 @@ fun StorageAnalyticsScreen(
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(10.dp))
-                            Column {
-                                Text(
-                                    text = "Zero duplicate files detected",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = colors.text
-                                )
-                                Text(
-                                    text = "Every file in your vault has a unique SHA-256 cryptographic hash.",
-                                    fontSize = 11.5.sp,
-                                    color = colors.textDim
-                                )
-                            }
+                            Text(
+                                text = "No duplicates found",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = colors.text
+                            )
                         }
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

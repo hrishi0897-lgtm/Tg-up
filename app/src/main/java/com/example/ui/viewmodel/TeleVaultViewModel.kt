@@ -608,20 +608,23 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
         // 1. In-memory transfers (live byte rates, chunk status)
         for (item in inMemoryMap.values) {
-            // Strictly exclude completed transfers from active list
-            if (item.status == FileStatus.COMPLETED) continue
+            if (item.status == FileStatus.COMPLETED || transferManager.isCancelled(item.fileId)) continue
 
             val dbFile = dbNonCompletedFiles.find { it.id == item.fileId }
-            // If Room database reports FAILED or PAUSED, the database status
-            // strictly takes precedence over any stale in-memory UPLOADING/DOWNLOADING state!
-            val reconciledItem = if (dbFile != null && (dbFile.status == FileStatus.FAILED || dbFile.status == FileStatus.PAUSED)) {
-                item.copy(
-                    status = dbFile.status,
+            val isPausedNow = transferManager.isPaused(item.fileId) || item.status == FileStatus.PAUSED || dbFile?.status == FileStatus.PAUSED
+            val reconciledItem = when {
+                isPausedNow -> item.copy(
+                    status = FileStatus.PAUSED,
+                    speedBytesPerSec = 0L,
+                    etaSeconds = null,
+                    isChunking = false
+                )
+                dbFile != null && dbFile.status == FileStatus.FAILED -> item.copy(
+                    status = FileStatus.FAILED,
                     errorMessage = dbFile.errorMessage ?: item.errorMessage,
                     speedBytesPerSec = 0L
                 )
-            } else {
-                item
+                else -> item
             }
             if (reconciledItem.status != FileStatus.COMPLETED) {
                 result.add(reconciledItem)
@@ -631,31 +634,33 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
         // 2. Persisted non-completed files from Room (ensures failed/stuck files are never invisible)
         for (file in dbNonCompletedFiles) {
-            if (file.status == FileStatus.COMPLETED) continue
+            if (file.status == FileStatus.COMPLETED || transferManager.isCancelled(file.id)) continue
             if (!seenFileIds.contains(file.id)) {
                 val fraction = if (file.totalChunks > 0) {
                     (file.completedChunks.toFloat() / file.totalChunks.toFloat()).coerceIn(0f, 1f)
                 } else 0f
                 val bytesEstimate = (fraction * file.size).toLong()
+                val effectiveStatus = if (transferManager.isPaused(file.id)) FileStatus.PAUSED else file.status
                 result.add(
                     TransferProgress(
                         fileId = file.id,
                         fileName = file.name,
-                        isUpload = file.localPath != null || file.manifestMessageId == null,
+                        isUpload = file.manifestMessageId == null,
                         currentChunk = file.completedChunks,
                         totalChunks = file.totalChunks,
                         progressFraction = fraction,
                         bytesTransferred = bytesEstimate,
                         totalBytes = file.size,
                         speedBytesPerSec = 0L,
-                        status = file.status,
-                        errorMessage = file.errorMessage
+                        status = effectiveStatus,
+                        errorMessage = file.errorMessage,
+                        isEncrypted = file.isEncrypted
                     )
                 )
                 seenFileIds.add(file.id)
             }
         }
-        result.filter { it.status != FileStatus.COMPLETED }
+        result.filter { it.status != FileStatus.COMPLETED && !transferManager.isCancelled(it.fileId) }
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),

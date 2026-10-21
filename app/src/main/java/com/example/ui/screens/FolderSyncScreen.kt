@@ -130,17 +130,11 @@ fun FolderSyncScreen(
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Folder Sync & Camera Backup",
+                    text = "Folder Sync",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     color = colors.text
-                )
-                Text(
-                    text = "Automated delta backup from local device folders",
-                    fontSize = 12.sp,
-                    fontFamily = BodySansFont,
-                    color = colors.textDim
                 )
             }
 
@@ -230,15 +224,10 @@ fun FolderSyncScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "One-Way Delta Folder Watch",
+                                text = "Folder Watch",
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.text
-                            )
-                            Text(
-                                text = "Link DCIM/Camera, Downloads, or Documents. Only new or modified files are uploaded.",
-                                fontSize = 12.sp,
-                                color = colors.textDim
                             )
                         }
                     }
@@ -322,17 +311,10 @@ fun FolderSyncScreen(
                         )
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = "No Linked Sync Folders",
+                            text = "No Sync Folders",
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.text
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Tap 'Link Folder' or 'Camera Backup' above to select a device directory for automatic delta uploads.",
-                            fontSize = 12.sp,
-                            color = colors.textDim,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                     }
                 }
@@ -484,12 +466,6 @@ fun FolderSyncScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "Choose destination vault folder and encryption settings:",
-                        fontSize = 12.sp,
-                        color = colors.textDim
-                    )
-
                     // Target folder selector
                     Column(
                         modifier = Modifier
@@ -543,10 +519,7 @@ fun FolderSyncScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Zero-Knowledge AES-256", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.text)
-                            Text("Encrypt each file before uploading", fontSize = 11.sp, color = colors.textDim)
-                        }
+                        Text("AES-256 Encryption", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.text, modifier = Modifier.weight(1f))
                         Switch(
                             checked = encryptOnSyncEnabled,
                             onCheckedChange = { encryptOnSyncEnabled = it }
@@ -558,10 +531,7 @@ fun FolderSyncScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Auto-Sync on Launch", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.text)
-                            Text("Scan for new files when app opens", fontSize = 11.sp, color = colors.textDim)
-                        }
+                        Text("Auto-Sync on Launch", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.text, modifier = Modifier.weight(1f))
                         Switch(
                             checked = autoSyncEnabled,
                             onCheckedChange = { autoSyncEnabled = it }

@@ -141,18 +141,7 @@ fun OnboardingScreen(
                 letterSpacing = (-0.5).sp
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Free, unlimited personal cloud storage backed by your private Telegram account",
-                fontSize = 14.sp,
-                color = colors.textDim,
-                textAlign = TextAlign.Center,
-                lineHeight = 20.sp,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
             // Credentials Card
             Card(
@@ -302,19 +291,12 @@ fun OnboardingScreen(
                             color = colors.text
                         )
                         Text(
-                            text = "Optional · Redundant",
+                            text = "Optional",
                             fontSize = 11.sp,
                             color = colors.teal,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Every chunk is auto-mirrored via copyMessage to this channel with zero extra mobile data.",
-                        fontSize = 11.sp,
-                        color = colors.textDim,
-                        lineHeight = 15.sp
-                    )
                     Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = backupChatId,
@@ -517,28 +499,13 @@ fun OnboardingScreen(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "DISASTER RECOVERY",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = colors.teal,
-                                letterSpacing = 1.sp
-                            )
-                            Text(
-                                text = "Restore Vault from Backup Channel",
+                                text = "Restore from Backup Channel",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.text
                             )
                         }
                     }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Lost your primary bot or channel? Rebuild your entire vault from televault_index.json in your secondary backup channel without needing any previous local data.",
-                        fontSize = 12.sp,
-                        color = colors.textDim,
-                        lineHeight = 17.sp
-                    )
 
                     Spacer(modifier = Modifier.height(12.dp))
                     OutlinedButton(
@@ -586,11 +553,6 @@ fun OnboardingScreen(
                     },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(
-                                text = "Enter your Telegram Bot Token and the Backup Channel ID where chunks and televault_index.json were mirrored.",
-                                fontSize = 13.sp,
-                                color = colors.textDim
-                            )
 
                             OutlinedTextField(
                                 value = restoreBotTokenInput,
@@ -718,96 +680,6 @@ fun OnboardingScreen(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-
-            // Guide Toggle Button
-            TextButton(
-                onClick = { showGuide = !showGuide },
-                colors = ButtonDefaults.textButtonColors(contentColor = colors.violet)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.HelpOutline,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    if (showGuide) "Hide Step-by-Step Guide" else "How to get Bot Token & Chat ID?",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-
-            // Interactive Step-by-Step Guide
-            AnimatedVisibility(visible = showGuide) {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = colors.surface),
-                    shape = RoundedCornerShape(16.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(20.dp)
-                    ) {
-                        Text(
-                            text = "3-STEP SETUP GUIDE",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.violet,
-                            letterSpacing = 1.sp
-                        )
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        GuideStep(
-                            stepNumber = "1",
-                            title = "Create Your Storage Bot",
-                            description = "Open Telegram, search for @BotFather and send the message /newbot. Follow the prompts to set a name (e.g. 'My Personal Vault') and unique username ending in 'bot'."
-                        )
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        GuideStep(
-                            stepNumber = "2",
-                            title = "Copy the Bot Token",
-                            description = "BotFather will send you an HTTP API access token (e.g. 123456789:ABC...). Copy this string and paste it into the Bot Token field above."
-                        )
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        GuideStep(
-                            stepNumber = "3",
-                            title = "Start Your Bot & Get Chat ID",
-                            description = "Search for your new bot in Telegram and press START (or send /start). Then forward a message to @userinfobot or open web.telegram.org to find your numeric ID (e.g. 987654321). Paste it into the Chat ID field."
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Security note
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Lock,
-                    contentDescription = "Encrypted",
-                    tint = colors.textFaint,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "Stored encrypted at rest via hardware Android KeyStore (AES-256)",
-                    fontSize = 11.sp,
-                    color = colors.textFaint,
-                    textAlign = TextAlign.Center
-                )
-            }
         }
     }
 }

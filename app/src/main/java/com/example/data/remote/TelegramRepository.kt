@@ -209,6 +209,8 @@ class TelegramRepository(
                 Log.e("TelegramRepo", "<<< [TELEGRAM CLIENT ERROR] $actionName: HTTP ${response.code()} '$finalError' | Raw response body: $errorBody")
                 return Result.failure(TelegramApiException(finalError, telegramErrorCode ?: response.code(), errorBody))
 
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: SocketTimeoutException) {
                 Log.e("TelegramRepo", "[$actionName] Socket timeout (attempt $attempt/$MAX_RETRIES): ${e.message}. Proactively evicting connection pool to discard dead socket.", e)
                 evictConnectionPool("SocketTimeout in $actionName")
@@ -221,6 +223,9 @@ class TelegramRepository(
                     )
                 }
             } catch (e: InterruptedIOException) {
+                if (e.message == "Transfer aborted by user") {
+                    return Result.failure(e)
+                }
                 val isCallTimeout = e.message?.contains("timeout", ignoreCase = true) == true
                 Log.e("TelegramRepo", "[$actionName] Request timed out or interrupted (attempt $attempt/$MAX_RETRIES, isCallTimeout=$isCallTimeout): ${e.message}. Proactively evicting connection pool.", e)
                 evictConnectionPool("InterruptedIOException (isCallTimeout=$isCallTimeout) in $actionName")
@@ -233,6 +238,9 @@ class TelegramRepository(
                     )
                 }
             } catch (e: IOException) {
+                if (e.message == "Transfer aborted by user") {
+                    return Result.failure(e)
+                }
                 Log.e("TelegramRepo", "[$actionName] Network failure (attempt $attempt/$MAX_RETRIES): ${e.message}. Proactively evicting connection pool.", e)
                 evictConnectionPool("IOException in $actionName: ${e.message}")
                 if (attempt < MAX_RETRIES) {
@@ -300,6 +308,7 @@ class TelegramRepository(
         chunkFile: File,
         chunkSha256: String,
         expectedChunkSize: Long? = null,
+        shouldAbort: () -> Boolean = { false },
         onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit
     ): Result<TelegramMessage> {
         val targetUrl = botUrl(token, "sendDocument")
@@ -335,7 +344,7 @@ class TelegramRepository(
         val captionJson = CHUNK_CAPTION_PREFIX + captionMetaAdapter.toJson(captionPayload)
 
         val rawRequestBody = chunkFile.asRequestBody("application/octet-stream".toMediaTypeOrNull())
-        val countingBody = CountingRequestBody(rawRequestBody, onProgress)
+        val countingBody = CountingRequestBody(rawRequestBody, shouldAbort, onProgress)
         val multipart = MultipartBody.Part.createFormData("document", chunkPartName, countingBody)
 
         val chatIdBody = chatId.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -383,7 +392,7 @@ class TelegramRepository(
         val captionJson = CHUNK_CAPTION_PREFIX + captionMetaAdapter.toJson(captionPayload)
 
         val rawRequestBody = chunkBytes.toRequestBody("application/octet-stream".toMediaTypeOrNull())
-        val countingBody = CountingRequestBody(rawRequestBody, onProgress)
+        val countingBody = CountingRequestBody(rawRequestBody, { false }, onProgress)
         val multipart = MultipartBody.Part.createFormData("document", chunkPartName, countingBody)
 
         val chatIdBody = chatId.toRequestBody("text/plain".toMediaTypeOrNull())
@@ -562,6 +571,8 @@ class TelegramRepository(
                 }
                 val errorMsg = rawError ?: "HTTP ${response.code()}: ${response.message()}"
                 return Result.failure(TelegramApiException(errorMsg, response.code(), rawError))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("TelegramRepo", "[Download fileStream] Exception on attempt $attempt/$MAX_RETRIES: ${e.message}. Evicting connection pool.", e)
                 evictConnectionPool("downloadFileStream attempt $attempt: ${e.message}")
@@ -1079,6 +1090,7 @@ class TelegramRepository(
  */
 class CountingRequestBody(
     private val delegate: RequestBody,
+    private val shouldAbort: () -> Boolean = { false },
     private val onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit
 ) : RequestBody() {
 
@@ -1097,22 +1109,30 @@ class CountingRequestBody(
 
         val countingSink = object : ForwardingSink(sink) {
             override fun write(source: Buffer, byteCount: Long) {
+                if (shouldAbort()) {
+                    throw IOException("Transfer aborted by user")
+                }
                 super.write(source, byteCount)
                 bytesWritten += byteCount
                 val now = SystemClock.elapsedRealtime()
                 // Throttle progress updates to roughly 8-10 per second per chunk (~100ms interval) or completion
                 if (now - lastReportedTime >= 100L || bytesWritten >= total) {
                     lastReportedTime = now
-                    onProgress(bytesWritten, total)
+                    if (!shouldAbort()) {
+                        onProgress(bytesWritten, total)
+                    }
                 }
             }
         }
 
         val bufferedSink = countingSink.buffer()
         delegate.writeTo(bufferedSink)
+        if (shouldAbort()) {
+            throw IOException("Transfer aborted by user")
+        }
         bufferedSink.flush()
         // Ensure completion callback is always delivered
-        if (bytesWritten >= total && lastReportedTime != 0L) {
+        if (bytesWritten >= total && lastReportedTime != 0L && !shouldAbort()) {
             onProgress(bytesWritten, total)
         }
     }

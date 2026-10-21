@@ -97,6 +97,10 @@ class TransferManager private constructor(
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeJobs = ConcurrentHashMap<String, Job>()
     private val pauseRequestedFiles = ConcurrentHashMap.newKeySet<String>()
+    private val cancelledFiles = ConcurrentHashMap.newKeySet<String>()
+
+    fun isCancelled(fileId: String): Boolean = cancelledFiles.contains(fileId)
+    fun isPaused(fileId: String): Boolean = pauseRequestedFiles.contains(fileId)
 
     // Sequential Upload Queue & Batch Indexing State
     private val uploadQueue = ConcurrentLinkedQueue<String>()
@@ -141,7 +145,7 @@ class TransferManager private constructor(
                 val restoredMap = mutableMapOf<String, TransferProgress>()
                 for (file in incompleteFiles) {
                     val chunks = database.chunkDao().getChunksForFile(file.id)
-                    val isUpload = chunks.any { !it.isUploaded }
+                    val isUpload = file.manifestMessageId == null && (chunks.isEmpty() || chunks.any { !it.isUploaded })
                     val completedChunks = if (isUpload) {
                         chunks.count { it.isUploaded }
                     } else {
@@ -232,6 +236,8 @@ class TransferManager private constructor(
         val fileIds = mutableListOf<String>()
         for (uri in uris) {
             val fileId = UUID.randomUUID().toString()
+            pauseRequestedFiles.remove(fileId)
+            cancelledFiles.remove(fileId)
             fileIds.add(fileId)
             val (fileName, fileSize) = resolveUriMetadata(uri)
             val mimeType = context.contentResolver.getType(uri) ?: "application/octet-stream"
@@ -300,6 +306,7 @@ class TransferManager private constructor(
      */
     fun startUpload(fileId: String) {
         pauseRequestedFiles.remove(fileId)
+        cancelledFiles.remove(fileId)
         scope.launch {
             val fileEntity = database.fileDao().getById(fileId)
             if (fileEntity != null) {
@@ -317,8 +324,10 @@ class TransferManager private constructor(
                         speedBytesPerSec = 0L,
                         status = FileStatus.PENDING,
                         errorMessage = null,
-                        isChunking = false
-                    )
+                        isChunking = false,
+                        isEncrypted = fileEntity.isEncrypted
+                    ),
+                    forceStatus = true
                 )
                 if (!uploadQueue.contains(fileId) && activeUploadFileId.get() != fileId) {
                     uploadQueue.add(fileId)
@@ -350,8 +359,7 @@ class TransferManager private constructor(
                 while (isActive) {
                     val nextFileId = uploadQueue.poll() ?: break
 
-                    if (pauseRequestedFiles.contains(nextFileId)) {
-                        pauseRequestedFiles.remove(nextFileId)
+                    if (cancelledFiles.contains(nextFileId) || pauseRequestedFiles.contains(nextFileId)) {
                         continue
                     }
 
@@ -626,6 +634,13 @@ class TransferManager private constructor(
                 errorMessage: String? = null,
                 isChunking: Boolean = false
             ) {
+                if (cancelledFiles.contains(fileId)) {
+                    _transfers.update { it - fileId }
+                    return
+                }
+                if (!force && pauseRequestedFiles.contains(fileId) && status == FileStatus.UPLOADING) {
+                    return
+                }
                 val now = SystemClock.elapsedRealtime()
                 val last = lastUiEmissionMs.get()
                 // Throttle progress state emissions to ~8-10 updates per second (~100-125ms interval) unless forced
@@ -670,7 +685,8 @@ class TransferManager private constructor(
                         isChunking = isChunking,
                         isEncrypted = fileEntity.isEncrypted,
                         activeBotWorkers = MultiBotLoadBalancer.getInstance(context).botMetrics.value.size.coerceAtLeast(1)
-                    )
+                    ),
+                    forceStatus = force
                 )
             }
 
@@ -691,7 +707,7 @@ class TransferManager private constructor(
                     coroutineScope {
                         val workers = (0 until workerCount).map { workerId ->
                             launch(Dispatchers.IO) {
-                                while (isActive && !chunkQueue.isEmpty() && !pauseRequestedFiles.contains(fileId) && uploadFailedReason.get() == null) {
+                                while (isActive && !chunkQueue.isEmpty() && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId) && uploadFailedReason.get() == null) {
                                     // Dynamic load & thermal-aware concurrency: scale with available bot pool
                                     val baseAllowed = getEffectiveMaxConcurrency(context)
                                     val allowedConcurrency = if (botPool.size > 1 && baseAllowed >= 3) workerCount else baseAllowed
@@ -706,14 +722,13 @@ class TransferManager private constructor(
                                     val offset = chunks.filter { it.chunkIndex < chunkIndex }.sumOf { it.size }
                                     val chunkLength = chunk.size
 
-                                    inProgressBytesMap[chunkIndex] = 0L
-                                    publishProgress(force = false)
-
-                                    if (pauseRequestedFiles.contains(fileId)) {
-                                        inProgressBytesMap.remove(chunkIndex)
+                                    if (pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId)) {
                                         chunkQueue.add(chunk)
                                         break
                                     }
+
+                                    inProgressBytesMap[chunkIndex] = 0L
+                                    publishProgress(force = false)
 
                                     val rawChunkFile = File(chunksDir, "chunk_$chunkIndex.tpart")
                                     val (plainChunkFile, plainSha256) = if (!rawChunkFile.exists() || rawChunkFile.length() != chunkLength) {
@@ -755,13 +770,13 @@ class TransferManager private constructor(
                                     var lastError: String? = null
                                     var uploadedMessage: com.example.data.remote.TelegramMessage? = null
 
-                                    while (attempt < maxRetries && !chunkSuccess && isActive && !pauseRequestedFiles.contains(fileId) && uploadFailedReason.get() == null) {
+                                    while (attempt < maxRetries && !chunkSuccess && isActive && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId) && uploadFailedReason.get() == null) {
                                         attempt++
                                         // Reset this chunk's in-progress bytes for retry
                                         inProgressBytesMap[chunkIndex] = 0L
                                         publishProgress(force = false)
 
-                                        if (pauseRequestedFiles.contains(fileId)) break
+                                        if (pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId)) break
 
                                         val workerBotToken = loadBalancer.acquireBotForChunk(token)
                                         val uploadResult = try {
@@ -774,13 +789,21 @@ class TransferManager private constructor(
                                                 totalChunks = fileEntity.totalChunks,
                                                 chunkFile = readyChunkFile,
                                                 chunkSha256 = localSha256,
-                                                expectedChunkSize = expectedChunkSize
+                                                expectedChunkSize = expectedChunkSize,
+                                                shouldAbort = { !isActive || pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId) }
                                             ) { bytesWritten, _ ->
-                                                inProgressBytesMap[chunkIndex] = minOf(bytesWritten, chunkLength)
-                                                publishProgress(force = false)
+                                                if (!pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId)) {
+                                                    inProgressBytesMap[chunkIndex] = minOf(bytesWritten, chunkLength)
+                                                    publishProgress(force = false)
+                                                }
                                             }
                                         } finally {
                                             // Released below after checking result
+                                        }
+
+                                        if (pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId) || !isActive) {
+                                            loadBalancer.releaseBotForChunk(workerBotToken, 0L, false)
+                                            break
                                         }
 
                                         if (uploadResult.isSuccess) {
@@ -790,6 +813,9 @@ class TransferManager private constructor(
                                         } else {
                                             loadBalancer.releaseBotForChunk(workerBotToken, 0L, false)
                                             val exception = uploadResult.exceptionOrNull()
+                                            if (exception?.message == "Transfer aborted by user" || pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId)) {
+                                                break
+                                            }
                                             if (exception is TelegramApiException && exception.errorCode == 429) {
                                                 loadBalancer.markRateLimited(workerBotToken, 15)
                                             }
@@ -805,7 +831,7 @@ class TransferManager private constructor(
                                                 break
                                             }
 
-                                            if (attempt < maxRetries && !pauseRequestedFiles.contains(fileId) && uploadFailedReason.get() == null) {
+                                            if (attempt < maxRetries && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId) && uploadFailedReason.get() == null) {
                                                 inProgressBytesMap[chunkIndex] = 0L
                                                 val backoffMs = when (attempt) {
                                                     1 -> 2000L
@@ -818,7 +844,7 @@ class TransferManager private constructor(
                                                 publishProgress(force = true, errorMessage = retryStatusMsg)
 
                                                 var waited = 0L
-                                                while (waited < backoffMs && !pauseRequestedFiles.contains(fileId) && uploadFailedReason.get() == null) {
+                                                while (waited < backoffMs && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId) && uploadFailedReason.get() == null) {
                                                     val step = minOf(500L, backoffMs - waited)
                                                     delay(step)
                                                     waited += step
@@ -827,7 +853,7 @@ class TransferManager private constructor(
                                         }
                                     }
 
-                                    if (pauseRequestedFiles.contains(fileId)) {
+                                    if (pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId) || !isActive) {
                                         inProgressBytesMap.remove(chunkIndex)
                                         chunkQueue.add(chunk)
                                         break
@@ -893,10 +919,15 @@ class TransferManager private constructor(
                     }
                 }
 
+                // Check cancel condition first
+                if (cancelledFiles.contains(fileId)) {
+                    _transfers.update { it - fileId }
+                    return@coroutineScope
+                }
+
                 // Check pause condition
                 if (pauseRequestedFiles.contains(fileId)) {
-                    pauseRequestedFiles.remove(fileId)
-                    database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused by user")
+                    database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused")
                     publishProgress(force = true, status = FileStatus.PAUSED)
                     return@coroutineScope
                 }
@@ -1046,15 +1077,27 @@ class TransferManager private constructor(
                 File(context.cacheDir, "upload_chunks/$fileId").deleteRecursively()
 
             } catch (e: CancellationException) {
-                Log.i("TransferManager", "Upload paused for fileId=$fileId")
-                database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Upload paused by user")
-                publishProgress(force = true, status = FileStatus.PAUSED, isChunking = false)
+                if (cancelledFiles.contains(fileId)) {
+                    Log.i("TransferManager", "Upload cancelled for fileId=$fileId")
+                    _transfers.update { it - fileId }
+                } else {
+                    Log.i("TransferManager", "Upload paused for fileId=$fileId")
+                    database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused")
+                    publishProgress(force = true, status = FileStatus.PAUSED, isChunking = false)
+                }
             } catch (e: Throwable) {
-                val err = e.message ?: "Upload failed (${e::class.java.simpleName})"
-                Log.e("TransferManager", "Fatal error during upload for $fileId (${fileEntity.name}): $err", e)
-                database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
-                publishProgress(force = true, status = FileStatus.FAILED, errorMessage = err, isChunking = false)
-                _transferErrorEvents.tryEmit(err)
+                if (cancelledFiles.contains(fileId)) {
+                    _transfers.update { it - fileId }
+                } else if (pauseRequestedFiles.contains(fileId)) {
+                    database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused")
+                    publishProgress(force = true, status = FileStatus.PAUSED, isChunking = false)
+                } else {
+                    val err = e.message ?: "Upload failed (${e::class.java.simpleName})"
+                    Log.e("TransferManager", "Fatal error during upload for $fileId (${fileEntity.name}): $err", e)
+                    database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
+                    publishProgress(force = true, status = FileStatus.FAILED, errorMessage = err, isChunking = false)
+                    _transferErrorEvents.tryEmit(err)
+                }
             } finally {
                 activeJobs.remove(fileId)
             }
@@ -1065,6 +1108,7 @@ class TransferManager private constructor(
      */
     fun startDownload(fileId: String) {
         pauseRequestedFiles.remove(fileId)
+        cancelledFiles.remove(fileId)
         val job = scope.launch {
             var token = credentialsManager.getBotToken()
             if (token.isNullOrBlank()) {
@@ -1220,10 +1264,12 @@ class TransferManager private constructor(
                         }
                     }
 
-                    // Pause check at chunk boundary before starting chunk download
+                    // Cancel/Pause check at chunk boundary before starting chunk download
+                    if (cancelledFiles.contains(fileId)) {
+                        throw CancellationException("Download cancelled")
+                    }
                     if (pauseRequestedFiles.contains(fileId)) {
-                        pauseRequestedFiles.remove(fileId)
-                        database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused by user")
+                        database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused")
                         updateProgressState(
                             TransferProgress(
                                 fileId = fileId,
@@ -1236,7 +1282,8 @@ class TransferManager private constructor(
                                 totalBytes = fileEntity.size,
                                 speedBytesPerSec = 0L,
                                 status = FileStatus.PAUSED
-                            )
+                            ),
+                            forceStatus = true
                         )
                         return@launch
                     }
@@ -1253,7 +1300,7 @@ class TransferManager private constructor(
                     var chunkSuccess = false
                     var lastError: String? = null
 
-                    while (attempt < maxRetries && !chunkSuccess) {
+                    while (attempt < maxRetries && !chunkSuccess && isActive && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId)) {
                         attempt++
                         try {
                             var currentToken = token ?: credentialsManager.getBotToken()
@@ -1359,47 +1406,63 @@ class TransferManager private constructor(
                             var chunkWritten = 0L
                             var lastProgressUiUpdate = 0L
 
-                            body.byteStream().use { input ->
-                                FileOutputStream(chunkTempFile).use { output ->
-                                    val buffer = ByteArray(64 * 1024)
-                                    var read: Int
-                                    while (input.read(buffer).also { read = it } != -1) {
-                                        output.write(buffer, 0, read)
-                                        digest.update(buffer, 0, read)
-                                        chunkWritten += read
+                            val cancelCloseHandle = coroutineContext.job.invokeOnCompletion { cause ->
+                                if (cause != null) {
+                                    try {
+                                        body.close()
+                                    } catch (_: Throwable) {}
+                                }
+                            }
 
-                                        val now = System.currentTimeMillis()
-                                        val currentTotalDownloaded = (downloadedBytes + chunkWritten).coerceAtMost(fileEntity.size)
-                                        val liveSpeed = speedEstimator.addSample(now, currentTotalDownloaded)
+                            try {
+                                body.byteStream().use { input ->
+                                    FileOutputStream(chunkTempFile).use { output ->
+                                        val buffer = ByteArray(64 * 1024)
+                                        var read: Int
+                                        while (input.read(buffer).also { read = it } != -1) {
+                                            if (!isActive || pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId)) {
+                                                throw CancellationException("Download paused or cancelled")
+                                            }
+                                            output.write(buffer, 0, read)
+                                            digest.update(buffer, 0, read)
+                                            chunkWritten += read
 
-                                        val shouldUpdateUi = (now - lastProgressUiUpdate >= 100L) || (chunkWritten >= chunk.size)
-                                        if (shouldUpdateUi) {
-                                            lastProgressUiUpdate = now
-                                            val fraction = if (fileEntity.size > 0) {
-                                                (currentTotalDownloaded.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
-                                            } else 0f
+                                            val now = System.currentTimeMillis()
+                                            val currentTotalDownloaded = (downloadedBytes + chunkWritten).coerceAtMost(fileEntity.size)
+                                            val liveSpeed = speedEstimator.addSample(now, currentTotalDownloaded)
 
-                                            val remainingBytes = (fileEntity.size - currentTotalDownloaded).coerceAtLeast(0L)
-                                            val etaSec = if (liveSpeed > 0L && remainingBytes > 0L) remainingBytes / liveSpeed else null
+                                            val shouldUpdateUi = (now - lastProgressUiUpdate >= 100L) || (chunkWritten >= chunk.size)
+                                            if (shouldUpdateUi && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId)) {
+                                                lastProgressUiUpdate = now
+                                                val fraction = if (fileEntity.size > 0) {
+                                                    (currentTotalDownloaded.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
+                                                } else 0f
 
-                                            updateProgressState(
-                                                TransferProgress(
-                                                    fileId = fileId,
-                                                    fileName = fileEntity.name,
-                                                    isUpload = false,
-                                                    currentChunk = chunk.chunkIndex + 1,
-                                                    totalChunks = fileEntity.totalChunks,
-                                                    progressFraction = fraction,
-                                                    bytesTransferred = currentTotalDownloaded,
-                                                    totalBytes = fileEntity.size,
-                                                    speedBytesPerSec = liveSpeed,
-                                                    status = FileStatus.DOWNLOADING,
-                                                    etaSeconds = etaSec
+                                                val remainingBytes = (fileEntity.size - currentTotalDownloaded).coerceAtLeast(0L)
+                                                val etaSec = if (liveSpeed > 0L && remainingBytes > 0L) remainingBytes / liveSpeed else null
+
+                                                updateProgressState(
+                                                    TransferProgress(
+                                                        fileId = fileId,
+                                                        fileName = fileEntity.name,
+                                                        isUpload = false,
+                                                        currentChunk = chunk.chunkIndex + 1,
+                                                        totalChunks = fileEntity.totalChunks,
+                                                        progressFraction = fraction,
+                                                        bytesTransferred = currentTotalDownloaded,
+                                                        totalBytes = fileEntity.size,
+                                                        speedBytesPerSec = liveSpeed,
+                                                        status = FileStatus.DOWNLOADING,
+                                                        etaSeconds = etaSec,
+                                                        isEncrypted = fileEntity.isEncrypted
+                                                    )
                                                 )
-                                            )
+                                            }
                                         }
                                     }
                                 }
+                            } finally {
+                                cancelCloseHandle.dispose()
                             }
 
                             // Verify chunk SHA-256 integrity
@@ -1411,6 +1474,13 @@ class TransferManager private constructor(
 
                             chunkSuccess = true
                         } catch (e: Throwable) {
+                            if (chunkTempFile.exists() && chunkTempFile.length() != chunk.size) {
+                                chunkTempFile.delete()
+                            }
+                            if (e is CancellationException || !isActive || pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId)) {
+                                throw CancellationException("Download paused or cancelled")
+                            }
+
                             lastError = e.localizedMessage ?: "Download error"
                             val isTransient = isTransientNetworkError(e)
                             Log.w("TransferManager", "Download attempt $attempt/$maxRetries for chunk ${chunk.chunkIndex + 1}/${fileEntity.totalChunks} failed (isTransient=$isTransient): $lastError", e)
@@ -1424,7 +1494,7 @@ class TransferManager private constructor(
                                 break
                             }
 
-                            if (attempt < maxRetries) {
+                            if (attempt < maxRetries && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId)) {
                                 val backoffMs = when (attempt) {
                                     1 -> 2000L   // 2s
                                     2 -> 4000L   // 4s
@@ -1451,13 +1521,17 @@ class TransferManager private constructor(
 
                                 var waited = 0L
                                 while (waited < backoffMs) {
-                                    if (pauseRequestedFiles.contains(fileId)) break
+                                    if (pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId)) break
                                     val step = minOf(500L, backoffMs - waited)
                                     delay(step)
                                     waited += step
                                 }
                             }
                         }
+                    }
+
+                    if (cancelledFiles.contains(fileId) || pauseRequestedFiles.contains(fileId) || !isActive) {
+                        throw CancellationException("Download paused or cancelled")
                     }
 
                     if (!chunkSuccess) {
@@ -1476,7 +1550,8 @@ class TransferManager private constructor(
                                 speedBytesPerSec = 0L,
                                 status = FileStatus.FAILED,
                                 errorMessage = failReason
-                            )
+                            ),
+                            forceStatus = true
                         )
                         _transferErrorEvents.tryEmit(failReason)
                         notifyService("Download failed: ${fileEntity.name}")
@@ -1488,24 +1563,8 @@ class TransferManager private constructor(
                     completedChunks++
 
                     // Pause check at chunk boundary after chunk download
-                    if (pauseRequestedFiles.contains(fileId)) {
-                        pauseRequestedFiles.remove(fileId)
-                        database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused by user")
-                        updateProgressState(
-                            TransferProgress(
-                                fileId = fileId,
-                                fileName = fileEntity.name,
-                                isUpload = false,
-                                currentChunk = completedChunks,
-                                totalChunks = fileEntity.totalChunks,
-                                progressFraction = (downloadedBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
-                                bytesTransferred = downloadedBytes,
-                                totalBytes = fileEntity.size,
-                                speedBytesPerSec = 0L,
-                                status = FileStatus.PAUSED
-                            )
-                        )
-                        return@launch
+                    if (cancelledFiles.contains(fileId) || pauseRequestedFiles.contains(fileId)) {
+                        throw CancellationException("Download paused or cancelled")
                     }
                 }
 
@@ -1579,26 +1638,72 @@ class TransferManager private constructor(
                 }
 
             } catch (e: CancellationException) {
-                database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Download paused by user")
-            } catch (e: Exception) {
-                val err = e.message ?: "Download failed"
-                database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
-                updateProgressState(
-                    TransferProgress(
-                        fileId = fileId,
-                        fileName = fileEntity.name,
-                        isUpload = false,
-                        currentChunk = completedChunks,
-                        totalChunks = fileEntity.totalChunks,
-                        progressFraction = (downloadedBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
-                        bytesTransferred = downloadedBytes,
-                        totalBytes = fileEntity.size,
-                        speedBytesPerSec = 0L,
-                        status = FileStatus.FAILED,
-                        errorMessage = err
+                if (cancelledFiles.contains(fileId)) {
+                    database.fileDao().updateStatus(fileId, FileStatus.COMPLETED, null)
+                    _transfers.update { it - fileId }
+                } else {
+                    database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused")
+                    updateProgressState(
+                        TransferProgress(
+                            fileId = fileId,
+                            fileName = fileEntity.name,
+                            isUpload = false,
+                            currentChunk = completedChunks,
+                            totalChunks = fileEntity.totalChunks,
+                            progressFraction = (downloadedBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                            bytesTransferred = downloadedBytes,
+                            totalBytes = fileEntity.size,
+                            speedBytesPerSec = 0L,
+                            status = FileStatus.PAUSED,
+                            isEncrypted = fileEntity.isEncrypted
+                        ),
+                        forceStatus = true
                     )
-                )
-                _transferErrorEvents.tryEmit(err)
+                }
+            } catch (e: Exception) {
+                if (cancelledFiles.contains(fileId)) {
+                    database.fileDao().updateStatus(fileId, FileStatus.COMPLETED, null)
+                    _transfers.update { it - fileId }
+                } else if (pauseRequestedFiles.contains(fileId)) {
+                    database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused")
+                    updateProgressState(
+                        TransferProgress(
+                            fileId = fileId,
+                            fileName = fileEntity.name,
+                            isUpload = false,
+                            currentChunk = completedChunks,
+                            totalChunks = fileEntity.totalChunks,
+                            progressFraction = (downloadedBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                            bytesTransferred = downloadedBytes,
+                            totalBytes = fileEntity.size,
+                            speedBytesPerSec = 0L,
+                            status = FileStatus.PAUSED,
+                            isEncrypted = fileEntity.isEncrypted
+                        ),
+                        forceStatus = true
+                    )
+                } else {
+                    val err = e.message ?: "Download failed"
+                    database.fileDao().updateStatus(fileId, FileStatus.FAILED, err)
+                    updateProgressState(
+                        TransferProgress(
+                            fileId = fileId,
+                            fileName = fileEntity.name,
+                            isUpload = false,
+                            currentChunk = completedChunks,
+                            totalChunks = fileEntity.totalChunks,
+                            progressFraction = (downloadedBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f),
+                            bytesTransferred = downloadedBytes,
+                            totalBytes = fileEntity.size,
+                            speedBytesPerSec = 0L,
+                            status = FileStatus.FAILED,
+                            errorMessage = err,
+                            isEncrypted = fileEntity.isEncrypted
+                        ),
+                        forceStatus = true
+                    )
+                    _transferErrorEvents.tryEmit(err)
+                }
             } finally {
                 activeJobs.remove(fileId)
             }
@@ -1607,21 +1712,26 @@ class TransferManager private constructor(
     }
 
     /**
-     * Pauses an active upload or download job at the chunk boundary.
+     * Immediately pauses an active upload or download job and interrupts in-flight streams.
      */
     fun pauseTransfer(fileId: String) {
+        cancelledFiles.remove(fileId)
         pauseRequestedFiles.add(fileId)
         uploadQueue.remove(fileId)
         // Immediately reflect Paused state in UI
         _transfers.update { current ->
             val existing = current[fileId] ?: return@update current
-            current + (fileId to existing.copy(status = FileStatus.PAUSED, speedBytesPerSec = 0L))
+            current + (fileId to existing.copy(
+                status = FileStatus.PAUSED,
+                speedBytesPerSec = 0L,
+                etaSeconds = null,
+                isChunking = false
+            ))
         }
-        // Also cancel job in case it's in a long wait, while Room will safely retain completed chunks
-        activeJobs[fileId]?.cancel()
-        activeJobs.remove(fileId)
+        // Cancel job immediately so in-flight stream closes while Room retains completed chunks
+        activeJobs.remove(fileId)?.cancel()
         scope.launch {
-            database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused by user")
+            database.fileDao().updateStatus(fileId, FileStatus.PAUSED, "Paused")
         }
     }
 
@@ -1634,7 +1744,7 @@ class TransferManager private constructor(
             it.value.status == FileStatus.UPLOADING ||
                     it.value.status == FileStatus.DOWNLOADING ||
                     it.value.status == FileStatus.PENDING
-        }.keys
+        }.keys.toList()
         for (id in activeIds) {
             pauseTransfer(id)
         }
@@ -1646,7 +1756,7 @@ class TransferManager private constructor(
     fun resumeAll() {
         val paused = _transfers.value.filter {
             it.value.status == FileStatus.PAUSED || it.value.status == FileStatus.FAILED
-        }.values
+        }.values.toList()
         for (transfer in paused) {
             if (transfer.isUpload) {
                 startUpload(transfer.fileId)
@@ -1657,20 +1767,85 @@ class TransferManager private constructor(
     }
 
     /**
-     * Cancels a transfer: stops the job, cleans up partially uploaded/downloaded chunks,
-     * deletes messages if any, removes file record from database and transfer list.
+     * Cancels a transfer immediately:
+     * - For downloads: stops stream, removes from transfer queue, restores cloud file status to COMPLETED in Room,
+     *   and preserves already-verified .part chunks on disk for future resume.
+     * - For uploads: stops workers, removes incomplete file from Room & queue immediately, cleans staging/temp files,
+     *   and deletes any uploaded remote chunk messages in the background.
      */
     fun cancelTransfer(fileId: String) {
+        val existingTransfer = _transfers.value[fileId]
+        cancelledFiles.add(fileId)
         pauseRequestedFiles.remove(fileId)
         uploadQueue.remove(fileId)
-        activeJobs[fileId]?.cancel()
-        activeJobs.remove(fileId)
+        _transfers.update { it - fileId }
+        _recentlyCompleted.update { current -> current.filter { it.fileId != fileId } }
+        activeJobs.remove(fileId)?.cancel()
+
         scope.launch {
             try {
-                // Delete physical chunks and manifest, clean up staging and temp dirs, remove from Room
-                deleteFile(fileId)
+                val file = database.fileDao().getById(fileId)
+                val chunks = database.chunkDao().getChunksForFile(fileId)
+                val isDownload = existingTransfer?.isUpload == false ||
+                        (existingTransfer == null && file != null && (file.manifestMessageId != null || chunks.isNotEmpty() && chunks.all { it.isUploaded }))
+
+                if (isDownload) {
+                    // Restore cloud file status to COMPLETED so it stays in Vault and exits activeTransfers
+                    database.fileDao().updateStatus(fileId, FileStatus.COMPLETED, null)
+                    _transfers.update { it - fileId }
+
+                    // Keep completed verified .part chunks on disk for future resume; remove only partial/reassembly files
+                    val downloadTempDir = File(context.cacheDir, "downloads_temp/$fileId")
+                    if (downloadTempDir.exists()) {
+                        val chunkSizesByIdx = chunks.associate { it.chunkIndex to it.size }
+                        downloadTempDir.listFiles()?.forEach { tempFile ->
+                            val name = tempFile.name
+                            if (name.startsWith("assembled_") || name.endsWith(".dec.part")) {
+                                tempFile.delete()
+                            } else if (name.startsWith("chunk_") && name.endsWith(".part")) {
+                                val idx = name.removePrefix("chunk_").removeSuffix(".part").toIntOrNull()
+                                val expectedSize = idx?.let { chunkSizesByIdx[it] }
+                                if (expectedSize == null || tempFile.length() != expectedSize) {
+                                    tempFile.delete()
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Immediately remove incomplete upload from Room so UI never re-emits it
+                    database.chunkDao().deleteForFile(fileId)
+                    database.fileDao().deleteById(fileId)
+                    _transfers.update { it - fileId }
+
+                    // Clean local staging and upload chunk files
+                    file?.localPath?.let { path ->
+                        if (!path.startsWith("content://")) {
+                            val f = File(path)
+                            if (f.exists() && f.absolutePath.contains(context.cacheDir.absolutePath)) {
+                                f.delete()
+                            }
+                        }
+                    }
+                    File(context.cacheDir, "upload_staging/$fileId.tmp").delete()
+                    File(context.cacheDir, "upload_chunks/$fileId").deleteRecursively()
+                    File(context.cacheDir, "upload_manifests/$fileId.manifest.json").delete()
+
+                    // Clean up any already-uploaded chunk messages on Telegram in the background
+                    val token = credentialsManager.getBotToken()
+                    val chatId = credentialsManager.getChatId()
+                    if (!token.isNullOrBlank() && !chatId.isNullOrBlank()) {
+                        file?.manifestMessageId?.let { manifestMsgId ->
+                            repository.deleteMessage(token, chatId, manifestMsgId)
+                        }
+                        for (chunk in chunks) {
+                            chunk.telegramMessageId?.let { msgId ->
+                                repository.deleteMessage(token, chatId, msgId)
+                            }
+                        }
+                    }
+                }
             } catch (e: Exception) {
-                android.util.Log.e("TransferManager", "Error cleaning up cancelled transfer: ${e.message}")
+                Log.e("TransferManager", "Error cleaning up cancelled transfer: ${e.message}")
             } finally {
                 _transfers.update { it - fileId }
                 _recentlyCompleted.update { current -> current.filter { it.fileId != fileId } }
@@ -1690,9 +1865,10 @@ class TransferManager private constructor(
      * Cancels all active and queued transfers immediately.
      */
     fun cancelAllTransfers() {
-        activeJobs.forEach { (fileId, job) ->
-            pauseRequestedFiles.remove(fileId)
-            job.cancel()
+        uploadQueue.clear()
+        val allIds = (_transfers.value.keys + activeJobs.keys).toSet()
+        for (fileId in allIds) {
+            cancelTransfer(fileId)
         }
         activeJobs.clear()
         _transfers.value = emptyMap()
@@ -1872,9 +2048,26 @@ class TransferManager private constructor(
         }
     }
 
-    private fun updateProgressState(progress: TransferProgress) {
+    private fun updateProgressState(progress: TransferProgress, forceStatus: Boolean = false) {
+        if (cancelledFiles.contains(progress.fileId)) {
+            _transfers.update { it - progress.fileId }
+            return
+        }
+        if (!forceStatus && pauseRequestedFiles.contains(progress.fileId) &&
+            (progress.status == FileStatus.UPLOADING || progress.status == FileStatus.DOWNLOADING)
+        ) {
+            return
+        }
         _transfers.update { current ->
-            current + (progress.fileId to progress)
+            if (cancelledFiles.contains(progress.fileId)) {
+                current - progress.fileId
+            } else if (!forceStatus && pauseRequestedFiles.contains(progress.fileId) &&
+                (progress.status == FileStatus.UPLOADING || progress.status == FileStatus.DOWNLOADING)
+            ) {
+                current
+            } else {
+                current + (progress.fileId to progress)
+            }
         }
     }
 

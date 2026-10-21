@@ -239,19 +239,12 @@ fun ShareFileDialog(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = "Embed AES-256 Key (${CryptoStreamEngine.getKeyFingerprint(file.encryptionKeyBase64)})",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = colors.teal
-                                    )
-                                    Text(
-                                        text = "Allows recipient to decrypt chunks automatically",
-                                        fontSize = 10.5.sp,
-                                        color = colors.textDim
-                                    )
-                                }
+                                Text(
+                                    text = "Include Key (${CryptoStreamEngine.getKeyFingerprint(file.encryptionKeyBase64)})",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.teal
+                                )
                             }
                             Switch(
                                 checked = includeEncryptionKey,
@@ -373,17 +366,10 @@ fun ShareFileDialog(
                         )
                         Spacer(modifier = Modifier.height(14.dp))
                         Text(
-                            text = "Creating temporary relay share...",
+                            text = "Creating relay share...",
                             fontSize = 14.sp,
                             color = colors.text,
                             fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "Copying chunk messages to relay & generating single-use link",
-                            fontSize = 11.sp,
-                            color = colors.textDim,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                     } else if (activeShare != null && !activeShare.revoked) {
@@ -530,39 +516,7 @@ fun ShareFileDialog(
                             Spacer(modifier = Modifier.height(12.dp))
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(colors.surfaceHi)
-                                .padding(12.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.Security,
-                                    contentDescription = null,
-                                    tint = colors.teal,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = "Temporary, Revocable Relay",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = colors.text
-                                    )
-                                    Text(
-                                        text = "Creates a single-recipient invite link via your configured relay channel.",
-                                        fontSize = 11.sp,
-                                        color = colors.textDim,
-                                        lineHeight = 14.sp
-                                    )
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(4.dp))
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),

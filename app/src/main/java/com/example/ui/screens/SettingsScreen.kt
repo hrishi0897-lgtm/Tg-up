@@ -228,13 +228,6 @@ fun SettingsScreen(
             },
             text = {
                 Column {
-                    Text(
-                        text = "Enter a token for a backup bot that has been added as an Administrator to your storage channel. If your active bot is banned, TeleVault will automatically rotate to this token and regenerate file access.",
-                        fontSize = 13.sp,
-                        color = colors.textDim,
-                        lineHeight = 18.sp
-                    )
-                    Spacer(modifier = Modifier.height(14.dp))
                     OutlinedTextField(
                         value = newBotTokenInput,
                         onValueChange = { newBotTokenInput = it },
@@ -364,13 +357,6 @@ fun SettingsScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "This disaster recovery operation will rebuild your entire vault (folders, files, chunks) from televault_index.json in the backup channel. It will verify message retrievability and flag any incomplete files.",
-                        fontSize = 12.sp,
-                        color = colors.textDim,
-                        lineHeight = 16.sp
-                    )
-
                     OutlinedTextField(
                         value = restoreBackupChannelInput,
                         onValueChange = { restoreBackupChannelInput = it },
@@ -521,49 +507,6 @@ fun SettingsScreen(
             },
             text = {
                 Column {
-                    Text(
-                        text = "Standby bots enable instant zero-bandwidth chunk recovery via Telegram copyMessage if your primary bot gets banned.",
-                        fontSize = 13.sp,
-                        color = colors.textDim,
-                        lineHeight = 18.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Step by step instructions
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(colors.surfaceHi.copy(alpha = 0.6f))
-                            .padding(10.dp)
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = "Setup Steps in Telegram:",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = colors.violet
-                            )
-                            Text(
-                                text = "1. Create a bot with @BotFather in Telegram.",
-                                fontSize = 11.sp,
-                                color = colors.textDim
-                            )
-                            Text(
-                                text = "2. Open your Telegram storage channel > Administrators > Add Administrator, and add this bot (bots cannot add other bots via API).",
-                                fontSize = 11.sp,
-                                color = colors.textDim
-                            )
-                            Text(
-                                text = "3. Enter the bot token below to register & verify.",
-                                fontSize = 11.sp,
-                                color = colors.textDim
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
                     OutlinedTextField(
                         value = standbyBotLabelInput,
                         onValueChange = { standbyBotLabelInput = it },
@@ -694,48 +637,10 @@ fun SettingsScreen(
             text = {
                 Column {
                     Text(
-                        text = "This recovery flow is designed for when your primary bot is banned or restricted by Telegram.",
+                        text = "Switch active credentials and rebind vault chunks to ${bot.label}?",
                         fontSize = 13.sp,
                         color = colors.text,
                         fontWeight = FontWeight.Medium
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(colors.surfaceHi.copy(alpha = 0.6f))
-                            .padding(10.dp)
-                    ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = "How copyMessage Recovery Works:",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = colors.violet
-                            )
-                            Text(
-                                text = "• 0 MB mobile data: Telegram copies messages server-side inside Telegram's cloud.",
-                                fontSize = 11.sp,
-                                color = colors.textDim
-                            )
-                            Text(
-                                text = "• Generates fresh file_ids and binds chunks to ${bot.label}.",
-                                fontSize = 11.sp,
-                                color = colors.textDim
-                            )
-                            Text(
-                                text = "• Updates your active credentials to use this standby bot going forward.",
-                                fontSize = 11.sp,
-                                color = colors.textDim
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        text = "Note: Recovery runs per-chunk and reports real-time progress. Standby bots cost zero bandwidth during normal operation.",
-                        fontSize = 12.sp,
-                        color = colors.textFaint
                     )
                 }
             },
@@ -1210,14 +1115,9 @@ fun SettingsScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Multi-Bot Parallel Load Balancer",
-                                    fontSize = 12.5.sp,
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = colors.teal
-                                )
-                                Text(
-                                    text = "Distributes chunks across active & verified standby bots with adaptive HTTP 429 backoff",
-                                    fontSize = 11.sp,
-                                    color = colors.textDim
                                 )
                             }
                             Spacer(modifier = Modifier.width(8.dp))
@@ -1253,19 +1153,13 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "Storage Analytics & Duplicate Scanner",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = colors.text
-                                        )
-                                        Text(
-                                            text = "Category breakdown, largest files, and SHA-256 duplicate cleanup",
-                                            fontSize = 11.sp,
-                                            color = colors.textDim
-                                        )
-                                    }
+                                    Text(
+                                        text = "Storage Analytics",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.text,
+                                        modifier = Modifier.weight(1f)
+                                    )
                                     Text(
                                         text = "Open ➔",
                                         fontSize = 12.sp,
@@ -1292,19 +1186,13 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "Auto Folder Sync & Camera Backup",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = colors.text
-                                        )
-                                        Text(
-                                            text = "Watch local folders & schedule background AES-256 encrypted sync",
-                                            fontSize = 11.sp,
-                                            color = colors.textDim
-                                        )
-                                    }
+                                    Text(
+                                        text = "Auto Folder Sync",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.text,
+                                        modifier = Modifier.weight(1f)
+                                    )
                                     Text(
                                         text = "Configure ➔",
                                         fontSize = 12.sp,
@@ -1331,19 +1219,13 @@ fun SettingsScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "Import Zero-Knowledge Shared Link / QR",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = colors.text
-                                        )
-                                        Text(
-                                            text = "Import televault://share links or scan encrypted QR codes",
-                                            fontSize = 11.sp,
-                                            color = colors.textDim
-                                        )
-                                    }
+                                    Text(
+                                        text = "Import Shared Link / QR",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = colors.text,
+                                        modifier = Modifier.weight(1f)
+                                    )
                                     Text(
                                         text = "Import ➔",
                                         fontSize = 12.sp,
@@ -1466,11 +1348,6 @@ fun SettingsScreen(
                                         fontWeight = FontWeight.Bold,
                                         color = colors.text
                                     )
-                                    Text(
-                                        text = "Display encrypted QR code to pair a secondary phone or tablet",
-                                        fontSize = 11.sp,
-                                        color = colors.textDim
-                                    )
                                 }
                                 Icon(
                                     imageVector = Icons.Default.QrCode,
@@ -1545,11 +1422,6 @@ fun SettingsScreen(
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (primaryBotAlert != null) colors.danger else colors.mint
-                            )
-                            Text(
-                                text = "Polled every 15 min & on app foreground via getMe",
-                                fontSize = 11.5.sp,
-                                color = colors.textDim
                             )
                         }
 
@@ -1693,18 +1565,9 @@ fun SettingsScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    Text(
-                        text = "Telegram limits file downloads to the bot that uploaded them unless copied. Standby bots use copyMessage to recover chunk access server-side with zero data usage if your primary bot is banned.",
-                        fontSize = 12.sp,
-                        color = colors.textDim,
-                        lineHeight = 16.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // 1. Persistent Honest Protection Level Indicator
+                    // 1. Protection Level Indicator
                     if (verifiedStandbyBotsCount > 0) {
                         Box(
                             modifier = Modifier
@@ -1714,29 +1577,20 @@ fun SettingsScreen(
                                 .border(1.dp, colors.mint.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                                 .padding(12.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.Top) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.Shield,
                                     contentDescription = null,
                                     tint = colors.mint,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = "Protected: $verifiedStandbyBotsCount standby bot(s) verified",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = colors.mint
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "If your primary bot is banned, file access can be recovered server-side via copyMessage with 0 MB mobile data usage.",
-                                        fontSize = 11.sp,
-                                        color = colors.textDim,
-                                        lineHeight = 15.sp
-                                    )
-                                }
+                                Text(
+                                    text = "$verifiedStandbyBotsCount standby bot(s) verified",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.mint
+                                )
                             }
                         }
                     } else if (standbyBots.isNotEmpty()) {
@@ -1748,86 +1602,25 @@ fun SettingsScreen(
                                 .border(1.dp, colors.amber.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
                                 .padding(12.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.Top) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.Warning,
                                     contentDescription = null,
                                     tint = colors.amber,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = "Action Required: Standby bots unverified",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = colors.amber
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "${standbyBots.size} standby bot(s) added, but channel membership has not been verified yet. Tap 'Verify Membership' below.",
-                                        fontSize = 11.sp,
-                                        color = colors.textDim,
-                                        lineHeight = 15.sp
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(colors.danger.copy(alpha = 0.08f))
-                                .border(1.dp, colors.danger.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                .padding(12.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.Top) {
-                                Icon(
-                                    imageVector = Icons.Default.Warning,
-                                    contentDescription = null,
-                                    tint = colors.danger,
-                                    modifier = Modifier.size(20.dp)
+                                Text(
+                                    text = "Standby bots unverified",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.amber
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = "No standby bots configured",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = colors.danger
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "Files are only accessible through your primary bot. If Telegram bans your bot, chunks cannot be recovered without manual re-upload.",
-                                        fontSize = 11.sp,
-                                        color = colors.textDim,
-                                        lineHeight = 15.sp
-                                    )
-                                }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Honest limitation notice
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(colors.surfaceHi.copy(alpha = 0.4f))
-                            .padding(8.dp)
-                    ) {
-                        Text(
-                            text = "ℹ Limitation Notice: Standby bots protect against individual bot bans by maintaining channel membership beforehand. They cannot protect if the Telegram channel itself is deleted or if all registered bots are banned simultaneously.",
-                            fontSize = 10.sp,
-                            color = colors.textFaint,
-                            lineHeight = 14.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     // 2. Standby Bots List
                     if (standbyBots.isNotEmpty()) {
@@ -1993,10 +1786,9 @@ fun SettingsScreen(
                         }
                     } else {
                         Text(
-                            text = "No standby bots registered. Add a bot to enable zero-bandwidth recovery in case of primary bot bans.",
+                            text = "No standby bots registered",
                             fontSize = 12.sp,
-                            color = colors.textFaint,
-                            lineHeight = 16.sp
+                            color = colors.textFaint
                         )
                     }
 
@@ -2044,15 +1836,6 @@ fun SettingsScreen(
                 colors = colors
             ) {
                 Column {
-                    Text(
-                        text = "Telegram limits standard bot downloads to 20MB per file via getFile. Slices are capped at 18MB to ensure safe headroom for multipart overhead and reliable resumption.",
-                        fontSize = 12.sp,
-                        color = colors.textDim,
-                        lineHeight = 16.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(14.dp))
-
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -2120,13 +1903,6 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Restricts large multi-chunk uploads & downloads to Wi-Fi to preserve mobile data.",
-                                fontSize = 11.sp,
-                                color = colors.textDim,
-                                lineHeight = 15.sp
-                            )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Switch(
@@ -2171,17 +1947,6 @@ fun SettingsScreen(
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = if (isOptimized) {
-                                    "Battery optimizations are exempted. Multi-GB background transfers will run uninterrupted."
-                                } else {
-                                    "Exempt TeleVault from battery optimizations so long-running transfers are not paused by the OS."
-                                },
-                                fontSize = 11.sp,
-                                color = colors.textDim,
-                                lineHeight = 14.sp
                             )
                         }
                         Spacer(modifier = Modifier.width(8.dp))
@@ -2254,13 +2019,6 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "When enabled, shows a folder selector when files are shared to TeleVault from Gallery, Files, or browsers. When disabled, uploads directly to root Vault.",
-                                fontSize = 11.sp,
-                                color = colors.textDim,
-                                lineHeight = 15.sp
-                            )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Switch(
@@ -2284,12 +2042,6 @@ fun SettingsScreen(
                 colors = colors
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text(
-                        text = "Mirror all chunks to a secondary Telegram channel via server-side copyMessage (zero extra mobile data). A standardized televault_index.json is auto-published and pinned to both channels, allowing a full restore even on a fresh install without your local database.",
-                        fontSize = 12.sp,
-                        color = colors.textDim,
-                        lineHeight = 16.sp
-                    )
 
                     // Backup Channel Configuration Section
                     Box(
@@ -2410,13 +2162,6 @@ fun SettingsScreen(
                                 }
                             }
 
-                            Text(
-                                text = "Downloads the latest televault_index.json from the backup channel, rebuilds all folders and files, maps backup message IDs as primary, and checks chunk integrity.",
-                                fontSize = 11.sp,
-                                color = colors.textDim,
-                                lineHeight = 15.sp
-                            )
-
                             OutlinedButton(
                                 onClick = {
                                     restoreBackupChannelInput = backupChatId ?: ""
@@ -2447,12 +2192,6 @@ fun SettingsScreen(
                 colors = colors
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = "Disposable relay channels generate single-recipient invite links with automatic expiration, keeping your primary vault completely hidden.",
-                        fontSize = 12.sp,
-                        color = colors.textDim,
-                        lineHeight = 16.sp
-                    )
 
                     // Relay Chat ID Configuration Row
                     Box(
@@ -2609,14 +2348,6 @@ fun SettingsScreen(
                     colors = colors
                 ) {
                     Column {
-                        Text(
-                            text = "Starts an actual synthetic 5-chunk multi-part transfer to Telegram. It uploads chunk 1, simulates a pause/resume cycle, confirms completed chunks are never re-uploaded, and verifies full stream integrity.",
-                            fontSize = 12.sp,
-                            color = colors.textDim,
-                            lineHeight = 16.sp
-                        )
-
-                        Spacer(modifier = Modifier.height(14.dp))
 
                         // Primary Gradient CTA Button
                         val gradientBrush = Brush.horizontalGradient(
@@ -2787,13 +2518,6 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = if (isDarkTheme) "Deep black high-contrast OLED palette" else "Clean modern light paper palette",
-                                fontSize = 11.sp,
-                                color = colors.textDim,
-                                lineHeight = 15.sp
-                            )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Switch(
@@ -2824,17 +2548,10 @@ fun SettingsScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Recycle Bin",
+                                text = "Recycle Bin ($trashCount)",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Deleted files are safely retained for 30 days before permanent automatic purge. Currently $trashCount file(s) in bin.",
-                                fontSize = 11.sp,
-                                color = colors.textDim,
-                                lineHeight = 15.sp
                             )
                         }
                         Spacer(modifier = Modifier.width(12.dp))
@@ -2891,16 +2608,6 @@ fun SettingsScreen(
                             fontWeight = FontWeight.SemiBold,
                             color = colors.text
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (isHighRefresh)
-                                "Unlocked to hardware peak of $maxFps Hz with full GPU hardware acceleration for ultra-fluid scrolling."
-                            else
-                                "Configured to device peak ($maxFps Hz) with full GPU hardware acceleration.",
-                            fontSize = 11.sp,
-                            color = colors.textDim,
-                            lineHeight = 15.sp
-                        )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Box(
@@ -2919,50 +2626,6 @@ fun SettingsScreen(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isHighRefresh) colors.mint else colors.text
-                        )
-                    }
-                }
-            }
-
-            // 7. Footnote Card (AES-256-GCM)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = colors.surface),
-                shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(colors.violet.copy(alpha = 0.12f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Security,
-                            contentDescription = null,
-                            tint = colors.violet,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            text = "Hardware KeyStore Encryption",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.text
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "All credentials and bot tokens are encrypted via AES-256-GCM. Direct transfer to Telegram Cloud API with zero intermediate servers.",
-                            fontSize = 11.sp,
-                            color = colors.textDim,
-                            lineHeight = 15.sp
                         )
                     }
                 }

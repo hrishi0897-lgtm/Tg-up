@@ -202,20 +202,14 @@ fun BatchUploadFolderDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Zero-Knowledge AES-256-GCM",
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = BodySansFont,
-                            color = if (encryptBeforeUpload) colors.teal else colors.text
-                        )
-                        Text(
-                            text = if (encryptBeforeUpload) "Chunks encrypted on-device before upload" else "Standard unencrypted chunk upload",
-                            fontSize = 11.sp,
-                            color = colors.textDim
-                        )
-                    }
+                    Text(
+                        text = "AES-256-GCM Encryption",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = BodySansFont,
+                        color = if (encryptBeforeUpload) colors.teal else colors.text,
+                        modifier = Modifier.weight(1f)
+                    )
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
@@ -311,20 +305,14 @@ fun BatchUploadFolderDialog(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Spacer(modifier = Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Vault Root",
-                                        fontSize = 13.sp,
-                                        fontFamily = BodySansFont,
-                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                        color = if (isSelected) colors.teal else colors.text
-                                    )
-                                    Text(
-                                        text = "Primary vault directory",
-                                        fontSize = 11.sp,
-                                        color = colors.textFaint
-                                    )
-                                }
+                                Text(
+                                    text = "Vault Root",
+                                    fontSize = 13.sp,
+                                    fontFamily = BodySansFont,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) colors.teal else colors.text,
+                                    modifier = Modifier.weight(1f)
+                                )
                                 if (isSelected) {
                                     Icon(
                                         imageVector = Icons.Default.Check,

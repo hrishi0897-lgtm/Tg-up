@@ -593,7 +593,7 @@ fun FileDetailSheet(
                     if (onOpenPreview != null) {
                         ActionItem(
                             icon = Icons.Default.PlayArrow,
-                            label = "In-App Media & Document Preview",
+                            label = "Preview",
                             iconTint = colors.teal,
                             labelColor = colors.text,
                             onClick = {

@@ -1533,22 +1533,6 @@ private fun EmptyFolderState(
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Dimmed body copy
-        Text(
-            text = if (isSearch)
-                "Try searching for a different keyword or file name in the vault."
-            else
-                "Upload a file of any size — TeleVault splits it into encrypted chunks and stores them across Telegram, with no limit on how much you keep.",
-            fontSize = 13.5.sp,
-            lineHeight = 21.sp,
-            fontFamily = BodySansFont,
-            color = colors.textDim,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.widthIn(max = 270.dp)
-        )
-
         if (!isSearch) {
             Spacer(modifier = Modifier.height(22.dp))
 

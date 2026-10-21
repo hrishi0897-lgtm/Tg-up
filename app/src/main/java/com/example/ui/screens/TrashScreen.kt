@@ -151,52 +151,6 @@ fun TrashScreen(
                 .padding(innerPadding)
                 .padding(horizontal = 16.dp)
         ) {
-            // 30-day retention notice banner
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = colors.surface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, colors.line)
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(colors.violet.copy(alpha = 0.15f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = "Retention Info",
-                            tint = colors.violet,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "30-Day Auto-Purge",
-                            fontFamily = BodySansFont,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                            color = colors.text
-                        )
-                        Text(
-                            text = "Files in the Recycle Bin are permanently deleted after 30 days. Restoring returns them to your vault.",
-                            fontFamily = BodySansFont,
-                            fontSize = 12.sp,
-                            color = colors.textDim,
-                            lineHeight = 16.sp
-                        )
-                    }
-                }
-            }
 
             if (trashFiles.isEmpty()) {
                 TrashEmptyState(colors = colors)
@@ -579,12 +533,6 @@ private fun TrashTopBar(
                         }
                     }
                 }
-                Text(
-                    text = "Soft-deleted vault items",
-                    fontFamily = BodySansFont,
-                    fontSize = 12.sp,
-                    color = colors.textDim
-                )
             }
         }
 
@@ -648,15 +596,6 @@ private fun TrashEmptyState(colors: com.example.ui.theme.TeleVaultColors) {
                 text = "Recycle Bin is empty",
                 style = EmptyHeadlineStyle,
                 color = colors.text
-            )
-
-            Text(
-                text = "Files deleted from your vault will stay here for 30 days before being permanently removed.",
-                fontFamily = BodySansFont,
-                fontSize = 13.sp,
-                color = colors.textDim,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                lineHeight = 18.sp
             )
         }
     }

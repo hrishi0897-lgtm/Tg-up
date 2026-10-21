@@ -72,19 +72,12 @@ fun PairDeviceDialog(
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "Pair Another Device",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.text
-                    )
-                    Text(
-                        text = "Scan from TeleVault setup screen",
-                        fontSize = 12.sp,
-                        color = colors.textDim
-                    )
-                }
+                Text(
+                    text = "Pair Device",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.text
+                )
             }
         },
         text = {
@@ -92,34 +85,6 @@ fun PairDeviceDialog(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Security Warning Box
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(StatusWarning.copy(alpha = 0.12f))
-                        .border(1.dp, StatusWarning.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                        .padding(12.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Icon(
-                            imageVector = Icons.Default.Warning,
-                            contentDescription = null,
-                            tint = StatusWarning,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Anyone who scans this QR code gets access to your vault credentials. Only show this to your trusted secondary device and close immediately when paired.",
-                            fontSize = 12.sp,
-                            color = colors.text,
-                            lineHeight = 16.sp
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
                 // In-memory QR code image
                 if (qrBitmap != null) {
                     Box(
@@ -147,17 +112,6 @@ fun PairDeviceDialog(
                         CircularProgressIndicator(color = colors.violet, strokeWidth = 2.dp)
                     }
                 }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Text(
-                    text = "1. Open TeleVault on your other phone or tablet\n2. Tap \"Scan QR to Pair\" on the onboarding screen\n3. Point the camera at this QR code",
-                    fontSize = 12.sp,
-                    color = colors.textDim,
-                    lineHeight = 18.sp,
-                    textAlign = TextAlign.Start,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         },
         confirmButton = {

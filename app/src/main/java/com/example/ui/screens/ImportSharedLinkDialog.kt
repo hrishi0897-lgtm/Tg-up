@@ -60,9 +60,9 @@ fun ImportSharedLinkDialog(
                 inputUri = scanned
                 onImportShareUri(scanned, true)
             },
-            scannerTitle = "Share QR Scanner",
-            bottomTitle = "Scan Encrypted Share QR",
-            bottomSubtitle = "Point the camera at a TeleVault Encrypted Share QR code to import and decrypt the file."
+            scannerTitle = "Scan QR",
+            bottomTitle = "Scan Share QR",
+            bottomSubtitle = ""
         )
     }
 
@@ -87,19 +87,12 @@ fun ImportSharedLinkDialog(
                     )
                 }
                 Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "Import Shared Encrypted Link",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = colors.text
-                    )
-                    Text(
-                        text = "Paste a televault://share link or scan QR",
-                        fontSize = 11.5.sp,
-                        color = colors.textDim
-                    )
-                }
+                Text(
+                    text = "Import Share Link",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.text
+                )
             }
         },
         text = {
