@@ -10,6 +10,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -376,6 +377,9 @@ private fun TrashSelectionTopBar(
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
@@ -400,8 +404,10 @@ private fun TrashSelectionTopBar(
                 text = "$selectedCount selected",
                 fontFamily = BodySansFont,
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                color = colors.text
+                fontSize = 15.sp,
+                color = colors.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
 
@@ -432,6 +438,7 @@ private fun TrashSelectionTopBar(
                     containerColor = colors.violet.copy(alpha = 0.2f),
                     contentColor = colors.violet
                 ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                 shape = RoundedCornerShape(10.dp),
                 elevation = null,
                 modifier = Modifier.testTag("bulk_restore_btn")
@@ -443,7 +450,7 @@ private fun TrashSelectionTopBar(
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Restore", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("Restore", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
 
             Button(
@@ -452,6 +459,7 @@ private fun TrashSelectionTopBar(
                     containerColor = colors.danger.copy(alpha = 0.2f),
                     contentColor = colors.danger
                 ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                 shape = RoundedCornerShape(10.dp),
                 elevation = null,
                 modifier = Modifier.testTag("bulk_delete_forever_btn")
@@ -463,7 +471,7 @@ private fun TrashSelectionTopBar(
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Delete", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("Delete", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }
     }
@@ -484,6 +492,9 @@ private fun TrashTopBar(
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Row(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {

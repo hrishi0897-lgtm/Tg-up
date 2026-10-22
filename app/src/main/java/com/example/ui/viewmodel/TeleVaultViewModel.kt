@@ -69,7 +69,6 @@ enum class AppScreen {
     FOLDER_MANAGEMENT,
     TRASH,
     PREVIEW,
-    ANALYTICS,
     FOLDER_SYNC
 }
 
@@ -1366,13 +1365,6 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun navigateToTrashScreen() {
         _uiState.update { it.copy(currentScreen = AppScreen.TRASH) }
-    }
-
-    fun navigateToAnalyticsScreen() {
-        viewModelScope.launch(Dispatchers.IO) {
-            multiBotLoadBalancer.getActiveBotPool()
-        }
-        _uiState.update { it.copy(currentScreen = AppScreen.ANALYTICS) }
     }
 
     fun navigateToFolderSyncScreen() {

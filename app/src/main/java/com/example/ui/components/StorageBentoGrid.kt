@@ -186,7 +186,6 @@ fun StorageBentoGrid(
     onCategoryClick: (StorageCategory) -> Unit,
     activeTransfersCount: Int = 0,
     onTransfersClick: () -> Unit = {},
-    onOpenAnalytics: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalTeleVaultColors.current
@@ -242,15 +241,10 @@ fun StorageBentoGrid(
                 .background(colors.surface)
                 .background(colors.violet.copy(alpha = if (colors.isDark) 0.06f else 0.04f))
                 .border(1.dp, colors.violet.copy(alpha = 0.28f), RoundedCornerShape(24.dp))
-                .then(
-                    if (onOpenAnalytics != null) {
-                        Modifier.clickable { onOpenAnalytics() }
-                    } else Modifier
-                )
                 .padding(horizontal = 20.dp, vertical = 18.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
-                // Header row: "Vault storage" caption + "No archive limit" / Analytics pill badge
+                // Header row: "Vault storage" caption + "No archive limit" pill badge
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -268,28 +262,6 @@ fun StorageBentoGrid(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        if (onOpenAnalytics != null) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(100.dp))
-                                    .background(colors.violet.copy(alpha = 0.14f))
-                                    .border(1.dp, colors.violet.copy(alpha = 0.35f), RoundedCornerShape(100.dp))
-                                    .clickable { onOpenAnalytics() }
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                                    .testTag("btn_open_analytics_dashboard")
-                            ) {
-                                Text(
-                                    text = "Analytics ➔",
-                                    fontSize = 11.sp,
-                                    fontFamily = BodySansFont,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = colors.violet
-                                )
-                            }
-                        }
-
                         // "No archive limit" Pill Badge in Signature Violet
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

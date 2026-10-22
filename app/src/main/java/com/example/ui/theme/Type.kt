@@ -26,8 +26,8 @@ val WordmarkTextStyle = TextStyle(
     fontFamily = DisplaySerifFont,
     fontStyle = FontStyle.Italic,
     fontWeight = FontWeight.Normal,
-    fontSize = 33.sp,
-    lineHeight = 35.sp,
+    fontSize = 24.sp,
+    lineHeight = 28.sp,
     color = Color.Unspecified
 )
 

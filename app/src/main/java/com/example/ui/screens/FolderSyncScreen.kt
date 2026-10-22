@@ -144,14 +144,14 @@ fun FolderSyncScreen(
                     enabled = !isSyncingFolders,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = colors.teal,
-                        contentColor = Color.Black
+                        contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     if (isSyncingFolders) {
                         CircularProgressIndicator(
-                            color = Color.Black,
+                            color = Color.White,
                             strokeWidth = 2.dp,
                             modifier = Modifier.size(14.dp)
                         )
@@ -166,7 +166,8 @@ fun FolderSyncScreen(
                     Text(
                         text = "Sync All",
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
                     )
                 }
             }
@@ -247,6 +248,7 @@ fun FolderSyncScreen(
                                 containerColor = colors.violet,
                                 contentColor = Color.White
                             ),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .weight(1f)
@@ -260,8 +262,10 @@ fun FolderSyncScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Link Folder",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
 
@@ -270,6 +274,7 @@ fun FolderSyncScreen(
                                 defaultTagsInput = "Camera,Photos"
                                 folderPickerLauncher.launch(null)
                             },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                             shape = RoundedCornerShape(12.dp),
                             border = androidx.compose.foundation.BorderStroke(1.dp, colors.teal),
                             modifier = Modifier.weight(1f)
@@ -283,9 +288,11 @@ fun FolderSyncScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Camera Backup",
-                                fontSize = 13.sp,
+                                fontSize = 12.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = colors.teal
+                                color = colors.teal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }

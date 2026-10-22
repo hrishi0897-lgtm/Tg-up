@@ -1,50 +1,47 @@
-# TeleVault (TGC) — UI Cleanup, +5px Typography Boost & White Settings Theme
+# TeleVault (TGC) — Button Layout Fixes & Removal of Storage Analytics Page
 
-Streamline the Home screen by removing the filter pill row and connection/sync status banners, surface **⚡ Auto Sync** and **🔗 Import Link/QR** in Settings, increase typography size by 5px across the entire app, and style the Settings screen with crisp **White** accents instead of Signature Violet (while keeping Signature Violet on the rest of the app).
+Fix the squished top-right Settings button and enforce strict button dimensions across the entire app so every 3D button, icon button, and action pill renders at its full, crisp shape, and completely remove the Storage Analytics page and all of its entry points.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> All four of your requested updates are captured below while preserving the **Signature Violet** single-color theme across the rest of the app.
+> This plan directly addresses the squished top-right Settings button visible in your screenshot, guarantees proper button proportions across all screens, and removes the Storage Analytics page everywhere.
 
-- **Confirmed Decision 1 — Remove Home Filter Row & Move Actions to Settings**:
-  - Remove the horizontal chip bar (`All Files`, `🔒 AES-256`, `📦 >20 MB`, `🕒 Recent 7d`, `⚡ Auto Sync`, `🔗 Import Link/QR`) from the Home screen.
-  - Display **⚡ Auto Sync** and **🔗 Import Link/QR** prominently as dedicated action rows in the Settings screen.
-- **Confirmed Decision 2 — Remove Connection & Sync Banners from Home Screen**:
-  - Remove the `● Backend connected` pill and the `Sync complete: discovered ... from Telegram.` notification banner shown in your screenshot from the Home screen.
-- **Confirmed Decision 3 — +5px Text Size Increase Throughout the App**:
-  - Increase font sizes across the global typography scale (`Type.kt`), theme density font scaling (`Theme.kt`), and screen text components by **+5px** so all labels, titles, file names, stats, and buttons are significantly larger and easier to read.
-- **Confirmed Decision 4 — White Accent Theme in Settings Screen**:
-  - Keep **Signature Violet** as the accent color across the main app, but override the Settings screen palette to use **White (`#FFFFFF`)** instead of Signature Violet for all icons, borders, switches, badges, and action buttons (using dark contrast text on solid white buttons so button labels remain crisp and readable).
+- **Confirmed Decision 1 — Fix Top-Bar & App-Wide Button Proportions**:
+  - **Root Cause Fixed**: In `HomeTopBar`, the enlarged `"TeleVault"` wordmark pushed the 4 header action buttons (`Theme`, `Recycle Bin`, `Resync`, `Settings`) to the right edge, squishing the `Settings` gear button into a narrow vertical strip.
+  - **Solution**: Constrain the left brand column in `HomeTopBar` with `Modifier.weight(1f)` and a balanced wordmark size (`24.sp`), reduce inter-button spacing to `6.dp`, and enforce fixed non-shrinkable dimensions (`requiredSize`) on `IconButton3D`, `SquareButton3D`, and `Fab3D` so no button can ever be compressed horizontally.
+- **Confirmed Decision 2 — Completely Remove the Storage Analytics Page**:
+  - Remove the **`Analytics ➔`** button from the Hero "Vault storage" card on the Home screen (`StorageBentoGrid.kt`).
+  - Remove the **`Storage Analytics`** row from the Settings screen (`SettingsScreen.kt`).
+  - Remove the `StorageAnalyticsScreen` destination from `MainActivity.kt`.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Cleans up visual clutter above the file list on the Home screen, relocates **⚡ Auto Sync** and **🔗 Import Link/QR** into Settings, boosts app-wide text legibility by +5px, and gives the Settings screen a monochrome **White-on-Dark** aesthetic while keeping **Signature Violet** on the Home, Transfers, and Preview screens.
-- **Target Audience / Persona**: Users who want a cleaner, higher-legibility vault interface with larger text and fewer status banners crowding the main file view.
-- **Key Value**: More vertical space for files on the Home screen, larger and more readable typography everywhere, and a distinct monochrome White aesthetic inside Settings.
+- **What It Does**: Ensures every interactive button across the Home, Transfers, and Settings screens renders with symmetrical, unclipped geometry even with the larger typography scale, and removes the Storage Analytics screen and buttons.
+- **Target Audience / Persona**: Users who want a clean, well-proportioned interface where every button is immediately tappable and properly aligned.
+- **Key Value**: Eliminates the squished Settings gear button in the top bar and declutters the Hero storage card and Settings screen by removing Analytics.
 
 ---
 
 ## 2. User Experience & Visual Design
 
 - **Key User Flows**:
-  1. **Streamlined Home Screen**: Opens directly to the Top Bar, Storage Bento Grid, Search + Sort/View row, and Vault Files list—without the `Backend connected` pill, `Sync complete` banner, or horizontal filter chip row.
-  2. **Settings Screen Actions (`⚡ Auto Sync` & `🔗 Import Link/QR`)**: Inside Settings, users can immediately tap **⚡ Auto Sync** (to configure automatic device folder backup) and **🔗 Import Link/QR** (to import shared links or scan QR codes into `Download/TGC`).
-  3. **Monochrome White Settings Screen**: Every section icon, active badge, border highlight, switch thumb/track, and action button inside Settings uses pure **White (`#FFFFFF`)** instead of Signature Violet.
-  4. **+5px Larger Text Everywhere**: All headings, file titles, metadata subtitles, storage counters, transfer progress labels, and settings rows render +5px larger across the entire app.
+  1. **Balanced Home Top Bar**: Displays the 44dp TeleVault mark, `"TeleVault"` title, and `"Synced just now"` subtitle on the left (`weight(1f)`), while all four `38.dp × 38.dp` 3D header buttons (`Theme`, `Recycle Bin`, `Resync`, `Settings`) sit cleanly on the right with full square proportions.
+  2. **Streamlined Hero Storage Card**: Shows `"Vault storage"` on the left and the single `"● No archive limit"` badge on the right—with the `"Analytics ➔"` pill removed.
+  3. **Streamlined Settings Screen**: Under `VAULT PRO SUITE & AUTOMATION`, displays the Multi-Bot Load Balancer status, **`⚡ Auto Sync`**, and **`🔗 Import Link/QR`**—with `"Storage Analytics"` removed.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Scoped White Palette Override in `SettingsScreen`**
-  - *Chosen Approach*: Provide a Settings-scoped `TeleVaultColors` instance inside `SettingsScreen` where all accent tokens (`violet`, `teal`, `amber`, `mint`, `danger`) map to `Color.White`, and pair solid white buttons with `Color.Black` (`colors.bg`) content text.
-  - *Why*: Ensures every card, icon, badge, text field focus border, and button in Settings uses White instead of Signature Violet without affecting the Signature Violet theme on the Home and Transfers screens.
-- **Decision 2: App-Wide +5px Typography Scaling**
-  - *Chosen Approach*: Increase base `TextStyle` sizes in `Type.kt` and apply a global `fontScale` boost in `TeleVaultTheme` (`Theme.kt`) so both Material typography styles and explicit `.sp` text elements scale up uniformly by +5px across every screen and dialog.
-  - *Why*: Guarantees complete, consistent text enlargement across all screens without missing inline `fontSize` declarations.
+- **Decision 1: Non-Shrinkable 3D Button Sizing & Weighted Top Bar**
+  - *Chosen Approach*: Give the brand section `Modifier.weight(1f)` in `HomeTopBar`, tune `WordmarkTextStyle` to `24.sp` so it never crowds the action buttons on compact screens, and enforce fixed square dimensions on `IconButton3D` (`38.dp`) and `SquareButton3D` (`44.dp`).
+  - *Why*: Prevents Compose `Row` layouts from ever squishing trailing icon buttons when text scales up.
+- **Decision 2: Complete Removal of Storage Analytics**
+  - *Chosen Approach*: Remove the `"Analytics ➔"` pill from `StorageBentoGrid`, remove the `"Storage Analytics"` row from `SettingsScreen`, and remove the `StorageAnalyticsScreen` route from `MainActivity`.
+  - *Why*: The Home screen's `StorageBentoGrid` already provides the live Documents, Media, Other, and Vault Items breakdown directly on the main screen.
 
 ---
 
@@ -52,28 +49,24 @@ Streamline the Home screen by removing the filter pill row and connection/sync s
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                        TeleVaultTheme (Theme.kt / Type.kt)               │
-│  • Main App Accent: Signature Violet (#7C6BFF)                           │
-│  • Global Typography Boost: +5px across Type.kt & LocalDensity fontScale │
+│                     HomeTopBar & Button3D Components                     │
+│  • Brand Row: Modifier.weight(1f) + 24.sp Wordmark (single line)         │
+│  • Action Row: 4x IconButton3D (38.dp fixed square, 6.dp spacing)        │
+│    [ ☀️ Theme ]  [ 🗑️ Bin ]  [ ↻ Resync ]  [ ⚙️ Settings ]               │
 └───────────────────┬──────────────────────────────────┬───────────────────┘
                     │                                  │
                     ▼                                  ▼
 ┌──────────────────────────────────────┐  ┌────────────────────────────────┐
-│            HomeScreen.kt             │  │       SettingsScreen.kt        │
-│ • REMOVED: "Backend connected" pill  │  │ • Accent Override: White       │
-│ • REMOVED: "Sync complete" banner    │  │   (#FFFFFF) instead of Violet  │
-│ • REMOVED: Horizontal filter &       │  │ • Action Rows:                 │
-│   action chip row                    │  │   - ⚡ Auto Sync               │
-│ • KEPT: Signature Violet theme       │  │   - 🔗 Import Link/QR          │
+│         StorageBentoGrid.kt          │  │       SettingsScreen.kt        │
+│ • Hero Header:                       │  │ • VAULT PRO SUITE Card:        │
+│   "Vault storage" | "No archive limit│  │   - Multi-Bot Load Balancer    │
+│ • REMOVED: "Analytics ➔" button      │  │   - ⚡ Auto Sync               │
+│   and hero card click-to-analytics   │  │   - 🔗 Import Link/QR          │
+│                                      │  │ • REMOVED: "Storage Analytics" │
 └──────────────────────────────────────┘  └────────────────────────────────┘
 ```
 
 - **Interactive Component & State Mapping**:
-  - **Home Screen Cleanup (`HomeScreen.kt`)**:
-    - Remove `item(key = "connection_status_pill")` (`Backend connected` pill).
-    - Remove `item(key = "resync_banner")` (`Sync complete: discovered...` banner).
-    - Remove the `Row` containing `All Files`, `🔒 AES-256`, `📦 >20 MB`, `🕒 Recent 7d`, `⚡ Auto Sync`, and `🔗 Import Link/QR` under `search_and_filter_row`.
-  - **Settings Screen White Theme & Quick Actions (`SettingsScreen.kt`)**:
-    - Override `colors` in `SettingsScreen` with `Color.White` for all accent properties (`violet`, `teal`, `amber`, `mint`, `danger`) and `Color(0xFFCCCCCC)` for `violetDim`.
-    - Update primary buttons in `SettingsScreen` that use `containerColor = colors.violet` to use `contentColor = colors.bg` (`Color.Black`) so text on white buttons is high-contrast.
-    - Display **⚡ Auto Sync** (`settings_open_folder_sync_button`) and **🔗 Import Link/QR** (`settings_import_share_link_button`) with clear labels and icons in the Settings screen.
+  - **`HomeTopBar` (`HomeScreen.kt`)**: Wrap the brand `Row` in `Modifier.weight(1f).padding(end = 8.dp)` and set `maxLines = 1` on `"TeleVault"` so all 4 `IconButton3D` controls always have their full `38.dp` width.
+  - **`StorageBentoGrid` (`StorageBentoGrid.kt`)**: Remove `btn_open_analytics_dashboard` (`Analytics ➔`) and hero card `onOpenAnalytics` click modifier.
+  - **`SettingsScreen` (`SettingsScreen.kt`) & `MainActivity` (`MainActivity.kt`)**: Remove `settings_open_analytics_button` and the `StorageAnalyticsScreen` navigation branch.

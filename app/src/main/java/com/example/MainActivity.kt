@@ -114,7 +114,6 @@ import android.view.WindowManager
 import com.example.ui.viewmodel.AppScreen
 import com.example.ui.viewmodel.TeleVaultViewModel
 import com.example.ui.screens.TrashScreen
-import com.example.ui.screens.StorageAnalyticsScreen
 import com.example.ui.screens.FolderSyncScreen
 import com.example.ui.screens.ImportSharedLinkDialog
 
@@ -388,11 +387,6 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         viewModel.navigateToVaultScreen()
     }
 
-    // Handle back button for analytics screen
-    BackHandler(enabled = uiState.currentScreen == AppScreen.ANALYTICS) {
-        viewModel.navigateToVaultScreen()
-    }
-
     // Handle back button for folder sync screen
     BackHandler(enabled = uiState.currentScreen == AppScreen.FOLDER_SYNC) {
         viewModel.navigateToVaultScreen()
@@ -428,8 +422,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                                 AppScreen.FOLDER_MANAGEMENT -> 3
                                 AppScreen.TRASH -> 4
                                 AppScreen.PREVIEW -> 5
-                                AppScreen.ANALYTICS -> 6
-                                AppScreen.FOLDER_SYNC -> 7
+                                AppScreen.FOLDER_SYNC -> 6
                             }
                             val targetOrder = when (targetScreen) {
                                 AppScreen.VAULT -> 0
@@ -438,8 +431,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                                 AppScreen.FOLDER_MANAGEMENT -> 3
                                 AppScreen.TRASH -> 4
                                 AppScreen.PREVIEW -> 5
-                                AppScreen.ANALYTICS -> 6
-                                AppScreen.FOLDER_SYNC -> 7
+                                AppScreen.FOLDER_SYNC -> 6
                             }
                             if (targetOrder >= initialOrder) {
                                 (slideInHorizontally(
@@ -520,20 +512,6 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         onMove = { viewModel.setItemToMove(previewFile) },
                         onRename = { viewModel.setFileToRename(previewFile) },
                         onDelete = { viewModel.deleteFile(previewFile.id) }
-                    )
-                } else if (currentScreen == AppScreen.ANALYTICS) {
-                    val storageStats by viewModel.storageStats.collectAsState()
-                    val allCompletedFiles by viewModel.allCompletedFiles.collectAsState()
-                    val botMetrics by viewModel.multiBotStatuses.collectAsState()
-                    StorageAnalyticsScreen(
-                        stats = storageStats,
-                        allFiles = allCompletedFiles,
-                        botMetrics = botMetrics,
-                        onBack = { viewModel.navigateToVaultScreen() },
-                        onInspectFile = { viewModel.inspectFile(it) },
-                        onCleanupDuplicates = { duplicateIds ->
-                            duplicateIds.forEach { id -> viewModel.deleteFile(id) }
-                        }
                     )
                 } else if (currentScreen == AppScreen.FOLDER_SYNC) {
                     val syncFolders by viewModel.syncFolders.collectAsState()
@@ -997,7 +975,6 @@ private fun HomeScreenContainer(
         onOpenTrash = { viewModel.navigateToTrashScreen() },
         trashCount = trashCount,
         onOpenFolderManagement = { viewModel.navigateToFolderManagementScreen() },
-        onOpenAnalytics = { viewModel.navigateToAnalyticsScreen() },
         onOpenFolderSync = { viewModel.navigateToFolderSyncScreen() },
         onImportSharedLink = { viewModel.openImportSharedLinkDialog() },
         onResync = { viewModel.manualSyncFromHeader() },
@@ -1100,10 +1077,6 @@ private fun SettingsScreenContainer(
         onPairDeviceClick = { viewModel.openPairDeviceDialog() },
         trashCount = trashCount,
         onNavigateToTrash = { viewModel.navigateToTrashScreen() },
-        onNavigateToAnalytics = {
-            onDismiss()
-            viewModel.navigateToAnalyticsScreen()
-        },
         onNavigateToFolderSync = {
             onDismiss()
             viewModel.navigateToFolderSyncScreen()

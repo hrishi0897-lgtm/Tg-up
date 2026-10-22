@@ -163,7 +163,6 @@ fun SettingsScreen(
     onPairDeviceClick: (() -> Unit)? = null,
     trashCount: Int = 0,
     onNavigateToTrash: (() -> Unit)? = null,
-    onNavigateToAnalytics: (() -> Unit)? = null,
     onNavigateToFolderSync: (() -> Unit)? = null,
     onImportSharedLink: (() -> Unit)? = null,
     onDisconnect: () -> Unit,
@@ -1121,8 +1120,8 @@ fun SettingsScreen(
                 }
             }
 
-            // 0. Vault Pro Suite (Analytics, Auto Folder Sync, Encrypted Share Import, Multi-Bot Pool)
-            if (onNavigateToAnalytics != null || onNavigateToFolderSync != null || onImportSharedLink != null) {
+            // 0. Vault Pro Suite (Auto Folder Sync, Encrypted Share Import, Multi-Bot Pool)
+            if (onNavigateToFolderSync != null || onImportSharedLink != null) {
                 SettingsCard(
                     icon = Icons.Default.Shield,
                     title = "VAULT PRO SUITE & AUTOMATION",
@@ -1163,39 +1162,6 @@ fun SettingsScreen(
                                     fontFamily = FontFamily.Monospace,
                                     color = colors.teal
                                 )
-                            }
-                        }
-
-                        if (onNavigateToAnalytics != null) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(colors.surfaceHi.copy(alpha = 0.65f))
-                                    .border(1.dp, colors.line, RoundedCornerShape(10.dp))
-                                    .clickable { onNavigateToAnalytics() }
-                                    .padding(horizontal = 14.dp, vertical = 12.dp)
-                                    .testTag("settings_open_analytics_button")
-                            ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text(
-                                        text = "Storage Analytics",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = colors.text,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    Text(
-                                        text = "Open ➔",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = colors.violet
-                                    )
-                                }
                             }
                         }
 
@@ -1742,7 +1708,13 @@ fun SettingsScreen(
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .padding(end = 4.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
                                                 // Verify Membership Button
                                                 TextButton(
                                                     onClick = {
@@ -1762,7 +1734,7 @@ fun SettingsScreen(
                                                             color = colors.violet
                                                         )
                                                         Spacer(modifier = Modifier.width(4.dp))
-                                                        Text("Verifying...", fontSize = 11.sp, color = colors.violet)
+                                                        Text("Verifying...", fontSize = 11.sp, color = colors.violet, maxLines = 1)
                                                     } else {
                                                         Icon(
                                                             imageVector = Icons.Default.Refresh,
@@ -1771,7 +1743,7 @@ fun SettingsScreen(
                                                             tint = colors.violet
                                                         )
                                                         Spacer(modifier = Modifier.width(4.dp))
-                                                        Text("Verify Membership", fontSize = 11.sp, color = colors.violet, fontWeight = FontWeight.SemiBold)
+                                                        Text("Verify Membership", fontSize = 11.sp, color = colors.violet, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                                     }
                                                 }
 
@@ -1792,7 +1764,7 @@ fun SettingsScreen(
                                                         tint = colors.violet
                                                     )
                                                     Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Switch & Recover", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    Text("Switch & Recover", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                                                 }
                                             }
 

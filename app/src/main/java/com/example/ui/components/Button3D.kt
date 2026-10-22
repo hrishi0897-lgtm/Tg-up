@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -119,7 +120,7 @@ fun IconButton3D(
 ) {
     Button3D(
         onClick = onClick,
-        modifier = modifier.size(size),
+        modifier = modifier.requiredSize(size),
         enabled = enabled,
         shape = shape,
         backgroundColor = backgroundColor,
@@ -149,7 +150,7 @@ fun SquareButton3D(
 ) {
     Button3D(
         onClick = onClick,
-        modifier = modifier.size(size),
+        modifier = modifier.requiredSize(size),
         enabled = enabled,
         shape = shape,
         backgroundColor = backgroundColor,
@@ -176,7 +177,7 @@ fun Fab3D(
     val colors = LocalTeleVaultColors.current
     Button3D(
         onClick = onClick,
-        modifier = modifier.size(size),
+        modifier = modifier.requiredSize(size),
         enabled = enabled,
         shape = shape,
         backgroundColor = colors.violet,

@@ -234,7 +234,6 @@ fun HomeScreen(
     onBulkDelete: () -> Unit = {},
     trashCount: Int = 0,
     onOpenTrash: () -> Unit = {},
-    onOpenAnalytics: () -> Unit = {},
     onOpenFolderSync: () -> Unit = {},
     onImportSharedLink: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -636,8 +635,7 @@ fun HomeScreen(
                         selectedCategory = if (selectedCategory == clickedCat) null else clickedCat
                     },
                     activeTransfersCount = activeCount,
-                    onTransfersClick = onOpenTransfers,
-                    onOpenAnalytics = onOpenAnalytics
+                    onTransfersClick = onOpenTransfers
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
@@ -1056,14 +1054,17 @@ private fun HomeTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 22.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Top
+        verticalAlignment = Alignment.CenterVertically
     ) {
         // Brand: 44dp Icon Mark + Serif Wordmark + Tagline
         Row(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             // Gradient app icon mark (14dp corner radius, 44x44dp, shadow glow)
             Box(
@@ -1123,7 +1124,9 @@ private fun HomeTopBar(
             Column {
                 Text(
                     text = "TeleVault",
-                    style = WordmarkTextStyle.copy(color = colors.text)
+                    style = WordmarkTextStyle.copy(color = colors.text),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 SyncedStatusText(
@@ -1135,7 +1138,7 @@ private fun HomeTopBar(
 
         // Header Action Buttons with 3D pressed edge shadow (38dp)
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Theme toggle 3D icon button (sun when dark, moon when light)
@@ -1254,7 +1257,9 @@ private fun SyncedStatusText(
             text = statusText,
             fontSize = 11.sp,
             fontFamily = BodySansFont,
-            color = if (isResyncing) colors.teal else colors.textFaint
+            color = if (isResyncing) colors.teal else colors.textFaint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -2359,6 +2364,9 @@ fun BulkSelectionTopBar(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
