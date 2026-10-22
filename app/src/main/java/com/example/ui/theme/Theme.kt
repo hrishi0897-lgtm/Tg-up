@@ -67,9 +67,17 @@ fun TeleVaultTheme(
     }
 
     val reduceMotion = rememberReduceMotion()
+    val baseDensity = androidx.compose.ui.platform.LocalDensity.current
+    val boostedDensity = androidx.compose.runtime.remember(baseDensity) {
+        androidx.compose.ui.unit.Density(
+            density = baseDensity.density,
+            fontScale = baseDensity.fontScale * 1.18f
+        )
+    }
     CompositionLocalProvider(
         LocalTeleVaultColors provides colors,
-        LocalReduceMotion provides reduceMotion
+        LocalReduceMotion provides reduceMotion,
+        androidx.compose.ui.platform.LocalDensity provides boostedDensity
     ) {
         MaterialTheme(
             colorScheme = colorScheme,

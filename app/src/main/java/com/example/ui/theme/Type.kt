@@ -26,8 +26,8 @@ val WordmarkTextStyle = TextStyle(
     fontFamily = DisplaySerifFont,
     fontStyle = FontStyle.Italic,
     fontWeight = FontWeight.Normal,
-    fontSize = 28.sp,
-    lineHeight = 30.sp,
+    fontSize = 33.sp,
+    lineHeight = 35.sp,
     color = Color.Unspecified
 )
 
@@ -35,32 +35,32 @@ val EmptyHeadlineStyle = TextStyle(
     fontFamily = DisplaySerifFont,
     fontStyle = FontStyle.Normal,
     fontWeight = FontWeight.Normal,
-    fontSize = 22.sp,
-    lineHeight = 28.sp,
+    fontSize = 27.sp,
+    lineHeight = 33.sp,
     color = Color.Unspecified
 )
 
 val MonoStatValueLarge = TextStyle(
     fontFamily = NumericMonoFont,
     fontWeight = FontWeight.SemiBold,
-    fontSize = 19.sp,
-    lineHeight = 22.sp,
+    fontSize = 24.sp,
+    lineHeight = 27.sp,
     color = Color.Unspecified
 )
 
 val MonoStatValueMedium = TextStyle(
     fontFamily = NumericMonoFont,
     fontWeight = FontWeight.Medium,
-    fontSize = 14.sp,
-    lineHeight = 18.sp,
+    fontSize = 19.sp,
+    lineHeight = 23.sp,
     color = Color.Unspecified
 )
 
 val MonoStatValueSmall = TextStyle(
     fontFamily = NumericMonoFont,
     fontWeight = FontWeight.Normal,
-    fontSize = 12.5.sp,
-    lineHeight = 16.sp,
+    fontSize = 17.5.sp,
+    lineHeight = 21.sp,
     color = Color.Unspecified
 )
 
@@ -70,79 +70,79 @@ val Typography = Typography(
         fontFamily = DisplaySerifFont,
         fontStyle = FontStyle.Italic,
         fontWeight = FontWeight.Normal,
-        fontSize = 36.sp,
-        lineHeight = 40.sp,
+        fontSize = 41.sp,
+        lineHeight = 45.sp,
         color = Color.Unspecified
     ),
     displayMedium = TextStyle(
         fontFamily = DisplaySerifFont,
         fontStyle = FontStyle.Italic,
         fontWeight = FontWeight.Normal,
-        fontSize = 28.sp,
-        lineHeight = 32.sp,
+        fontSize = 33.sp,
+        lineHeight = 37.sp,
         color = Color.Unspecified
     ),
     headlineLarge = TextStyle(
         fontFamily = DisplaySerifFont,
         fontWeight = FontWeight.Normal,
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
+        fontSize = 27.sp,
+        lineHeight = 33.sp,
         color = Color.Unspecified
     ),
     headlineMedium = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 18.sp,
-        lineHeight = 24.sp,
+        fontSize = 23.sp,
+        lineHeight = 29.sp,
         color = Color.Unspecified
     ),
     titleLarge = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
-        lineHeight = 22.sp,
+        fontSize = 21.sp,
+        lineHeight = 27.sp,
         color = Color.Unspecified
     ),
     titleMedium = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 14.sp,
-        lineHeight = 18.sp,
+        fontSize = 19.sp,
+        lineHeight = 23.sp,
         color = Color.Unspecified
     ),
     bodyLarge = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.Normal,
-        fontSize = 14.sp,
-        lineHeight = 20.sp,
+        fontSize = 19.sp,
+        lineHeight = 25.sp,
         color = Color.Unspecified
     ),
     bodyMedium = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.Normal,
-        fontSize = 13.sp,
-        lineHeight = 18.sp,
+        fontSize = 18.sp,
+        lineHeight = 23.sp,
         color = Color.Unspecified
     ),
     bodySmall = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.Normal,
-        fontSize = 11.sp,
-        lineHeight = 15.sp,
+        fontSize = 16.sp,
+        lineHeight = 20.sp,
         color = Color.Unspecified
     ),
     labelLarge = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 13.sp,
-        lineHeight = 16.sp,
+        fontSize = 18.sp,
+        lineHeight = 21.sp,
         color = Color.Unspecified
     ),
     labelSmall = TextStyle(
         fontFamily = BodySansFont,
         fontWeight = FontWeight.Medium,
-        fontSize = 10.sp,
-        lineHeight = 14.sp,
+        fontSize = 15.sp,
+        lineHeight = 19.sp,
         color = Color.Unspecified
     )
 )

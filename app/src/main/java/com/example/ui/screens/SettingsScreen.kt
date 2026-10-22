@@ -170,7 +170,18 @@ fun SettingsScreen(
     onDismiss: () -> Unit,
     onStartTestTransfer: (() -> Unit)? = null
 ) {
-    val colors = LocalTeleVaultColors.current
+    val baseColors = LocalTeleVaultColors.current
+    val colors = remember(baseColors) {
+        baseColors.copy(
+            violet = Color.White,
+            violetDim = Color(0xFFB0B8C8),
+            teal = Color.White,
+            amber = Color.White,
+            mint = Color.White,
+            danger = Color.White
+        )
+    }
+    val onWhiteAccent = Color(0xFF0A0C12)
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     var showDisconnectDialog by remember { mutableStateOf(false) }
@@ -256,11 +267,14 @@ fun SettingsScreen(
                         showAddTokenDialog = false
                         newBotTokenInput = ""
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.violet),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.violet,
+                        contentColor = onWhiteAccent
+                    ),
                     enabled = newBotTokenInput.trim().isNotBlank(),
                     modifier = Modifier.testTag("confirm_add_bot_button")
                 ) {
-                    Text("Add to Pool", fontWeight = FontWeight.Bold)
+                    Text("Add to Pool", fontWeight = FontWeight.Bold, color = onWhiteAccent)
                 }
             },
             dismissButton = {
@@ -322,11 +336,11 @@ fun SettingsScreen(
                     },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = colors.danger,
-                        contentColor = Color.White
+                        contentColor = onWhiteAccent
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Disconnect", fontWeight = FontWeight.Bold)
+                    Text("Disconnect", fontWeight = FontWeight.Bold, color = onWhiteAccent)
                 }
             },
             dismissButton = {
@@ -382,18 +396,21 @@ fun SettingsScreen(
                         onRestoreFromBackup?.invoke(restoreBackupChannelInput.trim())
                     },
                     enabled = !isRestoringBackup && restoreBackupChannelInput.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.teal)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.teal,
+                        contentColor = onWhiteAccent
+                    )
                 ) {
                     if (isRestoringBackup) {
                         CircularProgressIndicator(
                             strokeWidth = 2.dp,
-                            color = Color.White,
+                            color = onWhiteAccent,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Restoring Vault...")
+                        Text("Restoring Vault...", color = onWhiteAccent)
                     } else {
-                        Text("Start Restore")
+                        Text("Start Restore", color = onWhiteAccent)
                     }
                 }
             },
@@ -461,9 +478,12 @@ fun SettingsScreen(
                         showRestoreBackupDialog = false
                         onDismissRestoreResult?.invoke()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.teal)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.teal,
+                        contentColor = onWhiteAccent
+                    )
                 ) {
-                    Text("Done")
+                    Text("Done", color = onWhiteAccent)
                 }
             }
         )
@@ -575,16 +595,19 @@ fun SettingsScreen(
                             }
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.violet),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.violet,
+                        contentColor = onWhiteAccent
+                    ),
                     enabled = standbyBotTokenInput.trim().isNotBlank() && !isAddingStandbyBot,
                     modifier = Modifier.testTag("confirm_add_standby_bot_button")
                 ) {
                     if (isAddingStandbyBot) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = onWhiteAccent, strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Checking...", fontWeight = FontWeight.Bold)
+                        Text("Checking...", fontWeight = FontWeight.Bold, color = onWhiteAccent)
                     } else {
-                        Text("Add & Verify", fontWeight = FontWeight.Bold)
+                        Text("Add & Verify", fontWeight = FontWeight.Bold, color = onWhiteAccent)
                     }
                 }
             },
@@ -651,11 +674,14 @@ fun SettingsScreen(
                         botToRecover = null
                         onStartStandbyRecovery?.invoke(targetBot)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.violet),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.violet,
+                        contentColor = onWhiteAccent
+                    ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.testTag("confirm_standby_recovery_button")
                 ) {
-                    Text("Start Recovery", fontWeight = FontWeight.Bold)
+                    Text("Start Recovery", fontWeight = FontWeight.Bold, color = onWhiteAccent)
                 }
             },
             dismissButton = {
@@ -860,10 +886,13 @@ fun SettingsScreen(
             confirmButton = {
                 Button(
                     onClick = { onResetStandbyRecoveryState?.invoke() },
-                    colors = ButtonDefaults.buttonColors(containerColor = colors.danger),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colors.danger,
+                        contentColor = onWhiteAccent
+                    ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Dismiss", fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Dismiss", fontWeight = FontWeight.Bold, color = onWhiteAccent)
                 }
             }
         )
@@ -1068,7 +1097,7 @@ fun SettingsScreen(
                                 onClick = { botToRecover = bestBot },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = colors.violet,
-                                    contentColor = Color.White
+                                    contentColor = onWhiteAccent
                                 ),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier
@@ -1187,7 +1216,7 @@ fun SettingsScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
-                                        text = "Auto Folder Sync",
+                                        text = "⚡ Auto Sync",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.text,
@@ -1220,7 +1249,7 @@ fun SettingsScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
-                                        text = "Import Shared Link / QR",
+                                        text = "🔗 Import Link/QR",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.text,
@@ -1888,7 +1917,7 @@ fun SettingsScreen(
                                         Icon(
                                             imageVector = Icons.Default.Check,
                                             contentDescription = null,
-                                            tint = Color.White,
+                                            tint = onWhiteAccent,
                                             modifier = Modifier
                                                 .size(14.dp)
                                                 .padding(end = 4.dp)
@@ -1898,7 +1927,7 @@ fun SettingsScreen(
                                         text = "$size MB",
                                         fontSize = 13.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else colors.text
+                                        color = if (isSelected) onWhiteAccent else colors.text
                                     )
                                 }
                             }
@@ -1933,7 +1962,7 @@ fun SettingsScreen(
                             checked = isWifiOnly,
                             onCheckedChange = onWifiOnlyChange,
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
+                                checkedThumbColor = onWhiteAccent,
                                 checkedTrackColor = colors.violet,
                                 uncheckedThumbColor = colors.textFaint,
                                 uncheckedTrackColor = colors.surfaceHi
@@ -2011,7 +2040,7 @@ fun SettingsScreen(
                                 },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = colors.violet,
-                                    contentColor = Color.White
+                                    contentColor = onWhiteAccent
                                 ),
                                 shape = RoundedCornerShape(8.dp),
                                 modifier = Modifier.pressScale(0.90f),
@@ -2049,7 +2078,7 @@ fun SettingsScreen(
                             checked = isShareSheetAskFolder,
                             onCheckedChange = { onShareSheetAskFolderChange?.invoke(it) },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
+                                checkedThumbColor = onWhiteAccent,
                                 checkedTrackColor = colors.violet,
                                 uncheckedThumbColor = colors.textFaint,
                                 uncheckedTrackColor = colors.surfaceHi
@@ -2136,9 +2165,12 @@ fun SettingsScreen(
                                             isEditingBackupChat = false
                                             onBackupChatIdChange?.invoke(backupChatInput.trim().takeIf { it.isNotBlank() })
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = colors.teal)
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = colors.teal,
+                                            contentColor = onWhiteAccent
+                                        )
                                     ) {
-                                        Text("Save Channel")
+                                        Text("Save Channel", color = onWhiteAccent)
                                     }
                                 }
                             }
@@ -2277,10 +2309,13 @@ fun SettingsScreen(
                                             onRelayChatIdChange?.invoke(relayChatInput.trim())
                                             isEditingRelayChat = false
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = colors.violet),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = colors.violet,
+                                            contentColor = onWhiteAccent
+                                        ),
                                         shape = RoundedCornerShape(8.dp)
                                     ) {
-                                        Text("Save", fontSize = 12.sp)
+                                        Text("Save", fontSize = 12.sp, color = onWhiteAccent)
                                     }
                                 }
                             }
@@ -2373,22 +2408,13 @@ fun SettingsScreen(
                 ) {
                     Column {
 
-                        // Primary Gradient CTA Button
-                        val gradientBrush = Brush.horizontalGradient(
-                            listOf(colors.violet, Color(0xFF6C5CE7))
-                        )
-
+                        // Primary Solid White CTA Button
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(46.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(if (testTransferRunning) colors.surfaceHi else colors.violet)
-                                .then(
-                                    if (!testTransferRunning) {
-                                        Modifier.background(gradientBrush)
-                                    } else Modifier
-                                )
                                 .clickable(enabled = !testTransferRunning) {
                                     onStartTestTransfer()
                                 }
@@ -2417,7 +2443,7 @@ fun SettingsScreen(
                                     Icon(
                                         imageVector = Icons.Default.Science,
                                         contentDescription = null,
-                                        tint = Color.White,
+                                        tint = onWhiteAccent,
                                         modifier = Modifier.size(18.dp)
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
@@ -2425,7 +2451,7 @@ fun SettingsScreen(
                                         text = "Start 5-Chunk Test Transfer",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White
+                                        color = onWhiteAccent
                                     )
                                 }
                             }
@@ -2548,7 +2574,7 @@ fun SettingsScreen(
                             checked = isDarkTheme,
                             onCheckedChange = { onToggleTheme() },
                             colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
+                                checkedThumbColor = onWhiteAccent,
                                 checkedTrackColor = colors.violet,
                                 uncheckedThumbColor = colors.textFaint,
                                 uncheckedTrackColor = colors.surfaceHi

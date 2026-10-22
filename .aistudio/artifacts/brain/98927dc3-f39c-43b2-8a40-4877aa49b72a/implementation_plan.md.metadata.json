@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to unify the entire application around a single Signature Violet color theme using solid flat fills and subtle opacity variations, eliminating all multi-color mixing and multi-hue gradients.",
-  "updatedAt":  "2026-10-22T10:19:33.840154816Z",
+  "summary":  "Updated implementation plan to keep Signature Violet across the app, use White accents in Settings, remove the Home filter row and connection/sync banners, move Auto Sync and Import Link/QR to Settings, and increase text size by 5px throughout the app.",
+  "updatedAt":  "2026-10-22T10:43:41.718670800Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

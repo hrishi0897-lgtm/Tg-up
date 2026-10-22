@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.example.data.local.entity.FileStatus
 import com.example.domain.model.TransferProgress
 import com.example.ui.screens.TransfersScreen
@@ -107,8 +108,8 @@ class ActiveTransfersTest {
         composeTestRule.onNodeWithText("Network timeout on chunk 1").assertIsDisplayed()
 
         // Verify Recently Completed section shows Download/TGC path for downloads
-        composeTestRule.onNodeWithText("dataset.csv").assertIsDisplayed()
-        composeTestRule.onNodeWithText("12.0 MB · Saved in Download/TGC").assertIsDisplayed()
+        composeTestRule.onNodeWithText("dataset.csv").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("12.0 MB · Saved in Download/TGC").performScrollTo().assertIsDisplayed()
 
         // Test Pause action on file-1
         composeTestRule.onNodeWithTag("btn_pause_file-1").performClick()
