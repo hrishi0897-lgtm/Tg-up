@@ -139,7 +139,9 @@ data class UiState(
     val showImportSharedLinkDialog: Boolean = false,
     val importShareError: String? = null,
     val importShareSuccess: String? = null,
-    val selectedFileSharingChunks: List<ChunkEntity> = emptyList()
+    val selectedFileSharingChunks: List<ChunkEntity> = emptyList(),
+    val showFirstLaunchStoragePrompt: Boolean = false,
+    val tgcFolderReady: Boolean = false
 )
 
 class TeleVaultViewModel(application: Application) : AndroidViewModel(application) {
@@ -178,10 +180,42 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
             lastSyncedTime = creds.getLastSyncedTime(),
             shareSheetAskFolder = creds.isShareSheetAskFolder(),
             relayChatId = creds.getRelayChatId(),
-            backupChatId = creds.getBackupChatId()
+            backupChatId = creds.getBackupChatId(),
+            showFirstLaunchStoragePrompt = !creds.isStorageSetupCompleted(),
+            tgcFolderReady = com.example.domain.DownloadStorageManager.isTgcDirectoryReady() || creds.isStorageSetupCompleted()
         )
     )
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
+
+    init {
+        if (creds.isStorageSetupCompleted()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                com.example.domain.DownloadStorageManager.initializeTgcDirectory(getApplication())
+            }
+        }
+    }
+
+    fun completeFirstLaunchStorageSetup() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val created = com.example.domain.DownloadStorageManager.initializeTgcDirectory(getApplication())
+            creds.setStorageSetupCompleted(true)
+            _uiState.update {
+                it.copy(
+                    showFirstLaunchStoragePrompt = false,
+                    tgcFolderReady = true,
+                    transferNotificationMessage = if (created) {
+                        "Download/TGC folder created and ready"
+                    } else {
+                        "Storage access enabled for Download/TGC"
+                    }
+                )
+            }
+        }
+    }
+
+    fun dismissFirstLaunchStoragePrompt() {
+        completeFirstLaunchStorageSetup()
+    }
 
     private val _isDarkTheme = MutableStateFlow(creds.getThemeMode() == "dark")
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()

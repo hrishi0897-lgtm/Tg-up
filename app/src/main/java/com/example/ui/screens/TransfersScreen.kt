@@ -47,9 +47,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,7 +70,7 @@ import com.example.ui.theme.NumericMonoFont
 import com.example.ui.theme.pressScale
 import com.example.ui.viewmodel.AppScreen
 
-private val CardCornerShape = RoundedCornerShape(14.dp)
+private val CardCornerShape = RoundedCornerShape(18.dp)
 private val ProgressTrackCornerShape = RoundedCornerShape(100.dp)
 
 @Composable
@@ -441,36 +445,55 @@ private fun TransferRowCard(
         label = "transfer_progress_${transfer.fileId}"
     )
 
+    val isPaused = transfer.status == FileStatus.PAUSED
+    val accentColor = when {
+        isFailed -> colors.danger
+        isDone -> colors.mint
+        isPaused -> colors.amber
+        transfer.isUpload -> colors.violet
+        else -> colors.teal
+    }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = colors.surface),
         shape = CardCornerShape,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (isFailed) colors.danger.copy(alpha = 0.5f) else colors.line
+            when {
+                isFailed -> colors.danger.copy(alpha = 0.55f)
+                isPaused -> colors.amber.copy(alpha = 0.42f)
+                else -> accentColor.copy(alpha = 0.32f)
+            }
         ),
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = isFailed, onClick = onRetry)
             .testTag("transfer_item_${transfer.fileId}")
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(
+            modifier = Modifier
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            accentColor.copy(alpha = if (colors.isDark) 0.08f else 0.04f),
+                            Color.Transparent
+                        )
+                    )
+                )
+                .padding(16.dp)
+        ) {
             // Header Row: Icon, File Name, Status, and Action Controls
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Circular icon container matching SettingsScreen and HomeScreen bento styles
+                // Rounded icon container with glow border
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                isFailed -> colors.danger.copy(alpha = 0.15f)
-                                isDone -> colors.mint.copy(alpha = 0.15f)
-                                else -> colors.violet.copy(alpha = 0.15f)
-                            }
-                        ),
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .background(accentColor.copy(alpha = 0.15f))
+                        .border(1.dp, accentColor.copy(alpha = 0.35f), RoundedCornerShape(13.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -481,11 +504,7 @@ private fun TransferRowCard(
                             else -> Icons.Default.CloudDownload
                         },
                         contentDescription = if (transfer.isUpload) "Upload" else "Download",
-                        tint = when {
-                            isFailed -> colors.danger
-                            isDone -> colors.mint
-                            else -> colors.violet
-                        },
+                        tint = accentColor,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -675,21 +694,35 @@ private fun TransferRowCard(
                 }
             }
 
-            // Progress Bar: 4dp height with rounded clip, matching StorageBentoGrid meter
+            // Glowing Gradient Progress Bar: 6dp height with rounded clip & gradient fill
             Spacer(modifier = Modifier.height(12.dp))
-            LinearProgressIndicator(
-                progress = { animatedProgress },
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
-                    .clip(ProgressTrackCornerShape),
-                color = when {
-                    isFailed -> colors.danger
-                    isDone -> colors.mint
-                    else -> colors.violet
-                },
-                trackColor = colors.surfaceHi
-            )
+                    .height(6.dp)
+                    .clip(ProgressTrackCornerShape)
+                    .background(colors.surfaceHi)
+            ) {
+                val fillFraction = animatedProgress.coerceIn(0f, 1f)
+                if (fillFraction > 0f) {
+                    val barBrush = remember(isFailed, isDone, isPaused, transfer.isUpload, colors) {
+                        when {
+                            isFailed -> Brush.horizontalGradient(listOf(colors.danger, colors.danger))
+                            isDone -> Brush.horizontalGradient(listOf(colors.mint, colors.teal))
+                            isPaused -> Brush.horizontalGradient(listOf(colors.amber, colors.violet))
+                            transfer.isUpload -> Brush.horizontalGradient(listOf(colors.violet, colors.teal))
+                            else -> Brush.horizontalGradient(listOf(colors.teal, colors.mint))
+                        }
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(fillFraction.coerceAtLeast(0.03f))
+                            .fillMaxHeight()
+                            .clip(ProgressTrackCornerShape)
+                            .background(barBrush)
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 

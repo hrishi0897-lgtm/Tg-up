@@ -36,6 +36,74 @@ object DownloadStorageManager {
     }
 
     /**
+     * Checks whether the public Download/TGC directory currently exists on disk.
+     */
+    fun isTgcDirectoryReady(): Boolean {
+        return try {
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val tgcDir = File(downloadsDir, TGC_FOLDER_NAME)
+            tgcDir.exists() && tgcDir.isDirectory
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Eagerly creates the dedicated Download/TGC folder in the device's public Download directory
+     * on first launch and registers it with MediaStore so file managers display it immediately.
+     */
+    fun initializeTgcDirectory(context: Context): Boolean {
+        var created = false
+        try {
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            if (downloadsDir != null) {
+                if (!downloadsDir.exists()) {
+                    downloadsDir.mkdirs()
+                }
+                val tgcDir = File(downloadsDir, TGC_FOLDER_NAME)
+                if (!tgcDir.exists()) {
+                    tgcDir.mkdirs()
+                }
+                created = tgcDir.exists() && tgcDir.isDirectory
+                if (created) {
+                    try {
+                        MediaScannerConnection.scanFile(
+                            context,
+                            arrayOf(tgcDir.absolutePath),
+                            null,
+                            null
+                        )
+                    } catch (_: Throwable) {}
+                }
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Direct mkdirs for Download/TGC encountered: ${e.message}")
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                val resolver = context.contentResolver
+                val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                val markerValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, ".tgc_init_${System.currentTimeMillis()}")
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, RELATIVE_DOWNLOAD_PATH)
+                    put(MediaStore.MediaColumns.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(collection, markerValues)
+                if (uri != null) {
+                    resolver.delete(uri, null, null)
+                    created = true
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "MediaStore directory initialization note: ${e.message}")
+            }
+        }
+
+        return created
+    }
+
+    /**
      * Saves a verified, reassembled source file directly into the public Download/TGC directory.
      * On Android 10+ (API 29+), uses MediaStore.Downloads with RELATIVE_PATH set to "Download/TGC"
      * and IS_PENDING flags to ensure atomic visibility.

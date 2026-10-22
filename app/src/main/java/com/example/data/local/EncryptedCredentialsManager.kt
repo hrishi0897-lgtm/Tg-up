@@ -46,6 +46,7 @@ class EncryptedCredentialsManager(context: Context) {
         private const val PREF_RELAY_CHAT_ID = "relay_chat_id"
         private const val PREF_BACKUP_CHAT_ID = "encrypted_backup_chat_id"
         private const val PREF_LAST_BACKUP_INDEX_MSG_ID = "last_backup_vault_index_message_id"
+        private const val PREF_STORAGE_SETUP_DONE = "first_launch_storage_setup_done"
         // Telegram Bot API allows uploading up to 50MB via sendDocument, BUT strictly limits
         // downloading to 20MB via getFile. If a chunk exceeds 20MB, getFile returns HTTP 400 'Bad Request: file is too big'.
         // We set CHUNK_SIZE_BYTES globally to 18MB to leave safe headroom for multipart boundary overhead and API limits.
@@ -410,5 +411,16 @@ class EncryptedCredentialsManager(context: Context) {
 
     fun setRelayChatId(chatId: String) {
         prefs.edit().putString(PREF_RELAY_CHAT_ID, chatId.trim()).apply()
+    }
+
+    /**
+     * Tracks whether the user has completed the first-launch file access & Download/TGC folder setup.
+     */
+    fun isStorageSetupCompleted(): Boolean {
+        return prefs.getBoolean(PREF_STORAGE_SETUP_DONE, false)
+    }
+
+    fun setStorageSetupCompleted(completed: Boolean) {
+        prefs.edit().putBoolean(PREF_STORAGE_SETUP_DONE, completed).apply()
     }
 }

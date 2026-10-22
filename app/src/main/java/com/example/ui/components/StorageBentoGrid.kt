@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -225,8 +226,27 @@ fun StorageBentoGrid(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // -----------------------------------------------------------------
-        // 1. Large Hero Tile (Full Width)
+        // 1. Large Hero Tile (Full Width) with Glassmorphic Gradient & Segmented Meter
         // -----------------------------------------------------------------
+        val heroGradient = remember(colors.isDark, colors.surface, colors.violet, colors.teal) {
+            Brush.linearGradient(
+                colors = listOf(
+                    colors.surface,
+                    colors.violet.copy(alpha = if (colors.isDark) 0.14f else 0.07f),
+                    colors.teal.copy(alpha = if (colors.isDark) 0.10f else 0.05f)
+                )
+            )
+        }
+        val heroBorderBrush = remember(colors.isDark, colors.line, colors.violet, colors.teal) {
+            Brush.linearGradient(
+                colors = listOf(
+                    colors.violet.copy(alpha = 0.42f),
+                    colors.line,
+                    colors.teal.copy(alpha = 0.35f)
+                )
+            )
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -237,9 +257,10 @@ fun StorageBentoGrid(
                     scaleX = s
                     scaleY = s
                 }
-                .clip(RoundedCornerShape(22.dp))
+                .clip(RoundedCornerShape(24.dp))
                 .background(colors.surface)
-                .border(1.dp, colors.line, RoundedCornerShape(22.dp))
+                .background(heroGradient)
+                .border(1.dp, heroBorderBrush, RoundedCornerShape(24.dp))
                 .then(
                     if (onOpenAnalytics != null) {
                         Modifier.clickable { onOpenAnalytics() }
@@ -258,7 +279,7 @@ fun StorageBentoGrid(
                         text = "Vault storage",
                         fontSize = 13.sp,
                         fontFamily = BodySansFont,
-                        fontWeight = FontWeight.Medium,
+                        fontWeight = FontWeight.SemiBold,
                         color = colors.textDim
                     )
 
@@ -272,8 +293,8 @@ fun StorageBentoGrid(
                                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(100.dp))
-                                    .background(colors.violet.copy(alpha = 0.14f))
-                                    .border(1.dp, colors.violet.copy(alpha = 0.35f), RoundedCornerShape(100.dp))
+                                    .background(colors.violet.copy(alpha = 0.16f))
+                                    .border(1.dp, colors.violet.copy(alpha = 0.38f), RoundedCornerShape(100.dp))
                                     .clickable { onOpenAnalytics() }
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                                     .testTag("btn_open_analytics_dashboard")
@@ -294,8 +315,8 @@ fun StorageBentoGrid(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier
                                 .clip(RoundedCornerShape(100.dp))
-                                .background(colors.teal.copy(alpha = 0.12f))
-                                .border(1.dp, colors.teal.copy(alpha = 0.3f), RoundedCornerShape(100.dp))
+                                .background(colors.teal.copy(alpha = 0.14f))
+                                .border(1.dp, colors.teal.copy(alpha = 0.35f), RoundedCornerShape(100.dp))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Box(
@@ -331,7 +352,7 @@ fun StorageBentoGrid(
                         Text(
                             text = v,
                             fontFamily = NumericMonoFont,
-                            fontSize = 34.sp,
+                            fontSize = 35.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.text,
                             letterSpacing = (-0.5).sp
@@ -358,15 +379,107 @@ fun StorageBentoGrid(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // "used" caption below
-                Text(
-                    text = "used across ${summary.fileCount} encrypted file${if (summary.fileCount == 1) "" else "s"}",
-                    fontSize = 12.sp,
-                    fontFamily = BodySansFont,
-                    color = colors.textFaint
-                )
+                // "used" caption + Download/TGC destination badge row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "used across ${summary.fileCount} encrypted file${if (summary.fileCount == 1) "" else "s"}",
+                        fontSize = 12.sp,
+                        fontFamily = BodySansFont,
+                        color = colors.textFaint
+                    )
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(colors.mint.copy(alpha = 0.12f))
+                            .border(1.dp, colors.mint.copy(alpha = 0.28f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 7.dp, vertical = 2.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(colors.mint)
+                        )
+                        Text(
+                            text = "Download/TGC",
+                            fontSize = 10.sp,
+                            fontFamily = NumericMonoFont,
+                            fontWeight = FontWeight.SemiBold,
+                            color = colors.mint
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Multi-segment storage distribution bar (Documents / Media / Other)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(100.dp))
+                        .background(colors.surfaceHi),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    val docWeight = summary.documents.fraction.coerceAtLeast(if (summary.documents.bytes > 0L) 0.06f else 0f)
+                    val mediaWeight = summary.media.fraction.coerceAtLeast(if (summary.media.bytes > 0L) 0.06f else 0f)
+                    val otherWeight = summary.other.fraction.coerceAtLeast(if (summary.other.bytes > 0L) 0.06f else 0f)
+                    val sumWeight = docWeight + mediaWeight + otherWeight
+
+                    if (sumWeight > 0f) {
+                        if (docWeight > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(docWeight)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(100.dp))
+                                    .background(summary.documents.color)
+                            )
+                        }
+                        if (mediaWeight > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(mediaWeight)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(100.dp))
+                                    .background(summary.media.color)
+                            )
+                        }
+                        if (otherWeight > 0f) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(otherWeight)
+                                    .fillMaxHeight()
+                                    .clip(RoundedCornerShape(100.dp))
+                                    .background(summary.other.color)
+                            )
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.18f)
+                                .fillMaxHeight()
+                                .clip(RoundedCornerShape(100.dp))
+                                .background(
+                                    Brush.horizontalGradient(
+                                        colors = listOf(
+                                            colors.violet.copy(alpha = 0.55f),
+                                            colors.teal.copy(alpha = 0.55f)
+                                        )
+                                    )
+                                )
+                        )
+                    }
+                }
             }
         }
 
@@ -452,10 +565,22 @@ private fun CategoryBentoTile(
         else -> 1.0f
     }
 
-    val tileBg = if (isSelected) {
-        categoryData.color.copy(alpha = if (colors.isDark) 0.15f else 0.08f)
-    } else {
-        colors.surface
+    val tileBrush = remember(isSelected, colors.isDark, colors.surface, categoryData.color) {
+        if (isSelected) {
+            Brush.linearGradient(
+                colors = listOf(
+                    categoryData.color.copy(alpha = if (colors.isDark) 0.22f else 0.12f),
+                    colors.surface
+                )
+            )
+        } else {
+            Brush.linearGradient(
+                colors = listOf(
+                    colors.surface,
+                    categoryData.color.copy(alpha = if (colors.isDark) 0.06f else 0.03f)
+                )
+            )
+        }
     }
 
     val borderColor = if (isSelected) categoryData.color else colors.line
@@ -472,7 +597,8 @@ private fun CategoryBentoTile(
                 scaleY = animScale * scale
             }
             .clip(RoundedCornerShape(18.dp))
-            .background(tileBg)
+            .background(colors.surface)
+            .background(tileBrush)
             .border(borderWidth, borderColor, RoundedCornerShape(18.dp))
             .clickable(
                 interactionSource = interactionSource,

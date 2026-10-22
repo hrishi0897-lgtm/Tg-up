@@ -310,128 +310,201 @@ fun HomeScreen(
                     exit = fadeOut(animationSpec = tween(100)) + shrinkVertically(animationSpec = tween(150))
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(20.dp),
                         color = colors.surface,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, colors.line),
-                        shadowElevation = 8.dp,
-                        modifier = Modifier.padding(bottom = 6.dp)
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    colors.violet.copy(alpha = 0.45f),
+                                    colors.line,
+                                    colors.teal.copy(alpha = 0.45f)
+                                )
+                            )
+                        ),
+                        shadowElevation = 14.dp,
+                        modifier = Modifier.padding(bottom = 8.dp)
                     ) {
                         Column(
-                            modifier = Modifier.padding(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                            modifier = Modifier.padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             // New Folder Action
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(14.dp))
                                     .background(colors.surfaceHi)
                                     .clickable {
                                         showFabMenu = false
                                         onCreateFolderClick()
                                     }
-                                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                                    .padding(horizontal = 14.dp, vertical = 10.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.CreateNewFolder,
-                                    contentDescription = null,
-                                    tint = colors.teal,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "New Folder",
-                                    color = colors.text,
-                                    fontSize = 13.sp,
-                                    fontFamily = BodySansFont,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(colors.teal.copy(alpha = 0.16f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CreateNewFolder,
+                                        contentDescription = null,
+                                        tint = colors.teal,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "New Folder",
+                                        color = colors.text,
+                                        fontSize = 13.sp,
+                                        fontFamily = BodySansFont,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Organize vault directory",
+                                        color = colors.textFaint,
+                                        fontSize = 10.5.sp,
+                                        fontFamily = BodySansFont
+                                    )
+                                }
                             }
 
                             // Upload File Action
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(14.dp))
                                     .background(colors.surfaceHi)
                                     .clickable {
                                         showFabMenu = false
                                         onUploadFileClick()
                                     }
-                                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                                    .padding(horizontal = 14.dp, vertical = 10.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.UploadFile,
-                                    contentDescription = null,
-                                    tint = colors.teal,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "Upload File",
-                                    color = colors.text,
-                                    fontSize = 13.sp,
-                                    fontFamily = BodySansFont,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(colors.violet.copy(alpha = 0.18f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.UploadFile,
+                                        contentDescription = null,
+                                        tint = colors.violet,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "Upload File",
+                                        color = colors.text,
+                                        fontSize = 13.sp,
+                                        fontFamily = BodySansFont,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Chunked & SHA-256 verified",
+                                        color = colors.textFaint,
+                                        fontSize = 10.5.sp,
+                                        fontFamily = BodySansFont
+                                    )
+                                }
                             }
 
                             // Auto Folder Sync Action
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(14.dp))
                                     .background(colors.surfaceHi)
                                     .clickable {
                                         showFabMenu = false
                                         onOpenFolderSync()
                                     }
-                                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                                    .padding(horizontal = 14.dp, vertical = 10.dp)
                                     .testTag("fab_auto_folder_sync")
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Sync,
-                                    contentDescription = null,
-                                    tint = colors.violet,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "Auto Folder Sync",
-                                    color = colors.text,
-                                    fontSize = 13.sp,
-                                    fontFamily = BodySansFont,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(colors.amber.copy(alpha = 0.16f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Sync,
+                                        contentDescription = null,
+                                        tint = colors.amber,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "Auto Folder Sync",
+                                        color = colors.text,
+                                        fontSize = 13.sp,
+                                        fontFamily = BodySansFont,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Mirror local device folders",
+                                        color = colors.textFaint,
+                                        fontSize = 10.5.sp,
+                                        fontFamily = BodySansFont
+                                    )
+                                }
                             }
 
                             // Import Shared QR / Link Action
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(14.dp))
                                     .background(colors.surfaceHi)
                                     .clickable {
                                         showFabMenu = false
                                         onImportSharedLink()
                                     }
-                                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                                    .padding(horizontal = 14.dp, vertical = 10.dp)
                                     .testTag("fab_import_shared_link")
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Download,
-                                    contentDescription = null,
-                                    tint = colors.mint,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "Import Shared Link / QR",
-                                    color = colors.text,
-                                    fontSize = 13.sp,
-                                    fontFamily = BodySansFont,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(colors.mint.copy(alpha = 0.16f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Download,
+                                        contentDescription = null,
+                                        tint = colors.mint,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "Import Shared Link / QR",
+                                        color = colors.text,
+                                        fontSize = 13.sp,
+                                        fontFamily = BodySansFont,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    Text(
+                                        text = "Save directly to Download/TGC",
+                                        color = colors.textFaint,
+                                        fontSize = 10.5.sp,
+                                        fontFamily = BodySansFont
+                                    )
+                                }
                             }
                         }
                     }
@@ -1767,8 +1840,8 @@ private fun BreadcrumbBar(
     }
 }
 
-private val StaticItemCornerShape = RoundedCornerShape(14.dp)
-private val StaticIconCornerShape = RoundedCornerShape(10.dp)
+private val StaticItemCornerShape = RoundedCornerShape(16.dp)
+private val StaticIconCornerShape = RoundedCornerShape(12.dp)
 
 @Immutable
 private data class FileIconTheme(
@@ -1795,8 +1868,8 @@ private fun resolveFileIconTheme(mimeType: String): FileIconTheme {
         FileIconTheme(
             icon = icon,
             tint = tint,
-            bg = tint.copy(alpha = 0.14f),
-            border = tint.copy(alpha = 0.28f)
+            bg = tint.copy(alpha = 0.16f),
+            border = tint.copy(alpha = 0.34f)
         )
     }
 }
@@ -1815,7 +1888,16 @@ private fun FolderItemRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(colors.surface, StaticItemCornerShape)
+            .clip(StaticItemCornerShape)
+            .background(colors.surface)
+            .background(
+                Brush.horizontalGradient(
+                    colors = listOf(
+                        FileColorFolder.copy(alpha = if (colors.isDark) 0.08f else 0.04f),
+                        Color.Transparent
+                    )
+                )
+            )
             .border(1.dp, colors.line, StaticItemCornerShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -1823,9 +1905,9 @@ private fun FolderItemRow(
     ) {
         Box(
             modifier = Modifier
-                .size(42.dp)
-                .background(colors.surfaceHi, StaticIconCornerShape)
-                .border(1.dp, colors.line, StaticIconCornerShape),
+                .size(44.dp)
+                .background(FileColorFolder.copy(alpha = 0.14f), StaticIconCornerShape)
+                .border(1.dp, FileColorFolder.copy(alpha = 0.32f), StaticIconCornerShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -1846,25 +1928,44 @@ private fun FolderItemRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = "Folder · $formattedDate",
-                fontSize = 11.sp,
-                fontFamily = NumericMonoFont,
-                color = colors.textFaint
-            )
+            Spacer(modifier = Modifier.height(3.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(FileColorFolder.copy(alpha = 0.14f))
+                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                ) {
+                    Text(
+                        text = "FOLDER",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = NumericMonoFont,
+                        color = FileColorFolder
+                    )
+                }
+                Text(
+                    text = formattedDate,
+                    fontSize = 11.sp,
+                    fontFamily = NumericMonoFont,
+                    color = colors.textFaint
+                )
+            }
         }
 
         Box {
             IconButton(
                 onClick = { showMenu = true },
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(36.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
                     contentDescription = "Folder Options",
                     tint = colors.textDim,
-                    modifier = Modifier.size(16.dp)
+                    modifier = Modifier.size(17.dp)
                 )
             }
 
@@ -1906,9 +2007,10 @@ private fun FileListItem(
     val colors = LocalTeleVaultColors.current
     val formattedSize = remember(file.size) { ChecksumUtil.formatFileSize(file.size) }
     val formattedDate = remember(file.uploadDate) { ChecksumUtil.formatDate(file.uploadDate) }
+    val isSavedInTgc = !file.localUri.isNullOrBlank() || !file.localPath.isNullOrBlank()
 
     val borderColor = if (isSelected) colors.teal else colors.line
-    val backgroundColor = if (isSelected) colors.teal.copy(alpha = 0.08f) else colors.surface
+    val backgroundColor = if (isSelected) colors.teal.copy(alpha = 0.10f) else colors.surface
 
     Row(
         modifier = Modifier
@@ -1946,7 +2048,7 @@ private fun FileListItem(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(3.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = formattedSize,
@@ -1979,6 +2081,23 @@ private fun FileListItem(
                             fontWeight = FontWeight.Bold,
                             fontFamily = NumericMonoFont,
                             color = colors.mint
+                        )
+                    }
+                }
+                if (isSavedInTgc) {
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(colors.teal.copy(alpha = 0.14f))
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = "TGC",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = NumericMonoFont,
+                            color = colors.teal
                         )
                     }
                 }
@@ -2019,14 +2138,15 @@ private fun FileGridCard(
 ) {
     val colors = LocalTeleVaultColors.current
     val formattedSize = remember(file.size) { ChecksumUtil.formatFileSize(file.size) }
+    val isSavedInTgc = !file.localUri.isNullOrBlank() || !file.localPath.isNullOrBlank()
 
     val borderColor = if (isSelected) colors.teal else colors.line
-    val backgroundColor = if (isSelected) colors.teal.copy(alpha = 0.08f) else colors.surface
+    val backgroundColor = if (isSelected) colors.teal.copy(alpha = 0.10f) else colors.surface
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(140.dp)
+            .height(144.dp)
             .background(backgroundColor, StaticItemCornerShape)
             .border(if (isSelected) 1.5.dp else 1.dp, borderColor, StaticItemCornerShape)
             .combinedClickable(
@@ -2069,13 +2189,34 @@ private fun FileGridCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = formattedSize,
-                    fontSize = 10.5.sp,
-                    fontFamily = NumericMonoFont,
-                    color = colors.textDim
-                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text(
+                        text = formattedSize,
+                        fontSize = 10.5.sp,
+                        fontFamily = NumericMonoFont,
+                        color = colors.textDim
+                    )
+                    if (isSavedInTgc) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(colors.teal.copy(alpha = 0.14f))
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = "TGC",
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = NumericMonoFont,
+                                color = colors.teal
+                            )
+                        }
+                    }
+                }
             }
         }
     }

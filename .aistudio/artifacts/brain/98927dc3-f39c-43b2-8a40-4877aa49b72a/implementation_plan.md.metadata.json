@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for dedicated Download/TGC storage path and reliable byte-accurate Pause/Resume across uploads and downloads.",
-  "updatedAt":  "2026-10-21T15:03:28.092768336Z",
+  "summary":  "Implementation plan for first-launch file access prompt & automatic Download/TGC directory initialization, plus visual design upgrades across the Bento storage header, file/folder cards, transfer queue cards, and floating bottom navigation bar.",
+  "updatedAt":  "2026-10-22T09:17:53.533943515Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
