@@ -226,27 +226,8 @@ fun StorageBentoGrid(
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         // -----------------------------------------------------------------
-        // 1. Large Hero Tile (Full Width) with Glassmorphic Gradient & Segmented Meter
+        // 1. Large Hero Tile (Full Width) with Solid Flat Fill & Violet Opacity Shade
         // -----------------------------------------------------------------
-        val heroGradient = remember(colors.isDark, colors.surface, colors.violet, colors.teal) {
-            Brush.linearGradient(
-                colors = listOf(
-                    colors.surface,
-                    colors.violet.copy(alpha = if (colors.isDark) 0.14f else 0.07f),
-                    colors.teal.copy(alpha = if (colors.isDark) 0.10f else 0.05f)
-                )
-            )
-        }
-        val heroBorderBrush = remember(colors.isDark, colors.line, colors.violet, colors.teal) {
-            Brush.linearGradient(
-                colors = listOf(
-                    colors.violet.copy(alpha = 0.42f),
-                    colors.line,
-                    colors.teal.copy(alpha = 0.35f)
-                )
-            )
-        }
-
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -259,8 +240,8 @@ fun StorageBentoGrid(
                 }
                 .clip(RoundedCornerShape(24.dp))
                 .background(colors.surface)
-                .background(heroGradient)
-                .border(1.dp, heroBorderBrush, RoundedCornerShape(24.dp))
+                .background(colors.violet.copy(alpha = if (colors.isDark) 0.06f else 0.04f))
+                .border(1.dp, colors.violet.copy(alpha = 0.28f), RoundedCornerShape(24.dp))
                 .then(
                     if (onOpenAnalytics != null) {
                         Modifier.clickable { onOpenAnalytics() }
@@ -293,8 +274,8 @@ fun StorageBentoGrid(
                                 horizontalArrangement = Arrangement.spacedBy(5.dp),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(100.dp))
-                                    .background(colors.violet.copy(alpha = 0.16f))
-                                    .border(1.dp, colors.violet.copy(alpha = 0.38f), RoundedCornerShape(100.dp))
+                                    .background(colors.violet.copy(alpha = 0.14f))
+                                    .border(1.dp, colors.violet.copy(alpha = 0.35f), RoundedCornerShape(100.dp))
                                     .clickable { onOpenAnalytics() }
                                     .padding(horizontal = 10.dp, vertical = 4.dp)
                                     .testTag("btn_open_analytics_dashboard")
@@ -309,28 +290,28 @@ fun StorageBentoGrid(
                             }
                         }
 
-                        // "No archive limit" Pill Badge
+                        // "No archive limit" Pill Badge in Signature Violet
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier
                                 .clip(RoundedCornerShape(100.dp))
-                                .background(colors.teal.copy(alpha = 0.14f))
-                                .border(1.dp, colors.teal.copy(alpha = 0.35f), RoundedCornerShape(100.dp))
+                                .background(colors.violet.copy(alpha = 0.12f))
+                                .border(1.dp, colors.violet.copy(alpha = 0.32f), RoundedCornerShape(100.dp))
                                 .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
                             Box(
                                 modifier = Modifier
                                     .size(6.dp)
                                     .clip(CircleShape)
-                                    .background(colors.teal)
+                                    .background(colors.violet)
                             )
                             Text(
                                 text = "No archive limit",
                                 fontSize = 11.5.sp,
                                 fontFamily = BodySansFont,
                                 fontWeight = FontWeight.Medium,
-                                color = colors.teal
+                                color = colors.violet
                             )
                         }
                     }
@@ -399,29 +380,29 @@ fun StorageBentoGrid(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(colors.mint.copy(alpha = 0.12f))
-                            .border(1.dp, colors.mint.copy(alpha = 0.28f), RoundedCornerShape(6.dp))
+                            .background(colors.violet.copy(alpha = 0.12f))
+                            .border(1.dp, colors.violet.copy(alpha = 0.28f), RoundedCornerShape(6.dp))
                             .padding(horizontal = 7.dp, vertical = 2.dp)
                     ) {
                         Box(
                             modifier = Modifier
                                 .size(5.dp)
                                 .clip(CircleShape)
-                                .background(colors.mint)
+                                .background(colors.violet)
                         )
                         Text(
                             text = "Download/TGC",
                             fontSize = 10.sp,
                             fontFamily = NumericMonoFont,
                             fontWeight = FontWeight.SemiBold,
-                            color = colors.mint
+                            color = colors.violet
                         )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Multi-segment storage distribution bar (Documents / Media / Other)
+                // Multi-segment storage distribution bar (Tonal Violet shades: 100%, 72%, 48%)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -442,7 +423,7 @@ fun StorageBentoGrid(
                                     .weight(docWeight)
                                     .fillMaxHeight()
                                     .clip(RoundedCornerShape(100.dp))
-                                    .background(summary.documents.color)
+                                    .background(colors.violet)
                             )
                         }
                         if (mediaWeight > 0f) {
@@ -451,7 +432,7 @@ fun StorageBentoGrid(
                                     .weight(mediaWeight)
                                     .fillMaxHeight()
                                     .clip(RoundedCornerShape(100.dp))
-                                    .background(summary.media.color)
+                                    .background(colors.violet.copy(alpha = 0.72f))
                             )
                         }
                         if (otherWeight > 0f) {
@@ -460,7 +441,7 @@ fun StorageBentoGrid(
                                     .weight(otherWeight)
                                     .fillMaxHeight()
                                     .clip(RoundedCornerShape(100.dp))
-                                    .background(summary.other.color)
+                                    .background(colors.violet.copy(alpha = 0.48f))
                             )
                         }
                     } else {
@@ -469,14 +450,7 @@ fun StorageBentoGrid(
                                 .fillMaxWidth(0.18f)
                                 .fillMaxHeight()
                                 .clip(RoundedCornerShape(100.dp))
-                                .background(
-                                    Brush.horizontalGradient(
-                                        colors = listOf(
-                                            colors.violet.copy(alpha = 0.55f),
-                                            colors.teal.copy(alpha = 0.55f)
-                                        )
-                                    )
-                                )
+                                .background(colors.violet.copy(alpha = 0.45f))
                         )
                     }
                 }
@@ -565,25 +539,13 @@ private fun CategoryBentoTile(
         else -> 1.0f
     }
 
-    val tileBrush = remember(isSelected, colors.isDark, colors.surface, categoryData.color) {
-        if (isSelected) {
-            Brush.linearGradient(
-                colors = listOf(
-                    categoryData.color.copy(alpha = if (colors.isDark) 0.22f else 0.12f),
-                    colors.surface
-                )
-            )
-        } else {
-            Brush.linearGradient(
-                colors = listOf(
-                    colors.surface,
-                    categoryData.color.copy(alpha = if (colors.isDark) 0.06f else 0.03f)
-                )
-            )
-        }
+    val tileOverlay = if (isSelected) {
+        colors.violet.copy(alpha = if (colors.isDark) 0.16f else 0.10f)
+    } else {
+        colors.violet.copy(alpha = if (colors.isDark) 0.04f else 0.02f)
     }
 
-    val borderColor = if (isSelected) categoryData.color else colors.line
+    val borderColor = if (isSelected) colors.violet else colors.line
     val borderWidth = if (isSelected) 1.5.dp else 1.dp
     val contentAlpha = if (isDimmed) 0.45f else 1.0f
 
@@ -598,7 +560,7 @@ private fun CategoryBentoTile(
             }
             .clip(RoundedCornerShape(18.dp))
             .background(colors.surface)
-            .background(tileBrush)
+            .background(tileOverlay)
             .border(borderWidth, borderColor, RoundedCornerShape(18.dp))
             .clickable(
                 interactionSource = interactionSource,

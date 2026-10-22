@@ -499,7 +499,7 @@ fun FilePreviewScreen(
                             )
                             Text(
                                 text = if (isFullFileDownloaded) "Full Resolution Ready" else "Cloud Vault File",
-                                color = if (isFullFileDownloaded) Color(0xFF4ADE80) else Color(0xFF60A5FA),
+                                color = colors.violet,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium
                             )
@@ -508,19 +508,19 @@ fun FilePreviewScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(0xFF10B981).copy(alpha = 0.25f))
+                                        .background(colors.violet.copy(alpha = 0.22f))
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Lock,
                                         contentDescription = null,
-                                        tint = Color(0xFF4ADE80),
+                                        tint = colors.violet,
                                         modifier = Modifier.size(10.dp)
                                     )
                                     Spacer(modifier = Modifier.width(3.dp))
                                     Text(
                                         text = "AES-256",
-                                        color = Color(0xFF4ADE80),
+                                        color = colors.violet,
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold
                                     )
@@ -656,7 +656,7 @@ fun FilePreviewScreen(
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = null,
-                            tint = Color(0xFF4ADE80),
+                            tint = colors.violet,
                             modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -701,7 +701,7 @@ fun FilePreviewScreen(
                     PreviewActionItem(
                         icon = Icons.Outlined.Delete,
                         label = "Delete",
-                        tint = Color(0xFFF87171),
+                        tint = colors.violet,
                         onClick = onDelete,
                         testTag = "preview_delete_action"
                     )
@@ -850,7 +850,7 @@ private fun InlineAudioPlayerCard(
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = playerError ?: "",
-                    color = Color(0xFFF87171),
+                    color = colors.violet,
                     fontSize = 12.sp
                 )
             } else {
@@ -998,7 +998,7 @@ private fun InlinePdfViewer(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (errorMessage != null) {
-            Text(text = errorMessage ?: "", color = Color(0xFFF87171), fontSize = 13.sp)
+            Text(text = errorMessage ?: "", color = colors.violet, fontSize = 13.sp)
         } else {
             // Page switcher bar
             Row(

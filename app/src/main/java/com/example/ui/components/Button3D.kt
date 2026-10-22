@@ -95,18 +95,6 @@ fun Button3D(
                 .border(1.dp, borderColor, shape),
             contentAlignment = Alignment.Center
         ) {
-            // Subtle top gloss highlight overlay (mimics CSS ::after linear-gradient(180deg, rgba(255,255,255,0.16), transparent 45%))
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .clip(shape)
-                    .background(
-                        Brush.verticalGradient(
-                            0.0f to Color.White.copy(alpha = 0.16f),
-                            0.45f to Color.Transparent
-                        )
-                    )
-            )
             content()
         }
     }
@@ -173,7 +161,7 @@ fun SquareButton3D(
 }
 
 /**
- * 56dp x 56dp FAB with 3D pressed edge shadow (#17806B edge, Teal gradient face, 5dp press depth)
+ * 56dp x 56dp FAB with 3D pressed edge shadow in solid Signature Violet
  */
 @Composable
 fun Fab3D(
@@ -185,21 +173,22 @@ fun Fab3D(
     pressDepth: Dp = 5.dp,
     content: @Composable BoxScope.() -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     Button3D(
         onClick = onClick,
         modifier = modifier.size(size),
         enabled = enabled,
         shape = shape,
-        backgroundBrush = TealFabGradient,
-        edgeColor = Color(0xFF17806B),
-        borderColor = Color(0xFF17806B).copy(alpha = 0.5f),
+        backgroundColor = colors.violet,
+        edgeColor = colors.violetDim,
+        borderColor = colors.violet.copy(alpha = 0.5f),
         pressDepth = pressDepth,
         content = content
     )
 }
 
 /**
- * Primary Pill/Button with 3D pressed edge shadow (#3B32A8 edge, Violet gradient face, 5dp press depth)
+ * Primary Pill/Button with 3D pressed edge shadow in solid Signature Violet
  */
 @Composable
 fun UploadButton3D(
@@ -211,6 +200,7 @@ fun UploadButton3D(
     contentPadding: PaddingValues = PaddingValues(horizontal = 22.dp, vertical = 13.dp),
     content: @Composable RowScope.() -> Unit
 ) {
+    val colors = LocalTeleVaultColors.current
     val isPressed = remember { MutableInteractionSource() }
     val pressedState by isPressed.collectIsPressedAsState()
     val reduceMotion = LocalReduceMotion.current
@@ -237,8 +227,8 @@ fun UploadButton3D(
                 .matchParentSize()
                 .offset(y = pressDepth)
                 .clip(shape)
-                .background(Color(0xFF3B32A8))
-                .border(1.dp, Color(0xFF3B32A8).copy(alpha = 0.6f), shape)
+                .background(colors.violetDim)
+                .border(1.dp, colors.violetDim.copy(alpha = 0.6f), shape)
         )
 
         // Top Face
@@ -246,8 +236,8 @@ fun UploadButton3D(
             modifier = Modifier
                 .offset(y = currentOffset)
                 .clip(shape)
-                .background(VioletButtonGradient)
-                .border(1.dp, Color(0x608C7CFF), shape)
+                .background(colors.violet)
+                .border(1.dp, colors.violet.copy(alpha = 0.45f), shape)
                 .padding(contentPadding),
             contentAlignment = Alignment.Center
         ) {
@@ -258,3 +248,4 @@ fun UploadButton3D(
         }
     }
 }
+

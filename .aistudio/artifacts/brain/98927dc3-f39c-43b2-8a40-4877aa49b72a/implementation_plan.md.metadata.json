@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan to replace the custom folder creation dialog with standard Android system permission requests (storage and notifications) on first launch and automatic background creation of the Download/TGC folder.",
-  "updatedAt":  "2026-10-22T09:59:29.246181076Z",
+  "summary":  "Implementation plan to unify the entire application around a single Signature Violet color theme using solid flat fills and subtle opacity variations, eliminating all multi-color mixing and multi-hue gradients.",
+  "updatedAt":  "2026-10-22T10:19:33.840154816Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

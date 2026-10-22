@@ -314,13 +314,7 @@ fun HomeScreen(
                         color = colors.surface,
                         border = androidx.compose.foundation.BorderStroke(
                             1.dp,
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    colors.violet.copy(alpha = 0.45f),
-                                    colors.line,
-                                    colors.teal.copy(alpha = 0.45f)
-                                )
-                            )
+                            colors.violet.copy(alpha = 0.35f)
                         ),
                         shadowElevation = 14.dp,
                         modifier = Modifier.padding(bottom = 8.dp)
@@ -524,7 +518,7 @@ fun HomeScreen(
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = "Add options",
-                        tint = Color(0xFF05060A),
+                        tint = Color.White,
                         modifier = Modifier
                             .size(24.dp)
                             .graphicsLayer { rotationZ = fabRotation }
@@ -1890,14 +1884,6 @@ private fun FolderItemRow(
             .fillMaxWidth()
             .clip(StaticItemCornerShape)
             .background(colors.surface)
-            .background(
-                Brush.horizontalGradient(
-                    colors = listOf(
-                        FileColorFolder.copy(alpha = if (colors.isDark) 0.08f else 0.04f),
-                        Color.Transparent
-                    )
-                )
-            )
             .border(1.dp, colors.line, StaticItemCornerShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),

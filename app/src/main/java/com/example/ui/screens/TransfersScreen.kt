@@ -472,14 +472,7 @@ private fun TransferRowCard(
     ) {
         Column(
             modifier = Modifier
-                .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            accentColor.copy(alpha = if (colors.isDark) 0.08f else 0.04f),
-                            Color.Transparent
-                        )
-                    )
-                )
+                .background(accentColor.copy(alpha = if (colors.isDark) 0.05f else 0.03f))
                 .padding(16.dp)
         ) {
             // Header Row: Icon, File Name, Status, and Action Controls
@@ -705,21 +698,12 @@ private fun TransferRowCard(
             ) {
                 val fillFraction = animatedProgress.coerceIn(0f, 1f)
                 if (fillFraction > 0f) {
-                    val barBrush = remember(isFailed, isDone, isPaused, transfer.isUpload, colors) {
-                        when {
-                            isFailed -> Brush.horizontalGradient(listOf(colors.danger, colors.danger))
-                            isDone -> Brush.horizontalGradient(listOf(colors.mint, colors.teal))
-                            isPaused -> Brush.horizontalGradient(listOf(colors.amber, colors.violet))
-                            transfer.isUpload -> Brush.horizontalGradient(listOf(colors.violet, colors.teal))
-                            else -> Brush.horizontalGradient(listOf(colors.teal, colors.mint))
-                        }
-                    }
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(fillFraction.coerceAtLeast(0.03f))
                             .fillMaxHeight()
                             .clip(ProgressTrackCornerShape)
-                            .background(barBrush)
+                            .background(colors.violet)
                     )
                 }
             }

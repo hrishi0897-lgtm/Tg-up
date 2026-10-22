@@ -3,9 +3,10 @@ package com.example.ui.theme
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 
 // ==========================================
-// TeleVault Theme Color System (Light & OLED Dark)
+// TeleVault Single-Color Theme System (Signature Violet)
 // ==========================================
 
 data class TeleVaultColors(
@@ -21,12 +22,12 @@ data class TeleVaultColors(
     val btnEdge: Color,
     val searchBg: Color,
     val bodyBg: Color,
-    val violet: Color = Color(0xFF8C7CFF),
+    val violet: Color = Color(0xFF7C6BFF),
     val violetDim: Color,
-    val teal: Color = Color(0xFF35E0C2),
-    val amber: Color = Color(0xFFF2B84B),
-    val mint: Color = Color(0xFF4ADE9E),
-    val danger: Color = Color(0xFFFF5252),
+    val teal: Color = Color(0xFF7C6BFF),
+    val amber: Color = Color(0xFF7C6BFF),
+    val mint: Color = Color(0xFF7C6BFF),
+    val danger: Color = Color(0xFF7C6BFF),
     val isDark: Boolean
 )
 
@@ -45,10 +46,10 @@ val DarkTeleVaultColors = TeleVaultColors(
     bodyBg = Color(0xFF000000),
     violet = Color(0xFF7C6BFF),
     violetDim = Color(0xFF4A4180),
-    teal = Color(0xFF20D6B5),
-    amber = Color(0xFFF5A623),
-    mint = Color(0xFF10B981),
-    danger = Color(0xFFEF4444),
+    teal = Color(0xFF7C6BFF),
+    amber = Color(0xFF7C6BFF),
+    mint = Color(0xFF7C6BFF),
+    danger = Color(0xFF7C6BFF),
     isDark = true
 )
 
@@ -66,22 +67,22 @@ val LightTeleVaultColors = TeleVaultColors(
     searchBg = Color(0xFFEEF1F8),
     bodyBg = Color(0xFFEBEEF7),
     violet = Color(0xFF6B59F5),
-    violetDim = Color(0xFF5646D9),
-    teal = Color(0xFF0FB89A),
-    amber = Color(0xFFE09112),
-    mint = Color(0xFF0D9F6E),
-    danger = Color(0xFFE53935),
+    violetDim = Color(0xFF4A3DC7),
+    teal = Color(0xFF6B59F5),
+    amber = Color(0xFF6B59F5),
+    mint = Color(0xFF6B59F5),
+    danger = Color(0xFF6B59F5),
     isDark = false
 )
 
 val LocalTeleVaultColors = staticCompositionLocalOf { DarkTeleVaultColors }
 
-// Category Storage Donut Colors
-val CategoryViolet = Color(0xFF8C7CFF)
-val CategoryTeal = Color(0xFF35E0C2)
-val CategoryAmber = Color(0xFFF2B84B)
+// Category Storage Tonal Violet Shades (100%, 72%, 48% opacity of Signature Violet)
+val CategoryViolet = Color(0xFF7C6BFF)
+val CategoryTeal = Color(0xB87C6BFF)
+val CategoryAmber = Color(0x7A7C6BFF)
 
-// Surfaces & Backgrounds (Default dark constants for backward compatibility)
+// Surfaces & Backgrounds
 val AppBackgroundOuter = Color(0xFF05060A)
 val AppSurface = Color(0xFF0B0D14)
 val SurfaceCard = Color(0xFF141826)
@@ -89,47 +90,36 @@ val SurfaceCardElevated = Color(0xFF1B2033)
 val BorderDivider = Color(0xFF262C42)
 val BorderSubtle = Color(0x66262C42)
 
-// Accents
-val AccentViolet = Color(0xFF8C7CFF)
+// Accents (Unified Signature Violet)
+val AccentViolet = Color(0xFF7C6BFF)
 val AccentVioletDim = Color(0xFF4A4180)
 val AccentVioletDark = Color(0xFF4A3FCB)
 val AccentVioletDeep = Color(0xFF5B4FE0)
-val AccentTeal = Color(0xFF35E0C2)
-val AccentTealDark = Color(0xFF21A88E)
+val AccentTeal = AccentViolet
+val AccentTealDark = AccentVioletDark
 
 // Text Hierarchy
 val TextPrimary = Color(0xFFF2F3F8)
 val TextDimmed = Color(0xFF8890A8)
 val TextFaint = Color(0xFF545C77)
 
-// Status & Indicators
-val StatusMint = Color(0xFF4ADE9E)
-val StatusMintBg = Color(0x1A4ADE9E)
-val StatusMintBorder = Color(0x404ADE9E)
-val StatusError = Color(0xFFFF5252)
-val StatusErrorBg = Color(0x22FF5252)
-val StatusErrorBorder = Color(0x55FF5252)
-val StatusWarning = Color(0xFFFFD54F)
+// Status & Indicators (Unified Signature Violet shades)
+val StatusMint = AccentViolet
+val StatusMintBg = Color(0x1F7C6BFF)
+val StatusMintBorder = Color(0x4D7C6BFF)
+val StatusError = AccentViolet
+val StatusErrorBg = Color(0x227C6BFF)
+val StatusErrorBorder = Color(0x557C6BFF)
+val StatusWarning = AccentViolet
 
-// Signature Gradients
-val BrandMarkGradient = Brush.linearGradient(
-    colors = listOf(AccentViolet, AccentVioletDark)
-)
-val StorageRingGradient = Brush.linearGradient(
-    colors = listOf(AccentViolet, AccentTeal)
-)
-val TealFabGradient = Brush.linearGradient(
-    colors = listOf(AccentTeal, AccentTealDark)
-)
-val VioletButtonGradient = Brush.linearGradient(
-    colors = listOf(AccentViolet, AccentVioletDeep)
-)
-val HeroCardRadialGradient = Brush.radialGradient(
-    colors = listOf(Color(0xFF191F35), SurfaceCard),
-    radius = 1200f
-)
+// Solid Flat Brushes (No multi-color gradients)
+val BrandMarkGradient: Brush = SolidColor(AccentViolet)
+val StorageRingGradient: Brush = SolidColor(AccentViolet)
+val TealFabGradient: Brush = SolidColor(AccentViolet)
+val VioletButtonGradient: Brush = SolidColor(AccentViolet)
+val HeroCardRadialGradient: Brush = SolidColor(SurfaceCard)
 
-// Legacy compatibility aliases mapped to new tokens
+// Legacy compatibility aliases mapped to unified tokens
 val OledBlack = AppSurface
 val OledSurface = SurfaceCard
 val OledSurfaceVariant = SurfaceCardElevated
@@ -138,7 +128,7 @@ val OledCardElevated = SurfaceCardElevated
 val OledCardGlass = SurfaceCard
 val OledBorder = BorderDivider
 val OledBorderSubtle = BorderDivider
-val OledBorderGlow = Color(0x338C7CFF)
+val OledBorderGlow = Color(0x337C6BFF)
 
 val TelegramBlue = AccentViolet
 val TelegramBlueDark = AccentVioletDim
@@ -148,23 +138,19 @@ val OnTelegramBlueContainer = TextPrimary
 val TextSecondary = TextDimmed
 val TextTertiary = TextFaint
 
-val FabGradient = TealFabGradient
-val StorageGlowGradient = Brush.verticalGradient(
-    colors = listOf(Color(0x208C7CFF), Color(0x00000000))
-)
+val FabGradient: Brush = SolidColor(AccentViolet)
+val StorageGlowGradient: Brush = SolidColor(Color(0x147C6BFF))
 
 val StatusSuccess = StatusMint
 val StatusSuccessContainer = StatusMintBg
 val StatusErrorContainer = StatusErrorBg
-val StatusWarningContainer = Color(0x20FFD54F)
+val StatusWarningContainer = Color(0x207C6BFF)
 
-// File Type Colors (Harmonized with new dark palette)
-val FileColorImage = Color(0xFF00B0FF)
-val FileColorVideo = Color(0xFFAB47BC)
-val FileColorAudio = Color(0xFFFF9100)
-val FileColorDoc = Color(0xFF35E0C2)
-val FileColorArchive = Color(0xFFFF5252)
-val FileColorFolder = Color(0xFFE2B714)
-val FileColorGeneric = Color(0xFF78909C)
-
-
+// File Type Colors (Unified to Signature Violet)
+val FileColorImage = AccentViolet
+val FileColorVideo = AccentViolet
+val FileColorAudio = AccentViolet
+val FileColorDoc = AccentViolet
+val FileColorArchive = AccentViolet
+val FileColorFolder = AccentViolet
+val FileColorGeneric = AccentViolet

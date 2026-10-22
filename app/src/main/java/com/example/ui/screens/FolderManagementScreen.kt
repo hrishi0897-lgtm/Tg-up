@@ -1094,8 +1094,8 @@ private fun FolderRowItem(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Delete", color = Color(0xFFEF4444), fontSize = 13.sp) },
-                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp)) },
+                    text = { Text("Delete", color = colors.violet, fontSize = 13.sp) },
+                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = colors.violet, modifier = Modifier.size(16.dp)) },
                     onClick = {
                         showMenu = false
                         onDelete()
@@ -1262,7 +1262,7 @@ private fun FolderGridItem(
                         DropdownMenuItem(text = { Text("Open", fontSize = 13.sp) }, onClick = { showMenu = false; onClick() })
                         DropdownMenuItem(text = { Text("Rename", fontSize = 13.sp) }, onClick = { showMenu = false; onRename() })
                         DropdownMenuItem(text = { Text("Move", fontSize = 13.sp) }, onClick = { showMenu = false; onMove() })
-                        DropdownMenuItem(text = { Text("Delete", color = Color(0xFFEF4444), fontSize = 13.sp) }, onClick = { showMenu = false; onDelete() })
+                        DropdownMenuItem(text = { Text("Delete", color = colors.violet, fontSize = 13.sp) }, onClick = { showMenu = false; onDelete() })
                     }
                 }
             }
@@ -1432,8 +1432,8 @@ private fun EmptyDirectoryState(
                 Button(
                     onClick = onCreateFolder,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = colors.teal,
-                        contentColor = Color(0xFF05060A)
+                        containerColor = colors.violet,
+                        contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(10.dp)
                 ) {
@@ -1584,7 +1584,7 @@ private fun DeleteFolderConfirmationDialog(
                 Button(
                     onClick = onConfirm,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFEF4444),
+                        containerColor = colors.violet,
                         contentColor = Color.White
                     ),
                     shape = RoundedCornerShape(8.dp)

@@ -379,8 +379,8 @@ fun BatchUploadFolderDialog(
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.teal,
-                    contentColor = Color(0xFF05060A)
+                    containerColor = colors.violet,
+                    contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier

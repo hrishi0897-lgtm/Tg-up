@@ -378,15 +378,7 @@ fun QrScannerDialog(
                         // 3. Animated scanning beam laser
                         val laserY = top + cornerRadiusPx * 0.5f + ((boxSize - cornerRadiusPx) * scanProgress)
                         drawLine(
-                            brush = Brush.horizontalGradient(
-                                colors = listOf(
-                                    colors.violet.copy(alpha = 0f),
-                                    colors.violet.copy(alpha = 0.85f),
-                                    colors.teal,
-                                    colors.violet.copy(alpha = 0.85f),
-                                    colors.violet.copy(alpha = 0f)
-                                )
-                            ),
+                            color = colors.violet,
                             start = Offset(left + 16.dp.toPx(), laserY),
                             end = Offset(left + boxSize - 16.dp.toPx(), laserY),
                             strokeWidth = 2.5.dp.toPx()

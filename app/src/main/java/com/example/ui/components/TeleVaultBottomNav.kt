@@ -77,16 +77,6 @@ fun TeleVaultBottomNav(
         label = "transfers_tab_color"
     )
 
-    val borderBrush = remember(colors.line, colors.violet, colors.teal) {
-        Brush.horizontalGradient(
-            colors = listOf(
-                colors.violet.copy(alpha = 0.38f),
-                colors.line,
-                colors.teal.copy(alpha = 0.35f)
-            )
-        )
-    }
-
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -103,7 +93,7 @@ fun TeleVaultBottomNav(
                 .height(60.dp)
                 .border(
                     width = 1.dp,
-                    brush = borderBrush,
+                    color = colors.violet.copy(alpha = 0.28f),
                     shape = FloatingNavShape
                 )
         ) {
@@ -125,7 +115,7 @@ fun TeleVaultBottomNav(
                     label = "nav_capsule_slide"
                 )
 
-                // Sliding active glassmorphic capsule
+                // Sliding active capsule in solid Signature Violet opacity shade
                 Box(
                     modifier = Modifier
                         .offset(x = animatedCapsuleOffset)
@@ -133,12 +123,7 @@ fun TeleVaultBottomNav(
                         .fillMaxHeight()
                         .clip(ActiveCapsuleShape)
                         .background(
-                            Brush.linearGradient(
-                                colors = listOf(
-                                    colors.violet.copy(alpha = if (colors.isDark) 0.24f else 0.14f),
-                                    colors.teal.copy(alpha = if (colors.isDark) 0.16f else 0.10f)
-                                )
-                            )
+                            colors.violet.copy(alpha = if (colors.isDark) 0.18f else 0.12f)
                         )
                         .border(
                             width = 1.dp,
@@ -203,8 +188,8 @@ fun TeleVaultBottomNav(
                             BadgedBox(
                                 badge = {
                                     Badge(
-                                        containerColor = colors.teal,
-                                        contentColor = Color(0xFF05060A)
+                                        containerColor = colors.violet,
+                                        contentColor = Color.White
                                     ) {
                                         Text(
                                             text = activeTransferCount.toString(),
@@ -218,7 +203,7 @@ fun TeleVaultBottomNav(
                                 Icon(
                                     imageVector = Icons.Default.Sync,
                                     contentDescription = "Transfers",
-                                    tint = if (!isVault) colors.teal else transfersColor,
+                                    tint = if (!isVault) colors.violet else transfersColor,
                                     modifier = Modifier.size(19.dp)
                                 )
                             }
@@ -226,7 +211,7 @@ fun TeleVaultBottomNav(
                             Icon(
                                 imageVector = Icons.Default.Sync,
                                 contentDescription = "Transfers",
-                                tint = if (!isVault) colors.teal else transfersColor,
+                                tint = if (!isVault) colors.violet else transfersColor,
                                 modifier = Modifier.size(19.dp)
                             )
                         }
