@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for first-launch file access prompt & automatic Download/TGC directory initialization, plus visual design upgrades across the Bento storage header, file/folder cards, transfer queue cards, and floating bottom navigation bar.",
-  "updatedAt":  "2026-10-22T09:17:53.533943515Z",
+  "summary":  "Implementation plan to replace the custom folder creation dialog with standard Android system permission requests (storage and notifications) on first launch and automatic background creation of the Download/TGC folder.",
+  "updatedAt":  "2026-10-22T09:59:29.246181076Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

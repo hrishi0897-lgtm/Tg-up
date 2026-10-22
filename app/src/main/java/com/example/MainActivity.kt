@@ -329,21 +329,37 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
         }
     }
 
-    // Notification permission launcher for Android 13+
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { _ -> }
-
-    // Legacy storage permission launcher for Android 9 and below (API <= 28)
-    val storagePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+    // Unified system permission launcher for first-launch Notification and Storage permissions
+    val firstLaunchPermissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { _ ->
         viewModel.completeFirstLaunchStorageSetup()
     }
 
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    LaunchedEffect(uiState.showFirstLaunchStoragePrompt) {
+        if (uiState.showFirstLaunchStoragePrompt) {
+            val permissionsToRequest = mutableListOf<String>()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2 &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+
+            if (permissionsToRequest.isNotEmpty()) {
+                firstLaunchPermissionsLauncher.launch(permissionsToRequest.toTypedArray())
+            } else {
+                viewModel.completeFirstLaunchStorageSetup()
+            }
         }
     }
 
@@ -933,147 +949,8 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     }
                 )
             }
-
-            // First-Launch Storage Access & Download/TGC Folder Creation Prompt
-            if (uiState.showFirstLaunchStoragePrompt) {
-                FirstLaunchStorageSetupDialog(
-                    onAllowAndCreate = {
-                        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
-                            ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.WRITE_EXTERNAL_STORAGE
-                            ) != PackageManager.PERMISSION_GRANTED
-                        ) {
-                            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                        } else {
-                            viewModel.completeFirstLaunchStorageSetup()
-                        }
-                    },
-                    onDismiss = {
-                        viewModel.dismissFirstLaunchStoragePrompt()
-                    }
-                )
-            }
         }
     }
-}
-
-@Composable
-private fun FirstLaunchStorageSetupDialog(
-    onAllowAndCreate: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val colors = LocalTeleVaultColors.current
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = colors.surface,
-        shape = RoundedCornerShape(24.dp),
-        icon = {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                colors.violet.copy(alpha = 0.24f),
-                                colors.teal.copy(alpha = 0.20f)
-                            )
-                        )
-                    )
-                    .border(
-                        1.dp,
-                        colors.violet.copy(alpha = 0.45f),
-                        RoundedCornerShape(18.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.FolderSpecial,
-                    contentDescription = "Download/TGC Folder Access",
-                    tint = colors.teal,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-        },
-        title = {
-            Text(
-                text = "Set Up Download/TGC Folder",
-                fontSize = 19.sp,
-                fontFamily = BodySansFont,
-                fontWeight = FontWeight.Bold,
-                color = colors.text
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "Grant file access so TeleVault can create a dedicated TGC folder inside your phone's Download directory for all downloaded vault files.",
-                    fontSize = 13.5.sp,
-                    fontFamily = BodySansFont,
-                    color = colors.textDim,
-                    lineHeight = 19.sp
-                )
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(colors.surfaceHi)
-                        .border(1.dp, colors.line, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CheckCircle,
-                        contentDescription = null,
-                        tint = colors.mint,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Destination Path",
-                            fontSize = 11.sp,
-                            fontFamily = BodySansFont,
-                            color = colors.textFaint
-                        )
-                        Text(
-                            text = "Download/TGC",
-                            fontSize = 13.5.sp,
-                            fontFamily = NumericMonoFont,
-                            fontWeight = FontWeight.Bold,
-                            color = colors.teal
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = onAllowAndCreate,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = colors.violet,
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .testTag("btn_allow_create_tgc_folder")
-            ) {
-                Text(
-                    text = "Allow & Create Download/TGC",
-                    fontSize = 14.sp,
-                    fontFamily = BodySansFont,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    )
 }
 
 @Composable
