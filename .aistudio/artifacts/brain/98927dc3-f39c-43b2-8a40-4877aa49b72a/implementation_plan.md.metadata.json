@@ -1,6 +1,6 @@
 {
-  "summary":  "Updated implementation plan to fix button sizing and top-bar layout so no button is ever squished or clipped, and completely remove the Storage Analytics page and its entry points.",
-  "updatedAt":  "2026-10-22T12:16:07.136848498Z",
+  "summary":  "Implementation plan to fix Light Mode visibility in Vault Settings by using adaptive monochrome accents (pure White in Dark Mode, deep monochrome ink #0B0D14 in Light Mode) and inverted on-accent content colors.",
+  "updatedAt":  "2026-10-23T07:43:24.866046686Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

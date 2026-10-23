@@ -170,17 +170,19 @@ fun SettingsScreen(
     onStartTestTransfer: (() -> Unit)? = null
 ) {
     val baseColors = LocalTeleVaultColors.current
+    val primaryAccent = if (baseColors.isDark) Color.White else Color(0xFF0B0D14)
+    val dimAccent = if (baseColors.isDark) Color(0xFFB0B8C8) else Color(0xFF474E64)
     val colors = remember(baseColors) {
         baseColors.copy(
-            violet = Color.White,
-            violetDim = Color(0xFFB0B8C8),
-            teal = Color.White,
-            amber = Color.White,
-            mint = Color.White,
-            danger = Color.White
+            violet = primaryAccent,
+            violetDim = dimAccent,
+            teal = primaryAccent,
+            amber = primaryAccent,
+            mint = primaryAccent,
+            danger = primaryAccent
         )
     }
-    val onWhiteAccent = Color(0xFF0A0C12)
+    val onWhiteAccent = if (baseColors.isDark) Color(0xFF0A0C12) else Color.White
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     var showDisconnectDialog by remember { mutableStateOf(false) }
@@ -839,7 +841,7 @@ fun SettingsScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = colors.mint),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Done", fontWeight = FontWeight.Bold, color = colors.bg)
+                    Text("Done", fontWeight = FontWeight.Bold, color = onWhiteAccent)
                 }
             }
         )
