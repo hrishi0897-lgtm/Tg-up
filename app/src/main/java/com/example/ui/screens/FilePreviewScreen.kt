@@ -571,37 +571,13 @@ fun FilePreviewScreen(
                                 lineHeight = 13.sp,
                                 fontFamily = NumericMonoFont
                             )
-                            Text(
-                                text = "•",
-                                color = Color.White.copy(alpha = 0.5f),
-                                fontSize = 9.sp,
-                                lineHeight = 13.sp
-                            )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(colors.teal.copy(alpha = 0.2f))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    .testTag("ram_status_pill")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Memory,
-                                    contentDescription = null,
-                                    tint = colors.teal,
-                                    modifier = Modifier.size(10.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = formatRamWindowBadge(bufferStats),
-                                    color = colors.teal,
-                                    fontSize = 8.sp,
-                                    lineHeight = 11.sp,
-                                    fontFamily = NumericMonoFont,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
                             if (file.isEncrypted) {
+                                Text(
+                                    text = "•",
+                                    color = Color.White.copy(alpha = 0.5f),
+                                    fontSize = 9.sp,
+                                    lineHeight = 13.sp
+                                )
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier

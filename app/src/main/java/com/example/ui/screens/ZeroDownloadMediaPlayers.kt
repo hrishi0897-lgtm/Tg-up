@@ -6,7 +6,9 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.OpenableColumns
+import android.util.Log
 import android.util.TypedValue
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -259,15 +261,17 @@ fun ZeroDownloadExoVideoPlayer(
     var isAudioSheetOpen by remember { mutableStateOf(false) }
     var isSubtitleSheetOpen by remember { mutableStateOf(false) }
 
+    var playerOpenElapsedMs by remember(file.id) { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+
     val exoPlayer = remember(file.id, chunks.size, isFullFileDownloaded) {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 4_000,
-                /* maxBufferMs = */ 20_000,
+                /* minBufferMs = */ 2_000,
+                /* maxBufferMs = */ 8_000,
                 /* bufferForPlaybackMs = */ 500,
-                /* bufferForPlaybackAfterRebufferMs = */ 1_000
+                /* bufferForPlaybackAfterRebufferMs = */ 1_500
             )
-            .setTargetBufferBytes(16 * 1024 * 1024) // Keep ExoPlayer internal ring buffer <= 16 MB
+            .setTargetBufferBytes(12 * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
@@ -378,6 +382,11 @@ fun ZeroDownloadExoVideoPlayer(
                 exoPlayer.play()
             }
         } else if (chunks.isNotEmpty()) {
+            playerOpenElapsedMs = SystemClock.elapsedRealtime()
+            // Parallel start: resolve links and start downloading FIRST and LAST chunk simultaneously,
+            // plus resolve links for next 2 chunks in the background.
+            streamManager.warmStartStreamingSession(file, chunks)
+
             val streamUri = Uri.parse("televault://stream/${file.id}/${Uri.encode(file.name)}")
             val itemBuilder = MediaItem.Builder()
                 .setUri(streamUri)
@@ -507,6 +516,13 @@ fun ZeroDownloadExoVideoPlayer(
             }
 
             override fun onRenderedFirstFrame() {
+                if (!hasRenderedFirstFrame) {
+                    val firstFrameElapsed = SystemClock.elapsedRealtime() - playerOpenElapsedMs
+                    Log.d(
+                        EphemeralStreamManager.TIMING_TAG,
+                        "Time to first rendered frame for '${file.name}': $firstFrameElapsed ms"
+                    )
+                }
                 hasRenderedFirstFrame = true
                 seekingUncachedChunkIndex = null
             }
@@ -688,42 +704,15 @@ fun ZeroDownloadExoVideoPlayer(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Buffering UI: Show "Buffering Chunk X/Y in RAM..." card ONLY while waiting for data
+        // Buffering UI: Show ONLY a centered circular loading spinner while waiting for data
         if (isWaitingForData) {
-            val totalChunks = chunks.size.coerceAtLeast(1)
-            val activeChunkOneBased = ((seekingUncachedChunkIndex ?: bufferStats.fetchingChunkIndex ?: 0) + 1)
-                .coerceIn(1, totalChunks)
-            val bufferingTitle = "Buffering Chunk $activeChunkOneBased/$totalChunks in RAM…"
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
+            CircularProgressIndicator(
+                color = colors.teal,
+                strokeWidth = 3.dp,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color.Black.copy(alpha = 0.80f))
-                    .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(18.dp))
-                    .padding(horizontal = 20.dp, vertical = 14.dp)
-                    .testTag("video_buffering_card")
-            ) {
-                CircularProgressIndicator(
-                    color = colors.teal,
-                    strokeWidth = 2.5.dp,
-                    modifier = Modifier.size(30.dp)
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = bufferingTitle,
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = formatRamWindowBadge(bufferStats),
-                    color = Color.White.copy(alpha = 0.72f),
-                    fontSize = 9.sp,
-                    fontFamily = NumericMonoFont
-                )
-            }
+                    .size(42.dp)
+                    .testTag("video_buffering_spinner")
+            )
         }
 
         // Stream Error Recovery Overlay (after 1 automatic link-refresh retry fails)
@@ -856,13 +845,6 @@ fun ZeroDownloadExoVideoPlayer(
                         color = Color.White,
                         fontSize = 9.sp,
                         fontFamily = NumericMonoFont
-                    )
-                    Text(
-                        text = "${formatRamWindowBadge(bufferStats)} • Buf ${(bufferedFraction * 100).toInt()}%",
-                        color = colors.teal,
-                        fontSize = 8.sp,
-                        fontFamily = NumericMonoFont,
-                        fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         text = formatStreamTimecode(durationMs),
@@ -1598,12 +1580,12 @@ fun ZeroDownloadExoAudioPlayerCard(
     val exoPlayer = remember(file.id, chunks.size, isFullFileDownloaded) {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 4_000,
-                /* maxBufferMs = */ 20_000,
+                /* minBufferMs = */ 2_000,
+                /* maxBufferMs = */ 8_000,
                 /* bufferForPlaybackMs = */ 500,
-                /* bufferForPlaybackAfterRebufferMs = */ 1_000
+                /* bufferForPlaybackAfterRebufferMs = */ 1_500
             )
-            .setTargetBufferBytes(12 * 1024 * 1024)
+            .setTargetBufferBytes(8 * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
@@ -1630,6 +1612,7 @@ fun ZeroDownloadExoAudioPlayerCard(
             }
             exoPlayer.play()
         } else if (chunks.isNotEmpty()) {
+            streamManager.warmStartStreamingSession(file, chunks)
             val streamUri = Uri.parse("televault://stream/${file.id}/${Uri.encode(file.name)}")
             val itemBuilder = MediaItem.Builder().setUri(streamUri)
             resolveMedia3MimeType(file.mimeType, file.name)?.let { itemBuilder.setMimeType(it) }
@@ -1807,7 +1790,7 @@ fun ZeroDownloadExoAudioPlayerCard(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Zero-Download RAM Sliding Window Badge
+            // File size badge (no RAM text on player screen)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1817,29 +1800,16 @@ fun ZeroDownloadExoAudioPlayerCard(
                     .padding(horizontal = 10.dp, vertical = 5.dp)
             ) {
                 Icon(
-                    imageVector = if (file.isEncrypted) Icons.Default.Lock else Icons.Default.Memory,
+                    imageVector = if (file.isEncrypted) Icons.Default.Lock else Icons.Default.AudioFile,
                     contentDescription = null,
                     tint = colors.teal,
                     modifier = Modifier.size(13.dp)
                 )
                 Text(
-                    text = "${ChecksumUtil.formatBytes(file.size)} • ${formatRamWindowBadge(bufferStats)}",
+                    text = ChecksumUtil.formatBytes(file.size),
                     color = colors.textDim,
                     fontSize = 9.sp,
                     fontFamily = NumericMonoFont
-                )
-            }
-
-            if (isWaitingForAudioData) {
-                val totalChunks = chunks.size.coerceAtLeast(1)
-                val activeChunkOneBased = ((seekingUncachedChunkIndex ?: bufferStats.fetchingChunkIndex ?: 0) + 1)
-                    .coerceIn(1, totalChunks)
-                Spacer(modifier = Modifier.height(10.dp))
-                Text(
-                    text = "Buffering Chunk $activeChunkOneBased/$totalChunks in RAM…",
-                    color = colors.teal,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold
                 )
             }
 
@@ -1922,13 +1892,6 @@ fun ZeroDownloadExoAudioPlayerCard(
                         color = colors.textDim,
                         fontSize = 10.sp,
                         fontFamily = NumericMonoFont
-                    )
-                    Text(
-                        text = "Buffered ${(bufferedFraction * 100).toInt()}%",
-                        color = colors.teal,
-                        fontSize = 9.sp,
-                        fontFamily = NumericMonoFont,
-                        fontWeight = FontWeight.Medium
                     )
                     Text(
                         text = formatStreamTimecode(durationMs),

@@ -75,10 +75,10 @@ class TelegramRepository(
         }
 
         /**
-         * Shared connection pool with 5 idle connections max and 30-second keep-alive.
-         * Shorter keep-alive prevents silently dead TCP sockets from lingering on mobile networks.
+         * Shared connection pool with 10 idle connections max and 60-second keep-alive
+         * for multiplexed HTTP/2 + HTTP/1.1 connection reuse across parallel chunk requests.
          */
-        val sharedConnectionPool = ConnectionPool(5, 30, TimeUnit.SECONDS)
+        val sharedConnectionPool = ConnectionPool(10, 60, TimeUnit.SECONDS)
 
         fun evictSharedConnectionPool(reason: String = "Manual eviction") {
             val idle = sharedConnectionPool.idleConnectionCount()
@@ -96,6 +96,7 @@ class TelegramRepository(
             }
 
             return OkHttpClient.Builder()
+                .protocols(listOf(Protocol.HTTP_2, Protocol.HTTP_1_1))
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .writeTimeout(60, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
@@ -550,24 +551,35 @@ class TelegramRepository(
     )
 
     /**
-     * Downloads file binary stream by file path with optional byte-offset Range resumption.
+     * Downloads file binary stream by file path with optional byte-offset Range request
+     * (`bytes=startOffset-endOffsetInclusive` or `bytes=startOffset-`).
      */
     suspend fun downloadFileStreamWithRange(
         token: String,
         filePath: String,
-        startOffset: Long = 0L
+        startOffset: Long = 0L,
+        endOffsetInclusive: Long? = null,
+        maxAttempts: Int = MAX_RETRIES
     ): Result<DownloadStreamResult> {
         var attempt = 0
         var currentDelay = BASE_BACKOFF_MS
         var effectiveOffset = startOffset.coerceAtLeast(0L)
+        var effectiveEndOffset = endOffsetInclusive
+        val targetMaxAttempts = maxAttempts.coerceAtLeast(1)
 
-        while (attempt < MAX_RETRIES) {
+        while (attempt < targetMaxAttempts) {
             attempt++
             try {
-                val rangeHeader = if (effectiveOffset > 0L) "bytes=$effectiveOffset-" else null
+                val rangeHeader = when {
+                    effectiveEndOffset != null && effectiveEndOffset >= effectiveOffset ->
+                        "bytes=$effectiveOffset-$effectiveEndOffset"
+                    effectiveOffset > 0L ->
+                        "bytes=$effectiveOffset-"
+                    else -> null
+                }
                 val response = api.downloadFile(fileDownloadUrl(token, filePath), rangeHeader)
                 if (response.isSuccessful && response.body() != null) {
-                    val isPartial = response.code() == 206 && effectiveOffset > 0L
+                    val isPartial = response.code() == 206 && rangeHeader != null
                     return Result.success(
                         DownloadStreamResult(
                             body = response.body()!!,
@@ -576,21 +588,22 @@ class TelegramRepository(
                         )
                     )
                 }
-                if (response.code() == 416 && effectiveOffset > 0L) {
+                if (response.code() == 416 && (effectiveOffset > 0L || effectiveEndOffset != null)) {
                     // Range Not Satisfiable — fallback to full stream from byte 0
-                    Log.w("TelegramRepo", "[Download fileStream] HTTP 416 for offset=$effectiveOffset, falling back to full chunk download")
+                    Log.w("TelegramRepo", "[Download fileStream] HTTP 416 for range=$effectiveOffset..$effectiveEndOffset, falling back to full chunk download")
                     effectiveOffset = 0L
+                    effectiveEndOffset = null
                     attempt--
                     continue
                 }
                 val rawError = try { response.errorBody()?.string() } catch (_: Exception) { null }
                 Log.e("TelegramRepo", "<<< [RAW TELEGRAM HTTP RESPONSE BODY] [Download fileStream] code=${response.code()}: $rawError")
 
-                if (response.code() == 429) {
+                if (response.code() == 429 && attempt < targetMaxAttempts) {
                     delay(3000L)
                     continue
                 }
-                if (attempt < MAX_RETRIES && response.code() in 500..504) {
+                if (attempt < targetMaxAttempts && response.code() in 500..504) {
                     delay(currentDelay)
                     currentDelay *= 2
                     continue
@@ -600,9 +613,9 @@ class TelegramRepository(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.e("TelegramRepo", "[Download fileStream] Exception on attempt $attempt/$MAX_RETRIES: ${e.message}. Evicting connection pool.", e)
+                Log.e("TelegramRepo", "[Download fileStream] Exception on attempt $attempt/$targetMaxAttempts: ${e.message}. Evicting connection pool.", e)
                 evictConnectionPool("downloadFileStream attempt $attempt: ${e.message}")
-                if (attempt < MAX_RETRIES) {
+                if (attempt < targetMaxAttempts) {
                     delay(currentDelay)
                     currentDelay *= 2
                 } else {
@@ -610,7 +623,7 @@ class TelegramRepository(
                 }
             }
         }
-        return Result.failure(Exception("[Download fileStream] Failed after $MAX_RETRIES retries."))
+        return Result.failure(Exception("[Download fileStream] Failed after $targetMaxAttempts retries."))
     }
 
     /**

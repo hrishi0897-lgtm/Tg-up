@@ -12,6 +12,7 @@ import javax.crypto.CipherOutputStream
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
@@ -24,9 +25,12 @@ import javax.crypto.spec.SecretKeySpec
 object CryptoStreamEngine {
 
     private const val TRANSFORMATION = "AES/GCM/NoPadding"
+    private const val CTR_TRANSFORMATION = "AES/CTR/NoPadding"
     private const val AES_KEY_BITS = 256
+    private const val AES_BLOCK_BYTES = 16
     const val GCM_IV_BYTES = 12
     const val GCM_TAG_BITS = 128
+    const val GCM_TAG_BYTES = 16
     const val GCM_OVERHEAD_BYTES = 28 // 12-byte IV + 16-byte auth tag
 
     private val secureRandom = SecureRandom()
@@ -151,4 +155,72 @@ object CryptoStreamEngine {
         cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(GCM_TAG_BITS, iv))
         return cipher.doFinal(encryptedBytes, GCM_IV_BYTES, encryptedBytes.size - GCM_IV_BYTES)
     }
+
+    /**
+     * Decrypts an arbitrary plaintext byte range starting at [plainOffset] from an AES-256-GCM
+     * encrypted chunk using AES-CTR with the NIST SP 800-38D GCM counter offset.
+     *
+     * For a 12-byte GCM IV, J_0 = IV || 0x00000001 is reserved for the authentication tag mask,
+     * and payload encryption uses AES-CTR starting at counter = 2 (J_0 + 1).
+     * Block `b = plainOffset / 16` therefore uses counter `2 + b`.
+     */
+    fun decryptRangeCtr(
+        iv: ByteArray,
+        keyBase64: String,
+        plainOffset: Long,
+        ciphertextSlice: ByteArray,
+        cipherSliceOffset: Int = 0,
+        length: Int = ciphertextSlice.size - cipherSliceOffset
+    ): ByteArray {
+        require(iv.size == GCM_IV_BYTES) {
+            "Expected $GCM_IV_BYTES-byte GCM IV, got ${iv.size} bytes"
+        }
+        if (length <= 0) return ByteArray(0)
+        require(plainOffset >= 0L) { "plainOffset must be non-negative: $plainOffset" }
+
+        val secretKey = decodeSecretKey(keyBase64)
+        val blockIndex = plainOffset / AES_BLOCK_BYTES
+        val intraBlockOffset = (plainOffset % AES_BLOCK_BYTES).toInt()
+        val counterValue = (2L + blockIndex) and 0xFFFFFFFFL
+
+        val counterBlock = ByteArray(AES_BLOCK_BYTES)
+        System.arraycopy(iv, 0, counterBlock, 0, GCM_IV_BYTES)
+        counterBlock[12] = ((counterValue ushr 24) and 0xFFL).toByte()
+        counterBlock[13] = ((counterValue ushr 16) and 0xFFL).toByte()
+        counterBlock[14] = ((counterValue ushr 8) and 0xFFL).toByte()
+        counterBlock[15] = (counterValue and 0xFFL).toByte()
+
+        val cipher = Cipher.getInstance(CTR_TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, IvParameterSpec(counterBlock))
+
+        if (intraBlockOffset > 0) {
+            val dummy = ByteArray(intraBlockOffset)
+            cipher.update(dummy)
+        }
+
+        return cipher.doFinal(ciphertextSlice, cipherSliceOffset, length)
+    }
+
+    /**
+     * Verifies the 128-bit AES-GCM authentication tag of a complete encrypted chunk payload
+     * ([12-byte IV][Ciphertext][16-byte Tag]) without retaining an extra plaintext copy.
+     */
+    fun verifyGcmTag(
+        encryptedBytes: ByteArray,
+        keyBase64: String
+    ): Boolean {
+        if (encryptedBytes.size < GCM_OVERHEAD_BYTES) return false
+        return try {
+            val secretKey = decodeSecretKey(keyBase64)
+            val iv = encryptedBytes.copyOfRange(0, GCM_IV_BYTES)
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(GCM_TAG_BITS, iv))
+            val out = cipher.doFinal(encryptedBytes, GCM_IV_BYTES, encryptedBytes.size - GCM_IV_BYTES)
+            out.fill(0)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
 }
+
