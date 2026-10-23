@@ -233,7 +233,7 @@ fun SettingsScreen(
             title = {
                 Text(
                     text = "Add Backup Bot Token",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -243,8 +243,8 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = newBotTokenInput,
                         onValueChange = { newBotTokenInput = it },
-                        placeholder = { Text("123456789:ABCdefGHI...", color = colors.textFaint, fontSize = 13.sp) },
-                        label = { Text("Bot Token", fontSize = 12.sp) },
+                        placeholder = { Text("123456789:ABCdefGHI...", color = colors.textFaint, fontSize = 11.sp) },
+                        label = { Text("Bot Token", fontSize = 10.sp) },
                         singleLine = true,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -315,7 +315,7 @@ fun SettingsScreen(
             title = {
                 Text(
                     text = "Disconnect Vault?",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -323,9 +323,9 @@ fun SettingsScreen(
             text = {
                 Text(
                     text = "This will cancel any active transfers, clear local cache and database records, and remove your Telegram bot credentials. Your uploaded files remain safe in Telegram.",
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     color = colors.textDim,
-                    lineHeight = 18.sp
+                    lineHeight = 16.sp
                 )
             },
             confirmButton = {
@@ -367,7 +367,7 @@ fun SettingsScreen(
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Restore from Backup", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("Restore from Backup", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             },
             text = {
@@ -384,7 +384,7 @@ fun SettingsScreen(
                     if (!restoreError.isNullOrBlank()) {
                         Text(
                             text = restoreError,
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             color = colors.danger,
                             fontWeight = FontWeight.Medium
                         )
@@ -450,25 +450,25 @@ fun SettingsScreen(
                         text = "Vault successfully rebuilt from backup index!",
                         fontWeight = FontWeight.SemiBold,
                         color = colors.text,
-                        fontSize = 13.sp
+                        fontSize = 11.sp
                     )
-                    Text("• Files restored: ${restoreResult.restoredFilesCount}", fontSize = 12.sp, color = colors.textDim)
-                    Text("• Folders restored: ${restoreResult.restoredFoldersCount}", fontSize = 12.sp, color = colors.textDim)
-                    Text("• Status: ${restoreResult.summary}", fontSize = 12.sp, color = colors.textDim)
+                    Text("• Files restored: ${restoreResult.restoredFilesCount}", fontSize = 10.sp, color = colors.textDim)
+                    Text("• Folders restored: ${restoreResult.restoredFoldersCount}", fontSize = 10.sp, color = colors.textDim)
+                    Text("• Status: ${restoreResult.summary}", fontSize = 10.sp, color = colors.textDim)
 
                     if (restoreResult.brokenFilesCount > 0) {
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "⚠️ ${restoreResult.brokenFilesCount} file(s) have missing chunks and are flagged as BROKEN in the vault:",
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.danger
                         )
                         restoreResult.brokenFileNames.take(5).forEach { name ->
-                            Text("  - $name", fontSize = 11.sp, color = colors.danger)
+                            Text("  - $name", fontSize = 9.sp, color = colors.danger)
                         }
                         if (restoreResult.brokenFileNames.size > 5) {
-                            Text("  ...and ${restoreResult.brokenFileNames.size - 5} more", fontSize = 11.sp, color = colors.textFaint)
+                            Text("  ...and ${restoreResult.brokenFileNames.size - 5} more", fontSize = 9.sp, color = colors.textFaint)
                         }
                     }
                 }
@@ -521,7 +521,7 @@ fun SettingsScreen(
             title = {
                 Text(
                     text = "Add Standby Bot",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -531,8 +531,8 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = standbyBotLabelInput,
                         onValueChange = { standbyBotLabelInput = it },
-                        placeholder = { Text("e.g. Backup Bot #1", color = colors.textFaint, fontSize = 13.sp) },
-                        label = { Text("Bot Label / Name", fontSize = 12.sp) },
+                        placeholder = { Text("e.g. Backup Bot #1", color = colors.textFaint, fontSize = 11.sp) },
+                        label = { Text("Bot Label / Name", fontSize = 10.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("standby_bot_label_input"),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -551,8 +551,8 @@ fun SettingsScreen(
                             standbyBotTokenInput = it
                             addStandbyBotError = null
                         },
-                        placeholder = { Text("123456789:ABCdefGHI...", color = colors.textFaint, fontSize = 13.sp) },
-                        label = { Text("Bot Token", fontSize = 12.sp) },
+                        placeholder = { Text("123456789:ABCdefGHI...", color = colors.textFaint, fontSize = 11.sp) },
+                        label = { Text("Bot Token", fontSize = 10.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("standby_bot_token_input"),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -567,9 +567,9 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = addStandbyBotError ?: "",
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             color = colors.danger,
-                            lineHeight = 16.sp
+                            lineHeight = 14.sp
                         )
                     }
                 }
@@ -653,7 +653,7 @@ fun SettingsScreen(
             title = {
                 Text(
                     text = "Switch Vault to ${bot.label}?",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -662,7 +662,7 @@ fun SettingsScreen(
                 Column {
                     Text(
                         text = "Switch active credentials and rebind vault chunks to ${bot.label}?",
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         color = colors.text,
                         fontWeight = FontWeight.Medium
                     )
@@ -716,7 +716,7 @@ fun SettingsScreen(
             title = {
                 Text(
                     text = "Recovering Vault Chunks",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -729,16 +729,16 @@ fun SettingsScreen(
                         } else {
                             "Preparing recovery..."
                         },
-                        fontSize = 14.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.text
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = recoveryState.statusMessage,
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         color = colors.textDim,
-                        lineHeight = 16.sp
+                        lineHeight = 14.sp
                     )
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -772,7 +772,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Server-side copyMessage • 0 MB mobile data used",
-                            fontSize = 11.sp,
+                            fontSize = 9.sp,
                             color = colors.mint,
                             fontWeight = FontWeight.Medium
                         )
@@ -813,7 +813,7 @@ fun SettingsScreen(
             title = {
                 Text(
                     text = "Vault Successfully Recovered!",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -822,14 +822,14 @@ fun SettingsScreen(
                 Column {
                     Text(
                         text = recoveryState.statusMessage,
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         color = colors.textDim,
-                        lineHeight = 18.sp
+                        lineHeight = 16.sp
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = "Your files are now linked to ${recoveryState.standbyBotLabel}. You can continue uploading and downloading as normal.",
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         color = colors.mint,
                         fontWeight = FontWeight.Medium
                     )
@@ -871,7 +871,7 @@ fun SettingsScreen(
             title = {
                 Text(
                     text = "Recovery Error",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -879,9 +879,9 @@ fun SettingsScreen(
             text = {
                 Text(
                     text = recoveryState.errorMessage ?: "An unexpected error occurred during vault recovery.",
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     color = colors.textDim,
-                    lineHeight = 18.sp
+                    lineHeight = 16.sp
                 )
             },
             confirmButton = {
@@ -916,7 +916,7 @@ fun SettingsScreen(
             title = {
                 Text(
                     text = if (isSuccess) "Verification Success" else "Membership Verification",
-                    fontSize = 17.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -924,9 +924,9 @@ fun SettingsScreen(
             text = {
                 Text(
                     text = message,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     color = colors.textDim,
-                    lineHeight = 18.sp
+                    lineHeight = 16.sp
                 )
             },
             confirmButton = {
@@ -971,7 +971,7 @@ fun SettingsScreen(
 
                     Text(
                         text = "Vault Settings",
-                        fontSize = 18.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.text,
                         modifier = Modifier
@@ -1045,14 +1045,14 @@ fun SettingsScreen(
                                 Text(
                                     text = "BOT TOKEN INVALID OR REVOKED",
                                     color = colors.danger,
-                                    fontSize = 12.5.sp,
+                                    fontSize = 10.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     letterSpacing = 0.5.sp
                                 )
                                 Text(
                                     text = "HTTP ${primaryBotAlert.errorCode ?: "401/403"} • Checked at ${primaryBotAlert.formattedTime}",
                                     color = colors.textDim,
-                                    fontSize = 11.5.sp,
+                                    fontSize = 9.5.sp,
                                     fontFamily = FontFamily.Monospace
                                 )
                             }
@@ -1076,9 +1076,9 @@ fun SettingsScreen(
                         Text(
                             text = "Your bot token appears to be invalid or revoked — switch to a standby bot in Settings",
                             color = colors.text,
-                            fontSize = 13.5.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.SemiBold,
-                            lineHeight = 19.sp
+                            lineHeight = 17.sp
                         )
 
                         if (primaryBotAlert.errorMessage.isNotBlank() && !primaryBotAlert.errorMessage.contains("Your bot token appears")) {
@@ -1086,8 +1086,8 @@ fun SettingsScreen(
                             Text(
                                 text = "Details: ${primaryBotAlert.errorMessage}",
                                 color = colors.textDim,
-                                fontSize = 12.sp,
-                                lineHeight = 16.sp
+                                fontSize = 10.sp,
+                                lineHeight = 14.sp
                             )
                         }
 
@@ -1113,7 +1113,7 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "Switch Vault to ${bestBot.label}",
-                                    fontSize = 13.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -1145,7 +1145,7 @@ fun SettingsScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "Multi-Bot Parallel Load Balancer",
-                                    fontSize = 13.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = colors.teal
                                 )
@@ -1159,7 +1159,7 @@ fun SettingsScreen(
                             ) {
                                 Text(
                                     text = "$totalActiveWorkers ${if (totalActiveWorkers == 1) "Worker" else "Workers"}",
-                                    fontSize = 11.sp,
+                                    fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = FontFamily.Monospace,
                                     color = colors.teal
@@ -1185,14 +1185,14 @@ fun SettingsScreen(
                                 ) {
                                     Text(
                                         text = "⚡ Auto Sync",
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.text,
                                         modifier = Modifier.weight(1f)
                                     )
                                     Text(
                                         text = "Configure ➔",
-                                        fontSize = 12.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.violet
                                     )
@@ -1218,14 +1218,14 @@ fun SettingsScreen(
                                 ) {
                                     Text(
                                         text = "🔗 Import Link/QR",
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.text,
                                         modifier = Modifier.weight(1f)
                                     )
                                     Text(
                                         text = "Import ➔",
-                                        fontSize = 12.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.teal
                                     )
@@ -1256,14 +1256,14 @@ fun SettingsScreen(
                         Column {
                             Text(
                                 text = "Chat ID",
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = colors.textFaint
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = chatId.ifEmpty { "Not connected" },
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = FontFamily.Monospace,
                                 color = colors.text
@@ -1277,7 +1277,7 @@ fun SettingsScreen(
                         ) {
                             Text(
                                 text = "Active",
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.mint
                             )
@@ -1297,7 +1297,7 @@ fun SettingsScreen(
                         Column {
                             Text(
                                 text = "Bot Token",
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = colors.textFaint
                             )
@@ -1308,7 +1308,7 @@ fun SettingsScreen(
                                 } else {
                                     "••••••••••••"
                                 },
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = colors.textDim
                             )
@@ -1341,7 +1341,7 @@ fun SettingsScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Pair Another Device",
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.text
                                     )
@@ -1366,7 +1366,7 @@ fun SettingsScreen(
                             .clickable { showDisconnectDialog = true }
                             .padding(horizontal = 14.dp, vertical = 12.dp)
                             .testTag("disconnect_button")
-                    ) {
+                        ) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1381,7 +1381,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Disconnect Vault & Clear Credentials",
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.danger
                             )
@@ -1416,7 +1416,7 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = if (primaryBotAlert != null) "Bot Token Revoked / Invalid" else "Primary Bot Token Healthy",
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (primaryBotAlert != null) colors.danger else colors.mint
                             )
@@ -1437,7 +1437,7 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text(
                                     text = "Check Now",
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = colors.violet
                                 )
@@ -1466,7 +1466,7 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = "Bot Health Check History (${botHealthLogs.size} logs)",
-                                fontSize = 12.5.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = colors.text
                             )
@@ -1484,7 +1484,7 @@ fun SettingsScreen(
                         if (botHealthLogs.isEmpty()) {
                             Text(
                                 text = "No health check events logged yet. Background checks run every 15 minutes.",
-                                fontSize = 12.sp,
+                                fontSize = 10.sp,
                                 color = colors.textFaint,
                                 modifier = Modifier.padding(start = 4.dp, top = 2.dp)
                             )
@@ -1512,10 +1512,10 @@ fun SettingsScreen(
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
                                             text = logLine,
-                                            fontSize = 11.sp,
+                                            fontSize = 9.sp,
                                             fontFamily = FontFamily.Monospace,
                                             color = if (isRevocation) colors.danger else colors.textDim,
-                                            lineHeight = 15.sp
+                                            lineHeight = 13.sp
                                         )
                                     }
                                 }
@@ -1541,7 +1541,7 @@ fun SettingsScreen(
                     ) {
                         Text(
                             text = "Zero-Bandwidth Vault Recovery",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = colors.text
                         )
@@ -1557,7 +1557,7 @@ fun SettingsScreen(
                                     tint = colors.violet
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Verify All", fontSize = 11.sp, color = colors.violet, fontWeight = FontWeight.SemiBold)
+                                Text("Verify All", fontSize = 9.sp, color = colors.violet, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -1584,7 +1584,7 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = "$verifiedStandbyBotsCount standby bot(s) verified",
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = colors.mint
                                 )
@@ -1609,7 +1609,7 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = "Standby bots unverified",
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = colors.amber
                                 )
@@ -1646,7 +1646,7 @@ fun SettingsScreen(
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Text(
                                                         text = bot.label,
-                                                        fontSize = 13.sp,
+                                                        fontSize = 11.sp,
                                                         fontWeight = FontWeight.SemiBold,
                                                         color = colors.text
                                                     )
@@ -1654,7 +1654,7 @@ fun SettingsScreen(
                                                         Spacer(modifier = Modifier.width(6.dp))
                                                         Text(
                                                             text = "@${bot.username}",
-                                                            fontSize = 11.sp,
+                                                            fontSize = 9.sp,
                                                             color = colors.violet
                                                         )
                                                     }
@@ -1669,7 +1669,7 @@ fun SettingsScreen(
                                                 }
                                                 Text(
                                                     text = "Added $addedText",
-                                                    fontSize = 10.sp,
+                                                    fontSize = 8.sp,
                                                     color = colors.textFaint
                                                 )
                                             }
@@ -1694,7 +1694,7 @@ fun SettingsScreen(
                                                     Spacer(modifier = Modifier.width(4.dp))
                                                     Text(
                                                         text = if (bot.isVerifiedMember) "Verified Member" else "Unverified",
-                                                        fontSize = 10.sp,
+                                                        fontSize = 8.sp,
                                                         fontWeight = FontWeight.Bold,
                                                         color = if (bot.isVerifiedMember) colors.mint else colors.amber
                                                     )
@@ -1736,7 +1736,7 @@ fun SettingsScreen(
                                                             color = colors.violet
                                                         )
                                                         Spacer(modifier = Modifier.width(4.dp))
-                                                        Text("Verifying...", fontSize = 11.sp, color = colors.violet, maxLines = 1)
+                                                        Text("Verifying...", fontSize = 9.sp, color = colors.violet, maxLines = 1)
                                                     } else {
                                                         Icon(
                                                             imageVector = Icons.Default.Refresh,
@@ -1745,7 +1745,7 @@ fun SettingsScreen(
                                                             tint = colors.violet
                                                         )
                                                         Spacer(modifier = Modifier.width(4.dp))
-                                                        Text("Verify Membership", fontSize = 11.sp, color = colors.violet, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                                        Text("Verify Membership", fontSize = 9.sp, color = colors.violet, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                                     }
                                                 }
 
@@ -1766,7 +1766,7 @@ fun SettingsScreen(
                                                         tint = colors.violet
                                                     )
                                                     Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Switch & Recover", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                                    Text("Switch & Recover", fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                                                 }
                                             }
 
@@ -1790,7 +1790,7 @@ fun SettingsScreen(
                     } else {
                         Text(
                             text = "No standby bots registered",
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             color = colors.textFaint
                         )
                     }
@@ -1824,7 +1824,7 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Add Standby Bot (Resilience)",
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = colors.violet
                         )
@@ -1850,13 +1850,13 @@ fun SettingsScreen(
                     ) {
                         Text(
                             text = "Download Path",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = colors.text
                         )
                         Text(
                             text = com.example.domain.DownloadStorageManager.TGC_RELATIVE_PATH,
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
                             color = colors.violet
@@ -1899,7 +1899,7 @@ fun SettingsScreen(
                                     }
                                     Text(
                                         text = "$size MB",
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                         color = if (isSelected) onWhiteAccent else colors.text
                                     )
@@ -1926,7 +1926,7 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Transfer only on Wi-Fi",
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text
                             )
@@ -1971,7 +1971,7 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Background Execution",
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text
                             )
@@ -1994,7 +1994,7 @@ fun SettingsScreen(
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = "Optimized",
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.mint
                                     )
@@ -2020,7 +2020,7 @@ fun SettingsScreen(
                                 modifier = Modifier.pressScale(0.90f),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
-                                Text("Optimize", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Optimize", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -2042,7 +2042,7 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Prompt for folder on shared files",
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text
                             )
@@ -2087,13 +2087,13 @@ fun SettingsScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Backup Channel ID",
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = colors.text
                                     )
                                     Text(
                                         text = if (!backupChatId.isNullOrBlank()) backupChatId else "Not configured",
-                                        fontSize = 12.sp,
+                                        fontSize = 10.sp,
                                         fontFamily = FontFamily.Monospace,
                                         color = if (!backupChatId.isNullOrBlank()) colors.teal else colors.textFaint
                                     )
@@ -2110,7 +2110,7 @@ fun SettingsScreen(
                                             if (backupChatId.isNullOrBlank()) "Configure" else "Change",
                                             color = colors.teal,
                                             fontWeight = FontWeight.SemiBold,
-                                            fontSize = 12.sp
+                                            fontSize = 10.sp
                                         )
                                     }
                                 }
@@ -2180,13 +2180,13 @@ fun SettingsScreen(
                                 Column {
                                     Text(
                                         text = "Disaster Recovery",
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.text
                                     )
                                     Text(
                                         text = "Restore database from secondary channel",
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         color = colors.textDim
                                     )
                                 }
@@ -2208,7 +2208,7 @@ fun SettingsScreen(
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Restore from Backup Channel", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                Text("Restore from Backup Channel", fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
                             }
                         }
                     }
@@ -2240,13 +2240,13 @@ fun SettingsScreen(
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Relay Channel ID",
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.violet
                                     )
                                     Text(
                                         text = relayChatId?.ifBlank { null } ?: "Using primary storage channel as relay",
-                                        fontSize = 12.sp,
+                                        fontSize = 10.sp,
                                         fontFamily = FontFamily.Monospace,
                                         color = colors.text
                                     )
@@ -2255,7 +2255,7 @@ fun SettingsScreen(
                                     onClick = { isEditingRelayChat = !isEditingRelayChat },
                                     colors = ButtonDefaults.textButtonColors(contentColor = colors.violet)
                                 ) {
-                                    Text(if (isEditingRelayChat) "Cancel" else "Configure", fontSize = 12.sp)
+                                    Text(if (isEditingRelayChat) "Cancel" else "Configure", fontSize = 10.sp)
                                 }
                             }
 
@@ -2268,7 +2268,7 @@ fun SettingsScreen(
                                     OutlinedTextField(
                                         value = relayChatInput,
                                         onValueChange = { relayChatInput = it },
-                                        placeholder = { Text("e.g. -100xxxxxxx or empty", fontSize = 12.sp, color = colors.textFaint) },
+                                        placeholder = { Text("e.g. -100xxxxxxx or empty", fontSize = 10.sp, color = colors.textFaint) },
                                         modifier = Modifier.weight(1f),
                                         singleLine = true,
                                         colors = OutlinedTextFieldDefaults.colors(
@@ -2289,7 +2289,7 @@ fun SettingsScreen(
                                         ),
                                         shape = RoundedCornerShape(8.dp)
                                     ) {
-                                        Text("Save", fontSize = 12.sp, color = onWhiteAccent)
+                                        Text("Save", fontSize = 10.sp, color = onWhiteAccent)
                                     }
                                 }
                             }
@@ -2300,14 +2300,14 @@ fun SettingsScreen(
                     if (sharedFiles.isEmpty()) {
                         Text(
                             text = "No files have been shared via relay yet.",
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             color = colors.textFaint,
                             modifier = Modifier.padding(vertical = 4.dp)
                         )
                     } else {
                         Text(
                             text = "Active & Revoked Shares (${sharedFiles.size})",
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.text
                         )
@@ -2329,7 +2329,7 @@ fun SettingsScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = share.inviteLink,
-                                            fontSize = 12.sp,
+                                            fontSize = 10.sp,
                                             fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.Medium,
                                             color = colors.text,
@@ -2348,7 +2348,7 @@ fun SettingsScreen(
                                         }
                                         Text(
                                             text = "Status: $statusText • ${SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(share.createdDate))}",
-                                            fontSize = 10.sp,
+                                            fontSize = 8.sp,
                                             color = statusColor
                                         )
                                     }
@@ -2363,7 +2363,7 @@ fun SettingsScreen(
                                             shape = RoundedCornerShape(6.dp),
                                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                                         ) {
-                                            Text("Revoke", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                            Text("Revoke", fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
                                         }
                                     }
                                 }
@@ -2409,7 +2409,7 @@ fun SettingsScreen(
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Text(
                                         text = "Running Test…",
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.text
                                     )
@@ -2423,7 +2423,7 @@ fun SettingsScreen(
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = "Start 5-Chunk Test Transfer",
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = onWhiteAccent
                                     )
@@ -2492,23 +2492,23 @@ fun SettingsScreen(
                                                 isSuccess -> "Integrity Test Passed"
                                                 else -> "Integrity Test Failed"
                                             },
-                                            fontSize = 12.sp,
+                                            fontSize = 10.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = bannerTint
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = testTransferStatus ?: "",
-                                            fontSize = 11.sp,
+                                            fontSize = 9.sp,
                                             color = colors.text,
-                                            lineHeight = 15.sp
+                                            lineHeight = 13.sp
                                         )
                                     }
                                     if (!testTransferRunning && onDismissTestStatus != null) {
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
                                             text = "Dismiss",
-                                            fontSize = 11.sp,
+                                            fontSize = 9.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = colors.textDim,
                                             modifier = Modifier
@@ -2538,7 +2538,7 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = if (isDarkTheme) "Dark OLED Theme" else "Light Theme",
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text
                             )
@@ -2573,7 +2573,7 @@ fun SettingsScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Recycle Bin ($trashCount)",
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text
                             )
@@ -2588,7 +2588,7 @@ fun SettingsScreen(
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                         ) {
-                            Text("Open Bin", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Open Bin", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -2628,7 +2628,7 @@ fun SettingsScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = if (isHighRefresh) "High Refresh Rate (Active)" else "Display Refresh Rate",
-                            fontSize = 14.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = colors.text
                         )
@@ -2647,7 +2647,7 @@ fun SettingsScreen(
                     ) {
                         Text(
                             text = "$maxFps Hz",
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (isHighRefresh) colors.mint else colors.text
                         )
@@ -2693,7 +2693,7 @@ private fun SettingsCard(
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = title,
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.violet,
                     letterSpacing = 0.6.sp

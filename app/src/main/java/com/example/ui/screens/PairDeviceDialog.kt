@@ -74,7 +74,7 @@ fun PairDeviceDialog(
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = "Pair Device",
-                    fontSize = 17.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -120,7 +120,7 @@ fun PairDeviceDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = colors.violet),
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text("Done", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text("Done", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     )

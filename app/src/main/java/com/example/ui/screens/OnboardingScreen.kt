@@ -135,7 +135,7 @@ fun OnboardingScreen(
 
             Text(
                 text = "TeleVault",
-                fontSize = 28.sp,
+                fontSize = 26.sp,
                 fontWeight = FontWeight.Bold,
                 color = colors.text,
                 letterSpacing = (-0.5).sp
@@ -157,7 +157,7 @@ fun OnboardingScreen(
                 ) {
                     Text(
                         text = "CONNECT YOUR TELEGRAM BOT",
-                        fontSize = 11.sp,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.violet,
                         letterSpacing = 1.sp
@@ -168,7 +168,7 @@ fun OnboardingScreen(
                     // Bot Token field
                     Text(
                         text = "Telegram Bot Token",
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = colors.text
                     )
@@ -180,7 +180,7 @@ fun OnboardingScreen(
                             Text(
                                 "123456789:ABCdefGHIjklMNOpqr...",
                                 color = colors.textFaint,
-                                fontSize = 13.sp
+                                fontSize = 11.sp
                             )
                         },
                         leadingIcon = {
@@ -226,7 +226,7 @@ fun OnboardingScreen(
                     // Chat ID field
                     Text(
                         text = "Your Telegram Chat ID",
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         color = colors.text
                     )
@@ -238,7 +238,7 @@ fun OnboardingScreen(
                             Text(
                                 "e.g. 987654321 or -100123456789",
                                 color = colors.textFaint,
-                                fontSize = 13.sp
+                                fontSize = 11.sp
                             )
                         },
                         leadingIcon = {
@@ -286,13 +286,13 @@ fun OnboardingScreen(
                     ) {
                         Text(
                             text = "Backup Channel ID",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
                             color = colors.text
                         )
                         Text(
                             text = "Optional",
-                            fontSize = 11.sp,
+                            fontSize = 9.sp,
                             color = colors.teal,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -305,7 +305,7 @@ fun OnboardingScreen(
                             Text(
                                 "e.g. -100987654321",
                                 color = colors.textFaint,
-                                fontSize = 13.sp
+                                fontSize = 11.sp
                             )
                         },
                         leadingIcon = {
@@ -357,9 +357,9 @@ fun OnboardingScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = validationError ?: "",
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     color = StatusError,
-                                    lineHeight = 17.sp
+                                    lineHeight = 15.sp
                                 )
                             }
                         }
@@ -393,13 +393,13 @@ fun OnboardingScreen(
                             Text(
                                 "Validating Bot with Telegram...",
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
+                                fontSize = 12.sp
                             )
                         } else {
                             Text(
                                 "Connect & Verify Vault",
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp
+                                fontSize = 13.sp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Icon(
@@ -419,7 +419,7 @@ fun OnboardingScreen(
                         Box(modifier = Modifier.weight(1f).height(1.dp).background(colors.line))
                         Text(
                             text = "OR",
-                            fontSize = 11.sp,
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.textFaint,
                             modifier = Modifier.padding(horizontal = 12.dp)
@@ -448,7 +448,7 @@ fun OnboardingScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             "Scan QR to Pair from Another Device",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -500,7 +500,7 @@ fun OnboardingScreen(
                         Column {
                             Text(
                                 text = "Restore from Backup Channel",
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.text
                             )
@@ -529,7 +529,7 @@ fun OnboardingScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             "Restore from Backup Channel",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -548,7 +548,7 @@ fun OnboardingScreen(
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Disaster Recovery", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                            Text("Disaster Recovery", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         }
                     },
                     text = {
@@ -576,7 +576,7 @@ fun OnboardingScreen(
                                 Text(
                                     text = restoreError,
                                     color = StatusError,
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
@@ -642,25 +642,25 @@ fun OnboardingScreen(
                                 text = "Successfully recovered from backup channel!",
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text,
-                                fontSize = 14.sp
+                                fontSize = 12.sp
                             )
-                            Text("• Files restored: ${restoreResult.restoredFilesCount}", fontSize = 13.sp, color = colors.textDim)
-                            Text("• Folders restored: ${restoreResult.restoredFoldersCount}", fontSize = 13.sp, color = colors.textDim)
-                            Text("• Status: ${restoreResult.summary}", fontSize = 13.sp, color = colors.textDim)
+                            Text("• Files restored: ${restoreResult.restoredFilesCount}", fontSize = 11.sp, color = colors.textDim)
+                            Text("• Folders restored: ${restoreResult.restoredFoldersCount}", fontSize = 11.sp, color = colors.textDim)
+                            Text("• Status: ${restoreResult.summary}", fontSize = 11.sp, color = colors.textDim)
 
                             if (restoreResult.brokenFilesCount > 0) {
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "⚠️ ${restoreResult.brokenFilesCount} file(s) have missing chunks and are flagged as BROKEN:",
-                                    fontSize = 13.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = colors.danger
                                 )
                                 restoreResult.brokenFileNames.take(5).forEach { name ->
-                                    Text("  - $name", fontSize = 12.sp, color = colors.danger)
+                                    Text("  - $name", fontSize = 10.sp, color = colors.danger)
                                 }
                                 if (restoreResult.brokenFileNames.size > 5) {
-                                    Text("  ...and ${restoreResult.brokenFileNames.size - 5} more", fontSize = 12.sp, color = colors.textFaint)
+                                    Text("  ...and ${restoreResult.brokenFileNames.size - 5} more", fontSize = 10.sp, color = colors.textFaint)
                                 }
                             }
                         }
@@ -706,7 +706,7 @@ private fun GuideStep(
             Text(
                 text = stepNumber,
                 color = colors.violet,
-                fontSize = 12.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -714,16 +714,16 @@ private fun GuideStep(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
-                fontSize = 13.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = colors.text
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = description,
-                fontSize = 12.sp,
+                fontSize = 10.sp,
                 color = colors.textDim,
-                lineHeight = 17.sp
+                lineHeight = 15.sp
             )
         }
     }

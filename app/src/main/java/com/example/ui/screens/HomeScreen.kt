@@ -353,14 +353,14 @@ fun HomeScreen(
                                     Text(
                                         text = "New Folder",
                                         color = colors.text,
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontFamily = BodySansFont,
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
                                         text = "Organize vault directory",
                                         color = colors.textFaint,
-                                        fontSize = 10.5.sp,
+                                        fontSize = 8.5.sp,
                                         fontFamily = BodySansFont
                                     )
                                 }
@@ -397,14 +397,14 @@ fun HomeScreen(
                                     Text(
                                         text = "Upload File",
                                         color = colors.text,
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontFamily = BodySansFont,
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
                                         text = "Chunked & SHA-256 verified",
                                         color = colors.textFaint,
-                                        fontSize = 10.5.sp,
+                                        fontSize = 8.5.sp,
                                         fontFamily = BodySansFont
                                     )
                                 }
@@ -442,14 +442,14 @@ fun HomeScreen(
                                     Text(
                                         text = "Auto Folder Sync",
                                         color = colors.text,
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontFamily = BodySansFont,
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
                                         text = "Mirror local device folders",
                                         color = colors.textFaint,
-                                        fontSize = 10.5.sp,
+                                        fontSize = 8.5.sp,
                                         fontFamily = BodySansFont
                                     )
                                 }
@@ -487,14 +487,14 @@ fun HomeScreen(
                                     Text(
                                         text = "Import Shared Link / QR",
                                         color = colors.text,
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontFamily = BodySansFont,
                                         fontWeight = FontWeight.SemiBold
                                     )
                                     Text(
                                         text = "Save directly to Download/TGC",
                                         color = colors.textFaint,
-                                        fontSize = 10.5.sp,
+                                        fontSize = 8.5.sp,
                                         fontFamily = BodySansFont
                                     )
                                 }
@@ -589,7 +589,7 @@ fun HomeScreen(
                             Text(
                                 text = "Transfer Failed",
                                 color = colors.danger,
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = BodySansFont
                             )
@@ -597,7 +597,7 @@ fun HomeScreen(
                             Text(
                                 text = transferErrorMessage,
                                 color = colors.text,
-                                fontSize = 12.sp,
+                                fontSize = 10.sp,
                                 fontFamily = BodySansFont,
                                 maxLines = 3,
                                 overflow = TextOverflow.Ellipsis
@@ -611,13 +611,13 @@ fun HomeScreen(
                             Text(
                                 "View",
                                 color = colors.violet,
-                                fontSize = 12.sp,
+                                fontSize = 10.sp,
                                 fontFamily = BodySansFont,
                                 fontWeight = FontWeight.Bold
                             )
                         }
                         IconButton(onClick = onDismissTransferError, modifier = Modifier.size(24.dp)) {
-                            Text("✕", color = colors.textDim, fontSize = 12.sp)
+                            Text("✕", color = colors.textDim, fontSize = 10.sp)
                         }
                     }
                     Spacer(modifier = Modifier.height(4.dp))
@@ -670,7 +670,7 @@ fun HomeScreen(
                             onValueChange = onSearchChange,
                             textStyle = TextStyle(
                                 fontFamily = BodySansFont,
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 color = colors.text
                             ),
                             singleLine = true,
@@ -680,7 +680,7 @@ fun HomeScreen(
                                     Text(
                                         text = "Search the vault",
                                         fontFamily = BodySansFont,
-                                        fontSize = 14.sp,
+                                        fontSize = 12.sp,
                                         color = colors.textFaint
                                     )
                                 }
@@ -694,7 +694,7 @@ fun HomeScreen(
                             Text(
                                 text = "✕",
                                 color = colors.textDim,
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 modifier = Modifier
                                     .clickable { onSearchChange("") }
                                     .padding(4.dp)
@@ -723,21 +723,21 @@ fun HomeScreen(
                                 .border(1.dp, colors.line, RoundedCornerShape(12.dp))
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Name", color = colors.text, fontSize = 13.sp, fontFamily = BodySansFont) },
+                                text = { Text("Name", color = colors.text, fontSize = 11.sp, fontFamily = BodySansFont) },
                                 onClick = {
                                     onSortChange(SortBy.NAME)
                                     showSortMenu = false
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Date Uploaded", color = colors.text, fontSize = 13.sp, fontFamily = BodySansFont) },
+                                text = { Text("Date Uploaded", color = colors.text, fontSize = 11.sp, fontFamily = BodySansFont) },
                                 onClick = {
                                     onSortChange(SortBy.DATE)
                                     showSortMenu = false
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("File Size", color = colors.text, fontSize = 13.sp, fontFamily = BodySansFont) },
+                                text = { Text("File Size", color = colors.text, fontSize = 11.sp, fontFamily = BodySansFont) },
                                 onClick = {
                                     onSortChange(SortBy.SIZE)
                                     showSortMenu = false
@@ -792,7 +792,7 @@ fun HomeScreen(
                     ) {
                         Text(
                             text = "Folders",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = BodySansFont,
                             color = colors.textDim
@@ -807,7 +807,7 @@ fun HomeScreen(
                         ) {
                             Text(
                                 text = "Manage Folders",
-                                fontSize = 12.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = BodySansFont,
                                 color = colors.teal
@@ -858,7 +858,7 @@ fun HomeScreen(
                                 selectedCategory == StorageCategory.OTHER -> "Other files"
                                 else -> "Vault files"
                             },
-                            fontSize = 15.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = BodySansFont,
                             color = colors.text
@@ -874,7 +874,7 @@ fun HomeScreen(
                             ) {
                                 Text(
                                     text = "Filtered • Clear ✕",
-                                    fontSize = 11.sp,
+                                    fontSize = 9.sp,
                                     fontFamily = BodySansFont,
                                     fontWeight = FontWeight.Medium,
                                     color = colors.textDim
@@ -890,7 +890,7 @@ fun HomeScreen(
                         if (displayedFiles.isNotEmpty()) {
                             Text(
                                 text = if (isSelectionMode) "Done" else "Select",
-                                fontSize = 12.5.sp,
+                                fontSize = 10.5.sp,
                                 fontFamily = BodySansFont,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.teal,
@@ -908,7 +908,7 @@ fun HomeScreen(
 
                         Text(
                             text = "${displayedFiles.size} items",
-                            fontSize = 12.5.sp,
+                            fontSize = 10.5.sp,
                             fontFamily = NumericMonoFont,
                             color = colors.textFaint
                         )
@@ -929,7 +929,7 @@ fun HomeScreen(
                         ) {
                             Text(
                                 text = "No ${selectedCategory?.name?.lowercase()} in this folder",
-                                fontSize = 14.sp,
+                                fontSize = 12.sp,
                                 fontFamily = BodySansFont,
                                 color = colors.textDim
                             )
@@ -943,7 +943,7 @@ fun HomeScreen(
                             ) {
                                 Text(
                                     text = "Show All Files",
-                                    fontSize = 12.5.sp,
+                                    fontSize = 10.5.sp,
                                     fontFamily = BodySansFont,
                                     fontWeight = FontWeight.SemiBold,
                                     color = colors.teal
@@ -1255,7 +1255,7 @@ private fun SyncedStatusText(
         )
         Text(
             text = statusText,
-            fontSize = 11.sp,
+            fontSize = 9.sp,
             fontFamily = BodySansFont,
             color = if (isResyncing) colors.teal else colors.textFaint,
             maxLines = 1,
@@ -1420,7 +1420,7 @@ private fun EmptyFolderState(
                         )
                         Text(
                             text = "Upload a file",
-                            fontSize = 14.5.sp,
+                            fontSize = 12.5.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = BodySansFont,
                             color = Color.White
@@ -1448,7 +1448,7 @@ private fun EmptyFolderState(
                         )
                         Text(
                             text = "Syncing from Telegram...",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontFamily = BodySansFont,
                             color = colors.textDim
                         )
@@ -1461,7 +1461,7 @@ private fun EmptyFolderState(
                         )
                         Text(
                             text = "Sync from Telegram",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontFamily = BodySansFont,
                             fontWeight = FontWeight.Medium,
                             color = colors.text
@@ -1519,7 +1519,7 @@ private fun VaultBottomNav(
                 )
                 Text(
                     text = "Vault",
-                    fontSize = 11.5.sp,
+                    fontSize = 9.5.sp,
                     fontFamily = BodySansFont,
                     fontWeight = FontWeight.Medium,
                     color = colors.text
@@ -1553,7 +1553,7 @@ private fun VaultBottomNav(
                             ) {
                                 Text(
                                     text = activeTransferCount.toString(),
-                                    fontSize = 10.sp,
+                                    fontSize = 8.sp,
                                     fontFamily = NumericMonoFont,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1577,7 +1577,7 @@ private fun VaultBottomNav(
                 }
                 Text(
                     text = "Transfers",
-                    fontSize = 11.5.sp,
+                    fontSize = 9.5.sp,
                     fontFamily = BodySansFont,
                     fontWeight = FontWeight.Normal,
                     color = colors.textFaint
@@ -1609,7 +1609,7 @@ private fun BreadcrumbBar(
             val isLast = index == breadcrumbs.lastIndex
             Text(
                 text = item.title,
-                fontSize = 13.sp,
+                fontSize = 11.sp,
                 fontFamily = BodySansFont,
                 fontWeight = if (isLast) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (isLast) colors.text else colors.textDim,
@@ -1703,7 +1703,7 @@ private fun FolderItemRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = folder.name,
-                fontSize = 14.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = BodySansFont,
                 color = colors.text,
@@ -1723,7 +1723,7 @@ private fun FolderItemRow(
                 ) {
                     Text(
                         text = "FOLDER",
-                        fontSize = 9.sp,
+                        fontSize = 7.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = NumericMonoFont,
                         color = FileColorFolder
@@ -1731,7 +1731,7 @@ private fun FolderItemRow(
                 }
                 Text(
                     text = formattedDate,
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont,
                     color = colors.textFaint
                 )
@@ -1759,14 +1759,14 @@ private fun FolderItemRow(
                     .border(1.dp, colors.line, RoundedCornerShape(12.dp))
             ) {
                 DropdownMenuItem(
-                    text = { Text("Rename Folder", color = colors.text, fontSize = 13.sp, fontFamily = BodySansFont) },
+                    text = { Text("Rename Folder", color = colors.text, fontSize = 11.sp, fontFamily = BodySansFont) },
                     onClick = {
                         showMenu = false
                         onRename()
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Delete Folder", color = colors.danger, fontSize = 13.sp, fontFamily = BodySansFont, fontWeight = FontWeight.SemiBold) },
+                    text = { Text("Delete Folder", color = colors.danger, fontSize = 11.sp, fontFamily = BodySansFont, fontWeight = FontWeight.SemiBold) },
                     onClick = {
                         showMenu = false
                         onDelete()
@@ -1823,7 +1823,7 @@ private fun FileListItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = file.name,
-                fontSize = 14.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = BodySansFont,
                 color = colors.text,
@@ -1834,18 +1834,18 @@ private fun FileListItem(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = formattedSize,
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont,
                     color = colors.textDim
                 )
                 Text(
                     text = " · ",
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     color = colors.textFaint
                 )
                 Text(
                     text = formattedDate,
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont,
                     color = colors.textFaint
                 )
@@ -1859,7 +1859,7 @@ private fun FileListItem(
                     ) {
                         Text(
                             text = "AES-256",
-                            fontSize = 9.sp,
+                            fontSize = 7.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = NumericMonoFont,
                             color = colors.mint
@@ -1876,7 +1876,7 @@ private fun FileListItem(
                     ) {
                         Text(
                             text = "TGC",
-                            fontSize = 9.sp,
+                            fontSize = 7.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = NumericMonoFont,
                             color = colors.teal
@@ -1894,7 +1894,7 @@ private fun FileListItem(
                     ) {
                         Text(
                             text = "#$tag",
-                            fontSize = 9.sp,
+                            fontSize = 7.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = BodySansFont,
                             color = colors.violet
@@ -1964,7 +1964,7 @@ private fun FileGridCard(
             Column {
                 Text(
                     text = file.name,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = BodySansFont,
                     color = colors.text,
@@ -1978,7 +1978,7 @@ private fun FileGridCard(
                 ) {
                     Text(
                         text = formattedSize,
-                        fontSize = 10.5.sp,
+                        fontSize = 8.5.sp,
                         fontFamily = NumericMonoFont,
                         color = colors.textDim
                     )
@@ -1991,7 +1991,7 @@ private fun FileGridCard(
                         ) {
                             Text(
                                 text = "TGC",
-                                fontSize = 8.5.sp,
+                                fontSize = 6.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = NumericMonoFont,
                                 color = colors.teal
@@ -2112,7 +2112,7 @@ private fun FileStatusIndicator(file: FileEntity) {
                 ) {
                     Text(
                         text = "BROKEN",
-                        fontSize = 9.sp,
+                        fontSize = 7.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.danger,
                         letterSpacing = 0.5.sp
@@ -2210,7 +2210,7 @@ fun BotRevocationAlertBanner(
                     Text(
                         text = "BOT TOKEN INVALID OR REVOKED",
                         color = colors.danger,
-                        fontSize = 12.5.sp,
+                        fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = BodySansFont,
                         letterSpacing = 0.5.sp
@@ -2218,7 +2218,7 @@ fun BotRevocationAlertBanner(
                     Text(
                         text = "HTTP ${alert.errorCode ?: "401/403"} • Checked at ${alert.formattedTime}",
                         color = colors.textDim,
-                        fontSize = 11.5.sp,
+                        fontSize = 9.5.sp,
                         fontFamily = NumericMonoFont
                     )
                 }
@@ -2243,10 +2243,10 @@ fun BotRevocationAlertBanner(
             Text(
                 text = "Your bot token appears to be invalid or revoked — switch to a standby bot in Settings",
                 color = colors.text,
-                fontSize = 13.5.sp,
+                fontSize = 11.5.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = BodySansFont,
-                lineHeight = 19.sp
+                lineHeight = 17.sp
             )
 
             if (alert.errorMessage.isNotBlank() && !alert.errorMessage.contains("Your bot token appears")) {
@@ -2254,9 +2254,9 @@ fun BotRevocationAlertBanner(
                 Text(
                     text = "Details: ${alert.errorMessage}",
                     color = colors.textDim,
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     fontFamily = BodySansFont,
-                    lineHeight = 16.sp
+                    lineHeight = 14.sp
                 )
             }
 
@@ -2288,7 +2288,7 @@ fun BotRevocationAlertBanner(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = "Switch to Standby Bot",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -2302,7 +2302,7 @@ fun BotRevocationAlertBanner(
                     ) {
                         Text(
                             text = "Settings",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
@@ -2326,7 +2326,7 @@ fun BotRevocationAlertBanner(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Configure Standby Bot in Settings",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -2387,14 +2387,14 @@ fun BulkSelectionTopBar(
                 Column {
                     Text(
                         text = if (selectedCount == 0) "Select items" else "$selectedCount selected",
-                        fontSize = 15.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = BodySansFont,
                         color = colors.text
                     )
                     Text(
                         text = "$totalCount total available",
-                        fontSize = 11.5.sp,
+                        fontSize = 9.5.sp,
                         fontFamily = NumericMonoFont,
                         color = colors.textDim
                     )
@@ -2414,7 +2414,7 @@ fun BulkSelectionTopBar(
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = if (allSelected) "Deselect All" else "Select All",
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontFamily = BodySansFont,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.teal
@@ -2513,7 +2513,7 @@ private fun BulkActionButton(
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = label,
-            fontSize = 12.sp,
+            fontSize = 10.sp,
             fontFamily = BodySansFont,
             fontWeight = FontWeight.Medium,
             color = if (enabled) colors.text else colors.textDim.copy(alpha = 0.5f)

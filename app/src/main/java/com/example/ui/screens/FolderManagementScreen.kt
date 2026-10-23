@@ -337,7 +337,7 @@ fun FolderManagementScreen(
         fileDao = database.fileDao(),
         initialFolderId = uiState.currentFolderId,
         onBack = onBack,
-        onFileClick = { viewModel.inspectFile(it) },
+        onFileClick = { viewModel.onFileItemClick(it) },
         onDeleteFolder = { viewModel.deleteFolder(it) },
         modifier = modifier
     )
@@ -466,7 +466,7 @@ fun FolderManagementContent(
                     Column {
                         Text(
                             text = currentFolder?.name ?: "Folder Management",
-                            fontSize = 17.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = BodySansFont,
                             color = colors.text,
@@ -475,7 +475,7 @@ fun FolderManagementContent(
                         )
                         Text(
                             text = if (currentFolder == null) "Root Directory" else "Subfolder Directory",
-                            fontSize = 11.sp,
+                            fontSize = 9.sp,
                             fontFamily = NumericMonoFont,
                             color = colors.textDim
                         )
@@ -569,7 +569,7 @@ fun FolderManagementContent(
                         Text(
                             text = "Search files & folders by name…",
                             color = colors.textFaint,
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontFamily = BodySansFont
                         )
                     },
@@ -627,13 +627,13 @@ fun FolderManagementContent(
                 ) {
                     Text(
                         text = "Filtered by \"$searchQuery\": ${subfolders.size} folder(s), ${files.size} file(s) found",
-                        fontSize = 11.5.sp,
+                        fontSize = 9.5.sp,
                         fontFamily = NumericMonoFont,
                         color = colors.teal
                     )
                     Text(
                         text = "Clear filter",
-                        fontSize = 11.5.sp,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.danger,
                         modifier = Modifier
@@ -741,7 +741,7 @@ private fun DirectoryBreadcrumbBar(
                 }
                 Text(
                     text = item.title,
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     fontFamily = BodySansFont,
                     fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
                     color = if (isCurrent) colors.text else colors.textDim
@@ -792,7 +792,7 @@ private fun CurrentDirectoryInfoBar(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = currentFolder?.name ?: "Vault Root",
-                    fontSize = 15.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     color = colors.text,
@@ -806,21 +806,21 @@ private fun CurrentDirectoryInfoBar(
                 ) {
                     Text(
                         text = "$subfolderCount folders",
-                        fontSize = 11.sp,
+                        fontSize = 9.sp,
                         fontFamily = NumericMonoFont,
                         color = colors.teal
                     )
-                    Text("•", fontSize = 11.sp, color = colors.textFaint)
+                    Text("•", fontSize = 9.sp, color = colors.textFaint)
                     Text(
                         text = "$fileCount files",
-                        fontSize = 11.sp,
+                        fontSize = 9.sp,
                         fontFamily = NumericMonoFont,
                         color = colors.textDim
                     )
-                    Text("•", fontSize = 11.sp, color = colors.textFaint)
+                    Text("•", fontSize = 9.sp, color = colors.textFaint)
                     Text(
                         text = ChecksumUtil.formatBytes(totalSizeBytes),
-                        fontSize = 11.sp,
+                        fontSize = 9.sp,
                         fontFamily = NumericMonoFont,
                         color = colors.textDim
                     )
@@ -848,7 +848,7 @@ private fun CurrentDirectoryInfoBar(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Up", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Up", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
 
@@ -871,7 +871,7 @@ private fun CurrentDirectoryInfoBar(
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("New", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text("New", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -905,7 +905,7 @@ private fun DirectoryListView(
             item(key = "subfolders_heading") {
                 Text(
                     text = "Subfolders (${subfolders.size})",
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     color = colors.textDim,
@@ -929,7 +929,7 @@ private fun DirectoryListView(
             item(key = "files_heading") {
                 Text(
                     text = "Files in Directory (${files.size})",
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     color = colors.textDim,
@@ -1035,7 +1035,7 @@ private fun FolderRowItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = folder.name,
-                fontSize = 14.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = BodySansFont,
                 color = colors.text,
@@ -1045,7 +1045,7 @@ private fun FolderRowItem(
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "Folder · $formattedDate",
-                fontSize = 11.sp,
+                fontSize = 9.sp,
                 fontFamily = NumericMonoFont,
                 color = colors.textFaint
             )
@@ -1070,7 +1070,7 @@ private fun FolderRowItem(
                 onDismissRequest = { showMenu = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("Open Subfolder", fontSize = 13.sp) },
+                    text = { Text("Open Subfolder", fontSize = 11.sp) },
                     leadingIcon = { Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp)) },
                     onClick = {
                         showMenu = false
@@ -1078,7 +1078,7 @@ private fun FolderRowItem(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Rename", fontSize = 13.sp) },
+                    text = { Text("Rename", fontSize = 11.sp) },
                     leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp)) },
                     onClick = {
                         showMenu = false
@@ -1086,7 +1086,7 @@ private fun FolderRowItem(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Move to Directory", fontSize = 13.sp) },
+                    text = { Text("Move to Directory", fontSize = 11.sp) },
                     leadingIcon = { Icon(Icons.Default.DriveFileMove, contentDescription = null, modifier = Modifier.size(16.dp)) },
                     onClick = {
                         showMenu = false
@@ -1094,7 +1094,7 @@ private fun FolderRowItem(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Delete", color = colors.violet, fontSize = 13.sp) },
+                    text = { Text("Delete", color = colors.violet, fontSize = 11.sp) },
                     leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = colors.violet, modifier = Modifier.size(16.dp)) },
                     onClick = {
                         showMenu = false
@@ -1147,7 +1147,7 @@ private fun FileRowItem(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = file.name,
-                fontSize = 14.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = BodySansFont,
                 color = colors.text,
@@ -1158,14 +1158,14 @@ private fun FileRowItem(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = formattedSize,
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont,
                     color = colors.textDim
                 )
-                Text(" • ", fontSize = 11.sp, color = colors.textFaint)
+                Text(" • ", fontSize = 9.sp, color = colors.textFaint)
                 Text(
                     text = formattedDate,
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont,
                     color = colors.textFaint
                 )
@@ -1191,7 +1191,7 @@ private fun FileRowItem(
                 onDismissRequest = { showMenu = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("Inspect Details", fontSize = 13.sp) },
+                    text = { Text("Inspect Details", fontSize = 11.sp) },
                     leadingIcon = { Icon(Icons.Default.InsertDriveFile, contentDescription = null, modifier = Modifier.size(16.dp)) },
                     onClick = {
                         showMenu = false
@@ -1199,7 +1199,7 @@ private fun FileRowItem(
                     }
                 )
                 DropdownMenuItem(
-                    text = { Text("Move to Directory", fontSize = 13.sp) },
+                    text = { Text("Move to Directory", fontSize = 11.sp) },
                     leadingIcon = { Icon(Icons.Default.DriveFileMove, contentDescription = null, modifier = Modifier.size(16.dp)) },
                     onClick = {
                         showMenu = false
@@ -1259,17 +1259,17 @@ private fun FolderGridItem(
                         Icon(Icons.Default.MoreVert, contentDescription = null, tint = colors.textDim, modifier = Modifier.size(16.dp))
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(text = { Text("Open", fontSize = 13.sp) }, onClick = { showMenu = false; onClick() })
-                        DropdownMenuItem(text = { Text("Rename", fontSize = 13.sp) }, onClick = { showMenu = false; onRename() })
-                        DropdownMenuItem(text = { Text("Move", fontSize = 13.sp) }, onClick = { showMenu = false; onMove() })
-                        DropdownMenuItem(text = { Text("Delete", color = colors.violet, fontSize = 13.sp) }, onClick = { showMenu = false; onDelete() })
+                        DropdownMenuItem(text = { Text("Open", fontSize = 11.sp) }, onClick = { showMenu = false; onClick() })
+                        DropdownMenuItem(text = { Text("Rename", fontSize = 11.sp) }, onClick = { showMenu = false; onRename() })
+                        DropdownMenuItem(text = { Text("Move", fontSize = 11.sp) }, onClick = { showMenu = false; onMove() })
+                        DropdownMenuItem(text = { Text("Delete", color = colors.violet, fontSize = 11.sp) }, onClick = { showMenu = false; onDelete() })
                     }
                 }
             }
             Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = folder.name,
-                fontSize = 13.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = BodySansFont,
                 color = colors.text,
@@ -1279,7 +1279,7 @@ private fun FolderGridItem(
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "Directory",
-                fontSize = 10.sp,
+                fontSize = 8.sp,
                 fontFamily = NumericMonoFont,
                 color = colors.textFaint
             )
@@ -1335,15 +1335,15 @@ private fun FileGridItem(
                         Icon(Icons.Default.MoreVert, contentDescription = null, tint = colors.textDim, modifier = Modifier.size(16.dp))
                     }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(text = { Text("Details", fontSize = 13.sp) }, onClick = { showMenu = false; onClick() })
-                        DropdownMenuItem(text = { Text("Move", fontSize = 13.sp) }, onClick = { showMenu = false; onMove() })
+                        DropdownMenuItem(text = { Text("Details", fontSize = 11.sp) }, onClick = { showMenu = false; onClick() })
+                        DropdownMenuItem(text = { Text("Move", fontSize = 11.sp) }, onClick = { showMenu = false; onMove() })
                     }
                 }
             }
             Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = file.name,
-                fontSize = 13.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = BodySansFont,
                 color = colors.text,
@@ -1353,7 +1353,7 @@ private fun FileGridItem(
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = formattedSize,
-                fontSize = 10.sp,
+                fontSize = 8.sp,
                 fontFamily = NumericMonoFont,
                 color = colors.textDim
             )
@@ -1401,7 +1401,7 @@ private fun EmptyDirectoryState(
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = if (isSearchActive) "No items match your filter" else "This directory is empty",
-                fontSize = 16.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = BodySansFont,
                 color = colors.text
@@ -1409,7 +1409,7 @@ private fun EmptyDirectoryState(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = if (isSearchActive) "Try searching with a different term" else "Organize your Telegram storage by creating subfolders or moving files here.",
-                fontSize = 12.sp,
+                fontSize = 10.sp,
                 color = colors.textDim,
                 fontFamily = BodySansFont,
                 modifier = Modifier.padding(horizontal = 24.dp),
@@ -1472,7 +1472,7 @@ private fun MoveFolderDialog(
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
                     text = "Move \"${folder.name}\"",
-                    fontSize = 16.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     color = colors.text
@@ -1481,7 +1481,7 @@ private fun MoveFolderDialog(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "Select a destination directory for this folder:",
-                fontSize = 12.sp,
+                fontSize = 10.sp,
                 color = colors.textDim,
                 fontFamily = BodySansFont
             )
@@ -1505,7 +1505,7 @@ private fun MoveFolderDialog(
                     ) {
                         Icon(Icons.Default.Folder, contentDescription = null, tint = colors.teal, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Vault Root (No Parent)", fontSize = 13.sp, color = colors.text, fontWeight = FontWeight.SemiBold)
+                        Text("Vault Root (No Parent)", fontSize = 11.sp, color = colors.text, fontWeight = FontWeight.SemiBold)
                     }
                 }
 
@@ -1522,10 +1522,10 @@ private fun MoveFolderDialog(
                     ) {
                         Icon(Icons.Default.Folder, contentDescription = null, tint = colors.textDim, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(destFolder.name, fontSize = 13.sp, color = colors.text, fontWeight = FontWeight.Medium)
+                        Text(destFolder.name, fontSize = 11.sp, color = colors.text, fontWeight = FontWeight.Medium)
                         if (isCurrentParent) {
                             Spacer(modifier = Modifier.weight(1f))
-                            Text("Current", fontSize = 10.sp, color = colors.textFaint, fontFamily = NumericMonoFont)
+                            Text("Current", fontSize = 8.sp, color = colors.textFaint, fontFamily = NumericMonoFont)
                         }
                     }
                 }
@@ -1563,7 +1563,7 @@ private fun DeleteFolderConfirmationDialog(
         Column(modifier = Modifier.padding(20.dp)) {
             Text(
                 text = "Delete \"$folderName\"?",
-                fontSize = 16.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = BodySansFont,
                 color = colors.text
@@ -1571,7 +1571,7 @@ private fun DeleteFolderConfirmationDialog(
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = "This will remove the folder record from your vault. Subfolders will be deleted.",
-                fontSize = 12.sp,
+                fontSize = 10.sp,
                 color = colors.textDim,
                 fontFamily = BodySansFont
             )

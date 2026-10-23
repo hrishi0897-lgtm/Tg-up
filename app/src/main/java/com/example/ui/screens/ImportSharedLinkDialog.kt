@@ -89,7 +89,7 @@ fun ImportSharedLinkDialog(
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = "Import Share Link",
-                    fontSize = 16.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -103,8 +103,8 @@ fun ImportSharedLinkDialog(
                 OutlinedTextField(
                     value = inputUri,
                     onValueChange = { inputUri = it },
-                    label = { Text("televault://share?payload=…", fontSize = 12.sp) },
-                    placeholder = { Text("Paste share link or code here", fontSize = 12.sp) },
+                    label = { Text("televault://share?payload=…", fontSize = 10.sp) },
+                    placeholder = { Text("Paste share link or code here", fontSize = 10.sp) },
                     maxLines = 4,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -127,14 +127,14 @@ fun ImportSharedLinkDialog(
                         text = "Scan Encrypted Share QR Code",
                         color = colors.violet,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp
+                        fontSize = 11.sp
                     )
                 }
 
                 if (!errorMessage.isNullOrBlank()) {
                     Text(
                         text = errorMessage,
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         color = colors.danger,
                         fontFamily = NumericMonoFont
                     )

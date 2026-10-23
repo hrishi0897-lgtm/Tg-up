@@ -93,7 +93,7 @@ private fun AnimatedDialogCard(
                 Text(
                     text = title,
                     color = colors.text,
-                    fontSize = 17.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont
                 )
@@ -148,14 +148,14 @@ fun CreateFolderDialog(
                 Text(
                     text = "Enter a name for your new folder:",
                     color = colors.textDim,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontFamily = BodySansFont
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
                     value = folderName,
                     onValueChange = { folderName = it },
-                    placeholder = { Text("e.g. Work Documents", color = colors.textFaint, fontSize = 13.sp) },
+                    placeholder = { Text("e.g. Work Documents", color = colors.textFaint, fontSize = 11.sp) },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = colors.violet,
@@ -302,7 +302,7 @@ fun MoveFileDialog(
                 Text(
                     text = "Select destination:",
                     color = colors.textDim,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontFamily = BodySansFont
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -324,7 +324,7 @@ fun MoveFileDialog(
                         ) {
                             Icon(Icons.Default.Home, contentDescription = null, tint = colors.violet, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text("Vault Root (No folder)", color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("Vault Root (No folder)", color = colors.text, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                     }
 
@@ -341,7 +341,7 @@ fun MoveFileDialog(
                         ) {
                             Icon(Icons.Default.Folder, contentDescription = null, tint = colors.violet, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text(folder.name, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text(folder.name, color = colors.text, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -393,13 +393,13 @@ fun LargeFileConfirmationDialog(
                 Text(
                     text = "You are about to upload a large file:",
                     color = colors.textDim,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontFamily = BodySansFont
                 )
                 Text(
                     text = fileName,
                     color = colors.text,
-                    fontSize = 14.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = BodySansFont
                 )
@@ -413,20 +413,20 @@ fun LargeFileConfirmationDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column {
-                        Text("Total Size", fontSize = 11.sp, color = colors.textDim)
-                        Text(formattedSize, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = NumericMonoFont, color = colors.violet)
+                        Text("Total Size", fontSize = 9.sp, color = colors.textDim)
+                        Text(formattedSize, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = NumericMonoFont, color = colors.violet)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("Telegram Chunks", fontSize = 11.sp, color = colors.textDim)
-                        Text("~$estimatedChunks chunks", fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = NumericMonoFont, color = colors.text)
+                        Text("Telegram Chunks", fontSize = 9.sp, color = colors.textDim)
+                        Text("~$estimatedChunks chunks", fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = NumericMonoFont, color = colors.text)
                     }
                 }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "This file will be split into $estimatedChunks 18MB chunks and uploaded sequentially. Keep the app active or let the background service complete the transfer.",
                     color = colors.textFaint,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp,
+                    fontSize = 9.sp,
+                    lineHeight = 13.sp,
                     fontFamily = BodySansFont
                 )
             }
@@ -562,13 +562,13 @@ fun DeleteConfirmationDialog(
                 Text(
                     text = "Are you sure you want to delete:",
                     color = colors.textDim,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontFamily = BodySansFont
                 )
                 Text(
                     text = itemName,
                     color = colors.text,
-                    fontSize = 14.5.sp,
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = BodySansFont
                 )
@@ -576,8 +576,8 @@ fun DeleteConfirmationDialog(
                 Text(
                     text = warningText,
                     color = colors.textFaint,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
                     fontFamily = BodySansFont
                 )
             }
@@ -641,7 +641,7 @@ fun BulkMoveDialog(
                 Text(
                     text = "Select destination folder:",
                     color = colors.textDim,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontFamily = BodySansFont
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -663,7 +663,7 @@ fun BulkMoveDialog(
                         ) {
                             Icon(Icons.Default.Home, contentDescription = null, tint = colors.violet, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text("Vault Root (No folder)", color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text("Vault Root (No folder)", color = colors.text, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                     }
 
@@ -680,7 +680,7 @@ fun BulkMoveDialog(
                         ) {
                             Icon(Icons.Default.Folder, contentDescription = null, tint = colors.violet, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(10.dp))
-                            Text(folder.name, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text(folder.name, color = colors.text, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -729,15 +729,15 @@ fun BulkDeleteDialog(
                 Text(
                     text = "Are you sure you want to move the selected $selectedCount ${if (selectedCount == 1) "file" else "files"} to the Recycle Bin?",
                     color = colors.text,
-                    fontSize = 13.5.sp,
+                    fontSize = 11.5.sp,
                     fontFamily = BodySansFont
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = "Items in the Recycle Bin can be restored anytime or will be permanently deleted after 30 days.",
                     color = colors.textFaint,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
                     fontFamily = BodySansFont
                 )
             }

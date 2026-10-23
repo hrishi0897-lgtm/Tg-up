@@ -131,7 +131,7 @@ fun FolderSyncScreen(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Folder Sync",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     color = colors.text
@@ -165,7 +165,7 @@ fun FolderSyncScreen(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Sync All",
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1
                     )
@@ -185,7 +185,7 @@ fun FolderSyncScreen(
             ) {
                 Text(
                     text = syncStatusMessage,
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     color = colors.teal,
                     fontWeight = FontWeight.Medium
                 )
@@ -226,7 +226,7 @@ fun FolderSyncScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = "Folder Watch",
-                                fontSize = 15.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.text
                             )
@@ -262,7 +262,7 @@ fun FolderSyncScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Link Folder",
-                                fontSize = 12.5.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -288,7 +288,7 @@ fun FolderSyncScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
                                 text = "Camera Backup",
-                                fontSize = 12.5.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.teal,
                                 maxLines = 1,
@@ -319,7 +319,7 @@ fun FolderSyncScreen(
                         Spacer(modifier = Modifier.height(10.dp))
                         Text(
                             text = "No Sync Folders",
-                            fontSize = 15.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.text
                         )
@@ -362,7 +362,7 @@ fun FolderSyncScreen(
                                 Column {
                                     Text(
                                         text = "${item.localDisplayName} → ${item.targetVaultFolderName}",
-                                        fontSize = 14.sp,
+                                        fontSize = 12.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.text,
                                         maxLines = 1,
@@ -375,7 +375,7 @@ fun FolderSyncScreen(
                                     }
                                     Text(
                                         text = "${item.syncedFilesCount} tracked files • $lastSyncLabel",
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         fontFamily = NumericMonoFont,
                                         color = colors.textDim
                                     )
@@ -413,7 +413,7 @@ fun FolderSyncScreen(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Auto-Sync",
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     color = colors.text
                                 )
                             }
@@ -430,7 +430,7 @@ fun FolderSyncScreen(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "AES-256",
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     fontFamily = NumericMonoFont,
                                     color = colors.teal
                                 )
@@ -448,7 +448,7 @@ fun FolderSyncScreen(
                                     modifier = Modifier.size(14.dp)
                                 )
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Sync Now", fontSize = 11.5.sp)
+                                Text("Sync Now", fontSize = 9.5.sp)
                             }
                         }
                     }
@@ -466,7 +466,7 @@ fun FolderSyncScreen(
             title = {
                 Text(
                     text = "Configure Folder Sync",
-                    fontSize = 17.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -495,7 +495,7 @@ fun FolderSyncScreen(
                         ) {
                             Text(
                                 text = "Vault Root (/)",
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 fontWeight = if (isRoot) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isRoot) colors.violet else colors.text
                             )
@@ -513,7 +513,7 @@ fun FolderSyncScreen(
                             ) {
                                 Text(
                                     text = vf.name,
-                                    fontSize = 13.sp,
+                                    fontSize = 11.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                     color = if (isSelected) colors.violet else colors.text
                                 )
@@ -526,7 +526,7 @@ fun FolderSyncScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("AES-256 Encryption", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.text, modifier = Modifier.weight(1f))
+                        Text("AES-256 Encryption", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.text, modifier = Modifier.weight(1f))
                         Switch(
                             checked = encryptOnSyncEnabled,
                             onCheckedChange = { encryptOnSyncEnabled = it }
@@ -538,7 +538,7 @@ fun FolderSyncScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Auto-Sync on Launch", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = colors.text, modifier = Modifier.weight(1f))
+                        Text("Auto-Sync on Launch", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = colors.text, modifier = Modifier.weight(1f))
                         Switch(
                             checked = autoSyncEnabled,
                             onCheckedChange = { autoSyncEnabled = it }
@@ -548,7 +548,7 @@ fun FolderSyncScreen(
                     OutlinedTextField(
                         value = defaultTagsInput,
                         onValueChange = { defaultTagsInput = it },
-                        label = { Text("Auto-Assign Tags (comma-separated)", fontSize = 11.sp) },
+                        label = { Text("Auto-Assign Tags (comma-separated)", fontSize = 9.sp) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )

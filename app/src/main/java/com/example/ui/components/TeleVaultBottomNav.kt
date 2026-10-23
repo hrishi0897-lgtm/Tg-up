@@ -161,7 +161,7 @@ fun TeleVaultBottomNav(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Vault",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontFamily = BodySansFont,
                             fontWeight = if (isVault) FontWeight.Bold else FontWeight.Medium,
                             color = vaultColor
@@ -193,7 +193,7 @@ fun TeleVaultBottomNav(
                                     ) {
                                         Text(
                                             text = activeTransferCount.toString(),
-                                            fontSize = 10.sp,
+                                            fontSize = 8.sp,
                                             fontFamily = NumericMonoFont,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -218,7 +218,7 @@ fun TeleVaultBottomNav(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "Transfers",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontFamily = BodySansFont,
                             fontWeight = if (!isVault) FontWeight.Bold else FontWeight.Medium,
                             color = transfersColor

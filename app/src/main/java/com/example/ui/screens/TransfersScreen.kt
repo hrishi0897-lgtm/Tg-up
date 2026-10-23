@@ -157,7 +157,7 @@ fun TransfersScreen(
                         ) {
                             Text(
                                 text = "ACTIVE TRANSFERS (${activeItems.size})",
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = BodySansFont,
                                 color = colors.textFaint,
@@ -202,7 +202,7 @@ fun TransfersScreen(
                         ) {
                             Text(
                                 text = "RECENTLY COMPLETED",
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = BodySansFont,
                                 color = colors.textFaint,
@@ -210,7 +210,7 @@ fun TransfersScreen(
                             )
                             Text(
                                 text = "Clear",
-                                fontSize = 12.sp,
+                                fontSize = 10.sp,
                                 color = colors.violet,
                                 fontFamily = BodySansFont,
                                 fontWeight = FontWeight.Medium,
@@ -280,7 +280,7 @@ private fun TransfersTopBar(
             ) {
                 Text(
                     text = "Transfer Queue",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     color = colors.text
@@ -293,7 +293,7 @@ private fun TransfersTopBar(
                     } else {
                         "$totalCount items in queue"
                     },
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     fontFamily = BodySansFont,
                     color = colors.textDim
                 )
@@ -384,7 +384,7 @@ private fun BatchProgressCard(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Overall Batch Progress",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontFamily = BodySansFont,
                             fontWeight = FontWeight.SemiBold,
                             color = colors.text,
@@ -393,7 +393,7 @@ private fun BatchProgressCard(
                         )
                         Text(
                             text = "$completedCount of $totalCount files uploaded${if (failedCount > 0) " · $failedCount failed" else ""}",
-                            fontSize = 11.sp,
+                            fontSize = 9.sp,
                             fontFamily = NumericMonoFont,
                             color = if (failedCount > 0) colors.danger else colors.textDim,
                             maxLines = 1,
@@ -404,7 +404,7 @@ private fun BatchProgressCard(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "$percent%",
-                    fontSize = 14.sp,
+                    fontSize = 12.sp,
                     fontFamily = NumericMonoFont,
                     fontWeight = FontWeight.Bold,
                     color = colors.violet,
@@ -507,7 +507,7 @@ private fun TransferRowCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = transfer.fileName,
-                        fontSize = 14.sp,
+                        fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = BodySansFont,
                         color = colors.text,
@@ -530,7 +530,7 @@ private fun TransferRowCard(
                                 transfer.status == FileStatus.COMPLETED -> "Done"
                                 else -> "Queued"
                             },
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             fontFamily = BodySansFont,
                             fontWeight = if (isFailed) FontWeight.Medium else FontWeight.Normal,
                             color = when (transfer.status) {
@@ -546,7 +546,7 @@ private fun TransferRowCard(
                         )
                         Text(
                             text = " · ${ChecksumUtil.formatBytes(transfer.totalBytes)}",
-                            fontSize = 11.sp,
+                            fontSize = 9.sp,
                             fontFamily = NumericMonoFont,
                             color = colors.textDim,
                             maxLines = 1
@@ -561,7 +561,7 @@ private fun TransferRowCard(
                             ) {
                                 Text(
                                     text = "AES-256",
-                                    fontSize = 9.sp,
+                                    fontSize = 7.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = NumericMonoFont,
                                     color = colors.mint
@@ -578,7 +578,7 @@ private fun TransferRowCard(
                             ) {
                                 Text(
                                     text = "⚡${transfer.activeBotWorkers}x Bots",
-                                    fontSize = 9.sp,
+                                    fontSize = 7.sp,
                                     fontWeight = FontWeight.Bold,
                                     fontFamily = NumericMonoFont,
                                     color = colors.teal
@@ -727,7 +727,7 @@ private fun TransferRowCard(
             ) {
                 Text(
                     text = chunkProgressLabel,
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.text,
@@ -746,7 +746,7 @@ private fun TransferRowCard(
             ) {
                 Text(
                     text = "${ChecksumUtil.formatBytes(transfer.bytesTransferred)} / ${ChecksumUtil.formatBytes(transfer.totalBytes)}",
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont,
                     fontWeight = FontWeight.Medium,
                     color = colors.textDim,
@@ -778,7 +778,7 @@ private fun TransferRowCard(
 
                 Text(
                     text = speedText,
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont,
                     fontWeight = FontWeight.Medium,
                     color = if (transfer.status == FileStatus.UPLOADING || transfer.status == FileStatus.DOWNLOADING) colors.violet else colors.textFaint,
@@ -809,7 +809,7 @@ private fun TransferRowCard(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = etaText,
-                        fontSize = 11.sp,
+                        fontSize = 9.sp,
                         fontFamily = NumericMonoFont,
                         fontWeight = FontWeight.Normal,
                         color = colors.textFaint,
@@ -838,7 +838,7 @@ private fun TransferRowCard(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = transfer.errorMessage,
-                        fontSize = 11.sp,
+                        fontSize = 9.sp,
                         fontFamily = BodySansFont,
                         color = colors.danger,
                         maxLines = 4,
@@ -886,7 +886,7 @@ private fun CompletedTransferCard(item: TransferProgress) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = item.fileName,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
                     fontFamily = BodySansFont,
                     color = colors.text,
@@ -900,7 +900,7 @@ private fun CompletedTransferCard(item: TransferProgress) {
                     } else {
                         "${ChecksumUtil.formatBytes(item.totalBytes)} · Saved in Download/TGC"
                     },
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont,
                     color = colors.textDim
                 )
@@ -936,7 +936,7 @@ private fun EmptyTransfersView() {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
                 text = "No active transfers",
-                fontSize = 16.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.SemiBold,
                 fontFamily = BodySansFont,
                 color = colors.text

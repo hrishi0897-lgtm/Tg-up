@@ -668,7 +668,7 @@ fun ZeroDownloadExoVideoPlayer(
                                 Typeface.DEFAULT_BOLD
                             )
                         )
-                        setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                        setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                         setBottomPaddingFraction(0.08f)
                         setApplyEmbeddedStyles(true)
                         setApplyEmbeddedFontSizes(true)
@@ -713,14 +713,14 @@ fun ZeroDownloadExoVideoPlayer(
                 Text(
                     text = bufferingTitle,
                     color = Color.White,
-                    fontSize = 13.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = formatRamWindowBadge(bufferStats),
                     color = Color.White.copy(alpha = 0.72f),
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont
                 )
             }
@@ -748,14 +748,14 @@ fun ZeroDownloadExoVideoPlayer(
                 Text(
                     text = "Chunk Stream Failed",
                     color = Color.White,
-                    fontSize = 16.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = playerError ?: "Unable to download or decrypt chunk after refreshing Telegram link.",
                     color = Color.White.copy(alpha = 0.78f),
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(14.dp))
@@ -776,7 +776,7 @@ fun ZeroDownloadExoVideoPlayer(
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Retry", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Retry", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -853,20 +853,20 @@ fun ZeroDownloadExoVideoPlayer(
                     Text(
                         text = formatStreamTimecode(activeDisplayMs),
                         color = Color.White,
-                        fontSize = 11.sp,
+                        fontSize = 9.sp,
                         fontFamily = NumericMonoFont
                     )
                     Text(
                         text = "${formatRamWindowBadge(bufferStats)} • Buf ${(bufferedFraction * 100).toInt()}%",
                         color = colors.teal,
-                        fontSize = 10.sp,
+                        fontSize = 8.sp,
                         fontFamily = NumericMonoFont,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         text = formatStreamTimecode(durationMs),
                         color = Color.White.copy(alpha = 0.75f),
-                        fontSize = 11.sp,
+                        fontSize = 9.sp,
                         fontFamily = NumericMonoFont
                     )
                 }
@@ -1084,13 +1084,13 @@ fun ZeroDownloadExoVideoPlayer(
                         Text(
                             text = "Audio Tracks",
                             color = colors.text,
-                            fontSize = 17.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = "Switch embedded audio streams without restarting playback",
                             color = colors.textDim,
-                            fontSize = 12.sp
+                            fontSize = 10.sp
                         )
                     }
                 }
@@ -1110,7 +1110,7 @@ fun ZeroDownloadExoVideoPlayer(
                         Text(
                             text = "No embedded audio tracks in this file",
                             color = colors.textDim,
-                            fontSize = 13.sp
+                            fontSize = 11.sp
                         )
                     }
                 } else {
@@ -1179,13 +1179,13 @@ fun ZeroDownloadExoVideoPlayer(
                         Text(
                             text = "Subtitles & Captions",
                             color = colors.text,
-                            fontSize = 17.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
                             text = "Embedded tracks (SRT, ASS/SSA, VTT, PGS) or side-loaded files",
                             color = colors.textDim,
-                            fontSize = 12.sp
+                            fontSize = 10.sp
                         )
                     }
                 }
@@ -1239,7 +1239,7 @@ fun ZeroDownloadExoVideoPlayer(
                             Text(
                                 text = "No subtitles in this file",
                                 color = colors.textDim,
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium
                             )
                         }
@@ -1307,7 +1307,7 @@ fun ZeroDownloadExoVideoPlayer(
                     Text(
                         text = "Load subtitle file… (.srt / .vtt)",
                         color = colors.text,
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -1345,7 +1345,7 @@ private fun TrackSelectionRow(
             Text(
                 text = title,
                 color = if (isEnabled) colors.text else colors.textDim.copy(alpha = 0.5f),
-                fontSize = 14.sp,
+                fontSize = 12.sp,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -1355,7 +1355,7 @@ private fun TrackSelectionRow(
                 Text(
                     text = subtitle,
                     color = colors.textDim,
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -1796,7 +1796,7 @@ fun ZeroDownloadExoAudioPlayerCard(
             Text(
                 text = file.name,
                 color = colors.text,
-                fontSize = 17.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -1823,7 +1823,7 @@ fun ZeroDownloadExoAudioPlayerCard(
                 Text(
                     text = "${ChecksumUtil.formatBytes(file.size)} • ${formatRamWindowBadge(bufferStats)}",
                     color = colors.textDim,
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont
                 )
             }
@@ -1836,7 +1836,7 @@ fun ZeroDownloadExoAudioPlayerCard(
                 Text(
                     text = "Buffering Chunk $activeChunkOneBased/$totalChunks in RAM…",
                     color = colors.teal,
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -1846,7 +1846,7 @@ fun ZeroDownloadExoAudioPlayerCard(
                 Text(
                     text = playerError ?: "Audio stream interrupted.",
                     color = colors.violet,
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(10.dp))
@@ -1865,7 +1865,7 @@ fun ZeroDownloadExoAudioPlayerCard(
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Retry", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                 }
             } else {
                 Spacer(modifier = Modifier.height(18.dp))
@@ -1918,20 +1918,20 @@ fun ZeroDownloadExoAudioPlayerCard(
                     Text(
                         text = formatStreamTimecode(activeDisplayMs),
                         color = colors.textDim,
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         fontFamily = NumericMonoFont
                     )
                     Text(
                         text = "Buffered ${(bufferedFraction * 100).toInt()}%",
                         color = colors.teal,
-                        fontSize = 11.sp,
+                        fontSize = 9.sp,
                         fontFamily = NumericMonoFont,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
                         text = formatStreamTimecode(durationMs),
                         color = colors.textDim,
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         fontFamily = NumericMonoFont
                     )
                 }

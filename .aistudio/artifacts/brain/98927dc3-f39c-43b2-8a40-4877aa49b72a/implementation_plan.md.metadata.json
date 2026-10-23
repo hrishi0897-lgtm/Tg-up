@@ -1,6 +1,6 @@
 {
-  "summary":  "Phase 1 Polish, Immersive Landscape Fullscreen Orientation, and Audio/Subtitle Track Switcher with Side-Loaded .srt/.vtt Support for the Zero-Download Media3 Video Player.",
-  "updatedAt":  "2026-10-23T13:00:45.105733688Z",
+  "summary":  "Plan to open the File Details screen on file tap (with a center Play button for video/audio and 0.0 MB RAM until Play is pressed) and reduce all typography/font sizes and line heights by 2sp across the entire app.",
+  "updatedAt":  "2026-10-23T13:47:52.687148394Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

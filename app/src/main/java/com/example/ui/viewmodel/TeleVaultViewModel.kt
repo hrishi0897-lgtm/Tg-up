@@ -134,6 +134,7 @@ data class UiState(
     val restoreResult: RestoreResult? = null,
     val restoreError: String? = null,
     val previewFile: FileEntity? = null,
+    val previousScreenBeforePreview: AppScreen = AppScreen.VAULT,
     val isGeneratingPreview: Boolean = false,
     val showImportSharedLinkDialog: Boolean = false,
     val importShareError: String? = null,
@@ -979,7 +980,14 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
                 val updatedFile = current.selectedFileForDetail?.let {
                     if (it.id == fileId) it.copy(name = newName.trim()) else it
                 }
-                current.copy(fileToRename = null, selectedFileForDetail = updatedFile)
+                val updatedPreview = current.previewFile?.let {
+                    if (it.id == fileId) it.copy(name = newName.trim()) else it
+                }
+                current.copy(
+                    fileToRename = null,
+                    selectedFileForDetail = updatedFile,
+                    previewFile = updatedPreview
+                )
             }
             vaultSyncManager.scheduleAutoPublish()
         }
@@ -1007,7 +1015,19 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     fun moveFile(fileId: String, targetFolderId: String?) {
         viewModelScope.launch {
             db.fileDao().moveFile(fileId, targetFolderId)
-            _uiState.update { it.copy(itemToMove = null) }
+            _uiState.update { current ->
+                val updatedDetail = current.selectedFileForDetail?.let {
+                    if (it.id == fileId) it.copy(folderId = targetFolderId) else it
+                }
+                val updatedPreview = current.previewFile?.let {
+                    if (it.id == fileId) it.copy(folderId = targetFolderId) else it
+                }
+                current.copy(
+                    itemToMove = null,
+                    selectedFileForDetail = updatedDetail,
+                    previewFile = updatedPreview
+                )
+            }
             vaultSyncManager.scheduleAutoPublish()
         }
     }
@@ -1515,10 +1535,15 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
     fun deleteFile(fileId: String) {
         viewModelScope.launch {
             db.fileDao().moveToTrash(fileId, System.currentTimeMillis())
-            _uiState.update {
-                if (it.selectedFileForDetail?.id == fileId) {
-                    it.copy(selectedFileForDetail = null, selectedFileChunks = emptyList())
-                } else it
+            _uiState.update { current ->
+                var next = current
+                if (next.selectedFileForDetail?.id == fileId) {
+                    next = next.copy(selectedFileForDetail = null, selectedFileChunks = emptyList())
+                }
+                if (next.previewFile?.id == fileId) {
+                    next = next.copy(previewFile = null, currentScreen = next.previousScreenBeforePreview)
+                }
+                next
             }
             vaultSyncManager.scheduleAutoPublish()
         }
@@ -1601,6 +1626,11 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update {
             it.copy(
                 previewFile = file,
+                previousScreenBeforePreview = if (it.currentScreen == AppScreen.PREVIEW) {
+                    it.previousScreenBeforePreview
+                } else {
+                    it.currentScreen
+                },
                 currentScreen = AppScreen.PREVIEW,
                 selectedFileForDetail = null
             )
@@ -1611,26 +1641,13 @@ class TeleVaultViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update {
             it.copy(
                 previewFile = null,
-                currentScreen = AppScreen.VAULT
+                currentScreen = it.previousScreenBeforePreview
             )
         }
     }
 
     fun onFileItemClick(file: FileEntity) {
-        val hasThumb = !file.thumbnailLocalPath.isNullOrBlank() || !file.thumbnailFileId.isNullOrBlank()
-        val isMedia = com.example.domain.ThumbnailUtil.isMedia(file.mimeType)
-        val isDocPreviewable = file.mimeType.equals("application/pdf", ignoreCase = true) ||
-            file.mimeType.startsWith("text/", ignoreCase = true) ||
-            file.mimeType.startsWith("audio/", ignoreCase = true) ||
-            file.name.substringAfterLast('.', "").lowercase() in setOf(
-                "pdf", "txt", "md", "json", "csv", "log", "xml", "kt", "java", "py", "js", "ts", "html", "css", "mp3", "wav", "m4a", "ogg"
-            )
-        val hasLocalDownload = file.localPath != null || file.localUri != null
-        if (hasThumb || ((isMedia || isDocPreviewable) && hasLocalDownload)) {
-            openPreview(file)
-        } else {
-            inspectFile(file)
-        }
+        openPreview(file)
     }
 
     fun loadFullImageInPreview(fileId: String) {

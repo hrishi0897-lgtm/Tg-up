@@ -3,7 +3,6 @@ package com.example.ui.screens
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -42,19 +41,25 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.NavigateBefore
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
+import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -68,6 +73,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -92,6 +98,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -126,6 +133,7 @@ import java.io.File
 @Composable
 fun FilePreviewScreen(
     file: FileEntity,
+    folderName: String = "Root Vault",
     activeTransfer: TransferProgress? = null,
     onBack: () -> Unit,
     onLoadFullImage: (String) -> Unit,
@@ -144,8 +152,9 @@ fun FilePreviewScreen(
     val bufferStats by streamManager.bufferStats.collectAsState()
     var fileChunks by remember(file.id) { mutableStateOf<List<ChunkEntity>>(emptyList()) }
 
-    // Load ordered chunk metadata for zero-download streaming
+    // Load ordered chunk metadata rows from local Room DB (zero network / zero RAM allocation)
     LaunchedEffect(file.id) {
+        streamManager.wipeAllEphemeralBuffers("Opened File Details screen for ${file.name}")
         fileChunks = streamManager.getOrderedChunks(file.id)
     }
 
@@ -210,40 +219,66 @@ fun FilePreviewScreen(
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     var showControls by remember { mutableStateOf(true) }
-    var isStreamingVideoInline by remember(file.id) { mutableStateOf(true) }
+    // IMPORTANT: For video and audio files, the Details screen opens first with isStreamingMediaActive = false!
+    // Nothing is fetched, buffered, or decrypted until the user presses the center Play button.
+    var isStreamingMediaActive by remember(file.id) { mutableStateOf(false) }
     var isVideoFullscreen by remember(file.id) { mutableStateOf(false) }
-    val isVideoLandscapeOrFullscreen = isVideo && (isLandscape || isVideoFullscreen)
+    val isVideoPlayingInLandscapeOrFullscreen = isVideo && isStreamingMediaActive && (isLandscape || isVideoFullscreen)
 
-    // Synchronize system bars and orientation whenever isVideoFullscreen changes
-    LaunchedEffect(isVideoFullscreen) {
-        if (isVideo) {
-            if (isVideoFullscreen) {
-                applyPlayerFullscreenSystemUi(
-                    activity = context as? Activity,
-                    fullscreen = true,
-                    restoreUnspecifiedOrientation = false
-                )
-            }
+    // Ensure RAM is strictly at 0.0 MB whenever on the Details screen (before Play is pressed or after returning from Player)
+    LaunchedEffect(isStreamingMediaActive) {
+        if (!isStreamingMediaActive && (isVideo || isAudio)) {
+            streamManager.wipeAllEphemeralBuffers("Details screen active (player closed)")
+            showControls = true
         }
     }
 
-    BackHandler {
-        if (isVideoFullscreen || (isVideo && isLandscape)) {
+    // Synchronize system bars and orientation whenever isVideoFullscreen changes
+    LaunchedEffect(isVideoFullscreen) {
+        if (isVideo && isVideoFullscreen) {
+            applyPlayerFullscreenSystemUi(
+                activity = context as? Activity,
+                fullscreen = true,
+                restoreUnspecifiedOrientation = false
+            )
+        }
+    }
+
+    // Back navigation hierarchy:
+    // 1. Fullscreen/Landscape Video -> Return to Portrait Player
+    // 2. Active Streaming Player (Video or Audio) -> Wipe RAM to 0.0 MB and return to Details Screen
+    // 3. Details Screen -> Return to File List
+    val handleNavigateBack: () -> Unit = {
+        if (isVideoFullscreen || (isVideo && isStreamingMediaActive && isLandscape)) {
             isVideoFullscreen = false
             applyPlayerFullscreenSystemUi(
                 activity = context as? Activity,
                 fullscreen = false,
                 restoreUnspecifiedOrientation = false
             )
+        } else if ((isVideo || isAudio) && isStreamingMediaActive) {
+            isVideoFullscreen = false
+            isStreamingMediaActive = false
+            showControls = true
+            applyPlayerFullscreenSystemUi(
+                activity = context as? Activity,
+                fullscreen = false,
+                restoreUnspecifiedOrientation = true
+            )
+            streamManager.wipeAllEphemeralBuffers("Back from streaming player to Details screen")
         } else {
             applyPlayerFullscreenSystemUi(
                 activity = context as? Activity,
                 fullscreen = false,
                 restoreUnspecifiedOrientation = true
             )
-            streamManager.wipeAllEphemeralBuffers("Back navigation from FilePreviewScreen")
+            streamManager.wipeAllEphemeralBuffers("Back navigation from File Details screen")
             onBack()
         }
+    }
+
+    BackHandler {
+        handleNavigateBack()
     }
 
     // Zero-download in-RAM decoded full image bitmap
@@ -273,14 +308,16 @@ fun FilePreviewScreen(
         !activeTransfer.isUpload &&
         (activeTransfer.status == FileStatus.DOWNLOADING || activeTransfer.status == FileStatus.PENDING)
 
-    val bgColor = if (isImage || isVideo) Color(0xFF000000) else colors.bg
+    val isDarkVideoPlayerCanvas = isImage || (isVideo && isStreamingMediaActive)
+    val bgColor = if (isDarkVideoPlayerCanvas) Color(0xFF000000) else colors.bg
+    val effectiveChunkCount = maxOf(file.totalChunks, fileChunks.size, 1)
 
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(bgColor)
-            .pointerInput(isImage, isVideo) {
-                if (isImage || isVideo) {
+            .pointerInput(isImage, isVideo, isStreamingMediaActive) {
+                if (isImage || (isVideo && isStreamingMediaActive)) {
                     detectTapGestures(
                         onDoubleTap = {
                             if (isImage) {
@@ -319,6 +356,55 @@ fun FilePreviewScreen(
             contentAlignment = Alignment.Center
         ) {
             when {
+                // 1. Video or Audio File
+                isVideo || isAudio -> {
+                    if (isStreamingMediaActive) {
+                        if (isVideo) {
+                            ZeroDownloadExoVideoPlayer(
+                                context = context,
+                                file = file,
+                                chunks = fileChunks,
+                                streamManager = streamManager,
+                                bufferStats = bufferStats,
+                                localTarget = localTarget,
+                                isFullFileDownloaded = isFullFileDownloaded,
+                                showOverlayControls = showControls,
+                                onToggleOverlayControls = { showControls = !showControls },
+                                onSetOverlayControls = { showControls = it },
+                                isFullscreen = isVideoFullscreen,
+                                onFullscreenChange = { isVideoFullscreen = it }
+                            )
+                        } else {
+                            ZeroDownloadExoAudioPlayerCard(
+                                context = context,
+                                file = file,
+                                chunks = fileChunks,
+                                streamManager = streamManager,
+                                bufferStats = bufferStats,
+                                localTarget = localTarget,
+                                isFullFileDownloaded = isFullFileDownloaded
+                            )
+                        }
+                    } else {
+                        // FILE DETAILS SCREEN FOR VIDEO & AUDIO (0.0 MB RAM until Play is pressed)
+                        MediaFileDetailsOverview(
+                            context = context,
+                            file = file,
+                            folderName = folderName,
+                            chunkCount = effectiveChunkCount,
+                            isVideo = isVideo,
+                            cachedThumbFile = cachedThumbFile,
+                            localTarget = localTarget,
+                            isFullFileDownloaded = isFullFileDownloaded,
+                            onPlayClick = {
+                                showControls = true
+                                isStreamingMediaActive = true
+                            }
+                        )
+                    }
+                }
+
+                // 2. Image File
                 isImage -> {
                     val bmp = ramImageBitmap
                     if (bmp != null) {
@@ -350,6 +436,8 @@ fun FilePreviewScreen(
                         } else {
                             PreviewPlaceholderCard(
                                 file = file,
+                                folderName = folderName,
+                                chunkCount = effectiveChunkCount,
                                 isVideo = false,
                                 isDownloading = isDownloadingFullFile || isLoadingRamImage,
                                 activeTransfer = activeTransfer,
@@ -382,111 +470,7 @@ fun FilePreviewScreen(
                     }
                 }
 
-                isVideo -> {
-                    if (isStreamingVideoInline && (fileChunks.isNotEmpty() || isFullFileDownloaded)) {
-                        ZeroDownloadExoVideoPlayer(
-                            context = context,
-                            file = file,
-                            chunks = fileChunks,
-                            streamManager = streamManager,
-                            bufferStats = bufferStats,
-                            localTarget = localTarget,
-                            isFullFileDownloaded = isFullFileDownloaded,
-                            showOverlayControls = showControls,
-                            onToggleOverlayControls = { showControls = !showControls },
-                            onSetOverlayControls = { showControls = it },
-                            isFullscreen = isVideoFullscreen,
-                            onFullscreenChange = { isVideoFullscreen = it }
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            val posterModel: Any? = cachedThumbFile ?: localTarget?.let {
-                                if (it.startsWith("/")) File(it) else Uri.parse(it)
-                            }
-                            if (posterModel != null) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(posterModel)
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = file.name,
-                                    contentScale = ContentScale.Fit,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            }
-
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .padding(24.dp)
-                                    .clip(RoundedCornerShape(24.dp))
-                                    .background(Color.Black.copy(alpha = 0.76f))
-                                    .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(24.dp))
-                                    .padding(24.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(68.dp)
-                                        .clip(CircleShape)
-                                        .background(colors.teal)
-                                        .clickable {
-                                            isStreamingVideoInline = true
-                                        }
-                                        .testTag("preview_video_play_button"),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.PlayArrow,
-                                        contentDescription = "Stream Video in RAM",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(14.dp))
-
-                                Text(
-                                    text = "Zero-Download RAM Stream Ready (${ChecksumUtil.formatBytes(file.size)})",
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    textAlign = TextAlign.Center
-                                )
-
-                                if (isFullFileDownloaded && !localTarget.isNullOrBlank()) {
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    FilledTonalButton(
-                                        onClick = { openVideoExternally(context, localTarget, file.mimeType) },
-                                        colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = Color.White.copy(alpha = 0.14f),
-                                            contentColor = Color.White
-                                        )
-                                    ) {
-                                        Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Open External Player", fontSize = 12.sp)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                isAudio -> {
-                    ZeroDownloadExoAudioPlayerCard(
-                        context = context,
-                        file = file,
-                        chunks = fileChunks,
-                        streamManager = streamManager,
-                        bufferStats = bufferStats,
-                        localTarget = localTarget,
-                        isFullFileDownloaded = isFullFileDownloaded
-                    )
-                }
-
+                // 3. PDF File
                 isPdf -> {
                     if (isFullFileDownloaded && !localTarget.isNullOrBlank()) {
                         InlinePdfViewer(
@@ -497,6 +481,8 @@ fun FilePreviewScreen(
                     } else {
                         PreviewPlaceholderCard(
                             file = file,
+                            folderName = folderName,
+                            chunkCount = effectiveChunkCount,
                             isVideo = false,
                             isDownloading = isDownloadingFullFile,
                             activeTransfer = activeTransfer,
@@ -505,6 +491,7 @@ fun FilePreviewScreen(
                     }
                 }
 
+                // 4. Text / Code File
                 isTextOrCode -> {
                     InlineTextCodeViewer(
                         context = context,
@@ -516,9 +503,12 @@ fun FilePreviewScreen(
                     )
                 }
 
+                // 5. Other File Types
                 else -> {
                     PreviewPlaceholderCard(
                         file = file,
+                        folderName = folderName,
+                        chunkCount = effectiveChunkCount,
                         isVideo = false,
                         isDownloading = isDownloadingFullFile,
                         activeTransfer = activeTransfer,
@@ -530,7 +520,7 @@ fun FilePreviewScreen(
 
         // Top Bar Overlay
         AnimatedVisibility(
-            visible = showControls,
+            visible = showControls || !isStreamingMediaActive,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter)
@@ -538,7 +528,7 @@ fun FilePreviewScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.76f))
+                    .background(Color.Black.copy(alpha = 0.78f))
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
@@ -547,24 +537,7 @@ fun FilePreviewScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     IconButton(
-                        onClick = {
-                            if (isVideoFullscreen || (isVideo && isLandscape)) {
-                                isVideoFullscreen = false
-                                applyPlayerFullscreenSystemUi(
-                                    activity = context as? Activity,
-                                    fullscreen = false,
-                                    restoreUnspecifiedOrientation = false
-                                )
-                            } else {
-                                applyPlayerFullscreenSystemUi(
-                                    activity = context as? Activity,
-                                    fullscreen = false,
-                                    restoreUnspecifiedOrientation = true
-                                )
-                                streamManager.wipeAllEphemeralBuffers("Back button clicked in FilePreviewScreen")
-                                onBack()
-                            }
-                        },
+                        onClick = { handleNavigateBack() },
                         modifier = Modifier.testTag("preview_back_button")
                     ) {
                         Icon(
@@ -582,25 +555,28 @@ fun FilePreviewScreen(
                         Text(
                             text = file.name,
                             color = Color.White,
-                            fontSize = 15.sp,
+                            fontSize = 13.sp,
+                            lineHeight = 17.sp,
                             fontWeight = FontWeight.SemiBold,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
                                 text = ChecksumUtil.formatBytes(file.size),
                                 color = Color.White.copy(alpha = 0.7f),
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
+                                lineHeight = 13.sp,
                                 fontFamily = NumericMonoFont
                             )
                             Text(
                                 text = "•",
                                 color = Color.White.copy(alpha = 0.5f),
-                                fontSize = 11.sp
+                                fontSize = 9.sp,
+                                lineHeight = 13.sp
                             )
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -608,6 +584,7 @@ fun FilePreviewScreen(
                                     .clip(RoundedCornerShape(6.dp))
                                     .background(colors.teal.copy(alpha = 0.2f))
                                     .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .testTag("ram_status_pill")
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Memory,
@@ -619,7 +596,8 @@ fun FilePreviewScreen(
                                 Text(
                                     text = formatRamWindowBadge(bufferStats),
                                     color = colors.teal,
-                                    fontSize = 9.sp,
+                                    fontSize = 8.sp,
+                                    lineHeight = 11.sp,
                                     fontFamily = NumericMonoFont,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -642,7 +620,8 @@ fun FilePreviewScreen(
                                     Text(
                                         text = "AES-256",
                                         color = colors.violet,
-                                        fontSize = 9.sp,
+                                        fontSize = 8.sp,
+                                        lineHeight = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -684,13 +663,15 @@ fun FilePreviewScreen(
                                     "Downloading full file (${activeTransfer.completedChunksCount}/${activeTransfer.totalChunks} chunks)"
                                 },
                                 color = Color.White,
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
+                                lineHeight = 13.sp,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
                                 text = "${(activeTransfer.progressFraction * 100).toInt()}%",
                                 color = colors.teal,
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
+                                lineHeight = 13.sp,
                                 fontFamily = NumericMonoFont,
                                 fontWeight = FontWeight.Bold
                             )
@@ -710,9 +691,9 @@ fun FilePreviewScreen(
             }
         }
 
-        // Bottom Controls & Action Bar (hidden in landscape and fullscreen mode for video)
+        // Bottom Controls & Action Bar (hidden in landscape and fullscreen mode when video player is active)
         AnimatedVisibility(
-            visible = showControls && !isVideoLandscapeOrFullscreen,
+            visible = (showControls || !isStreamingMediaActive) && !isVideoPlayingInLandscapeOrFullscreen,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -720,10 +701,40 @@ fun FilePreviewScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.78f))
+                    .background(Color.Black.copy(alpha = 0.80f))
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
+                // For non-video/non-audio files, show a compact metadata summary pill strip above actions
+                if (!isVideo && !isAudio) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "$folderName • ${ChecksumUtil.formatDate(file.uploadDate)}",
+                            color = Color.White.copy(alpha = 0.72f),
+                            fontSize = 9.sp,
+                            lineHeight = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${if (file.isEncrypted) "AES-256" else "Standard"} • $effectiveChunkCount chunk${if (effectiveChunkCount == 1) "" else "s"}",
+                            color = colors.teal,
+                            fontSize = 9.sp,
+                            lineHeight = 13.sp,
+                            fontFamily = NumericMonoFont,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
                 if (isImage && !isFullFileDownloaded && ramImageBitmap == null) {
                     FilledTonalButton(
                         onClick = {
@@ -773,7 +784,8 @@ fun FilePreviewScreen(
                             Text(
                                 text = "Streaming Full Image into RAM…",
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
                             )
                         } else {
                             Icon(
@@ -785,7 +797,8 @@ fun FilePreviewScreen(
                             Text(
                                 text = "Stream Full Resolution in RAM (${ChecksumUtil.formatBytes(file.size)})",
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
                             )
                         }
                     }
@@ -811,12 +824,13 @@ fun FilePreviewScreen(
                                 "Viewing Full Resolution Image • Pinch or double-tap to zoom"
                             },
                             color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 11.sp
+                            fontSize = 9.sp,
+                            lineHeight = 13.sp
                         )
                     }
                 }
 
-                // Quick Actions Row
+                // Quick Actions Row (Share, Move, Rename, Details, Delete)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
@@ -856,6 +870,251 @@ fun FilePreviewScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * File Details Screen for Video & Audio files.
+ *
+ * Displays:
+ * - Preview area with video thumbnail or audio type icon and a large Play button in the center.
+ * - File name, size, date, folder, encryption status, and number of chunks.
+ * - Strictly 0.0 MB RAM usage until the user presses the center Play button.
+ */
+@Composable
+private fun MediaFileDetailsOverview(
+    context: Context,
+    file: FileEntity,
+    folderName: String,
+    chunkCount: Int,
+    isVideo: Boolean,
+    cachedThumbFile: File?,
+    localTarget: String?,
+    isFullFileDownloaded: Boolean,
+    onPlayClick: () -> Unit
+) {
+    val colors = LocalTeleVaultColors.current
+    val scrollState = rememberScrollState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(top = 68.dp, bottom = 84.dp, start = 20.dp, end = 20.dp)
+            .verticalScroll(scrollState)
+            .testTag("file_details_overview"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = colors.surface),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, colors.line, RoundedCornerShape(24.dp))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Center Preview Area with Thumbnail / Type Icon and Large Center Play Button
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(210.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(if (isVideo) Color(0xFF0B0E14) else colors.surfaceHi)
+                        .border(1.dp, colors.line, RoundedCornerShape(18.dp))
+                        .clickable { onPlayClick() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    val posterModel: Any? = if (isVideo) {
+                        cachedThumbFile ?: localTarget?.takeIf { isFullFileDownloaded }?.let {
+                            if (it.startsWith("/")) File(it) else Uri.parse(it)
+                        }
+                    } else null
+
+                    if (posterModel != null) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(posterModel)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = file.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.42f))
+                        )
+                    } else {
+                        // Type icon backdrop behind the Play button
+                        Icon(
+                            imageVector = if (isVideo) Icons.Default.Movie else Icons.Default.AudioFile,
+                            contentDescription = null,
+                            tint = colors.teal.copy(alpha = 0.16f),
+                            modifier = Modifier.size(116.dp)
+                        )
+                    }
+
+                    // Large Play Button in the Center of the Preview Area (preserved at 68.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(68.dp)
+                            .clip(CircleShape)
+                            .background(colors.teal)
+                            .border(2.dp, Color.White.copy(alpha = 0.85f), CircleShape)
+                            .clickable { onPlayClick() }
+                            .testTag("preview_video_play_button"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Play Stream in RAM",
+                            tint = Color.White,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+
+                    // Bottom-right Type Pill inside Preview Box
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(10.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black.copy(alpha = 0.72f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isVideo) Icons.Default.Movie else Icons.Default.AudioFile,
+                            contentDescription = null,
+                            tint = colors.teal,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isVideo) "Tap Play to Stream Video" else "Tap Play to Stream Audio",
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            lineHeight = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // File Name
+                Text(
+                    text = file.name,
+                    color = colors.text,
+                    fontSize = 15.sp,
+                    lineHeight = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+                HorizontalDivider(color = colors.line)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // File Metadata Rows: Size, Date, Folder, Encryption Status, Number of Chunks
+                DetailsMetadataRow(
+                    icon = Icons.Default.Description,
+                    label = "Size",
+                    value = ChecksumUtil.formatBytes(file.size),
+                    isMono = true
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                DetailsMetadataRow(
+                    icon = Icons.Default.CalendarToday,
+                    label = "Date",
+                    value = ChecksumUtil.formatDate(file.uploadDate),
+                    isMono = false
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                DetailsMetadataRow(
+                    icon = Icons.Default.Folder,
+                    label = "Folder",
+                    value = folderName,
+                    isMono = false
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                DetailsMetadataRow(
+                    icon = if (file.isEncrypted) Icons.Default.Lock else Icons.Default.LockOpen,
+                    label = "Encryption",
+                    value = if (file.isEncrypted) "AES-256-GCM Encrypted" else "Standard (Unencrypted)",
+                    valueColor = if (file.isEncrypted) colors.violet else colors.text,
+                    isMono = false
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                DetailsMetadataRow(
+                    icon = Icons.Default.Layers,
+                    label = "Chunks",
+                    value = "$chunkCount chunk${if (chunkCount == 1) "" else "s"}",
+                    isMono = true
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailsMetadataRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    valueColor: Color = LocalTeleVaultColors.current.text,
+    isMono: Boolean
+) {
+    val colors = LocalTeleVaultColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(colors.surfaceHi)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = colors.teal,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = label,
+                color = colors.textDim,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = value,
+            color = valueColor,
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            fontFamily = if (isMono) NumericMonoFont else null,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -912,11 +1171,16 @@ private fun InlinePdfViewer(
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(top = 64.dp, bottom = 92.dp, start = 16.dp, end = 16.dp),
+            .padding(top = 64.dp, bottom = 104.dp, start = 16.dp, end = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         if (errorMessage != null) {
-            Text(text = errorMessage ?: "", color = colors.violet, fontSize = 13.sp)
+            Text(
+                text = errorMessage ?: "",
+                color = colors.violet,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
         } else {
             Row(
                 modifier = Modifier
@@ -939,7 +1203,8 @@ private fun InlinePdfViewer(
                     Text(
                         text = "Page ${currentPage + 1} of ${pageCount.coerceAtLeast(1)}",
                         color = colors.text,
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         fontFamily = NumericMonoFont
                     )
@@ -1054,7 +1319,7 @@ private fun InlineTextCodeViewer(
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(top = 64.dp, bottom = 92.dp, start = 14.dp, end = 14.dp)
+            .padding(top = 64.dp, bottom = 104.dp, start = 14.dp, end = 14.dp)
     ) {
         OutlinedTextField(
             value = searchQuery,
@@ -1063,7 +1328,8 @@ private fun InlineTextCodeViewer(
                 Text(
                     text = "Search in ${file.name} (${lines.size} lines)...",
                     color = colors.textFaint,
-                    fontSize = 12.sp
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp
                 )
             },
             leadingIcon = {
@@ -1115,7 +1381,8 @@ private fun InlineTextCodeViewer(
                             Text(
                                 text = lineNum.toString().padStart(4, ' '),
                                 color = colors.textFaint,
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
+                                lineHeight = 13.sp,
                                 fontFamily = NumericMonoFont,
                                 modifier = Modifier.width(38.dp)
                             )
@@ -1123,7 +1390,8 @@ private fun InlineTextCodeViewer(
                             Text(
                                 text = content,
                                 color = colors.text,
-                                fontSize = 12.sp,
+                                fontSize = 10.sp,
+                                lineHeight = 14.sp,
                                 fontFamily = NumericMonoFont
                             )
                         }
@@ -1137,6 +1405,8 @@ private fun InlineTextCodeViewer(
 @Composable
 private fun PreviewPlaceholderCard(
     file: FileEntity,
+    folderName: String,
+    chunkCount: Int,
     isVideo: Boolean,
     isDownloading: Boolean,
     activeTransfer: TransferProgress?,
@@ -1149,12 +1419,12 @@ private fun PreviewPlaceholderCard(
         colors = CardDefaults.cardColors(containerColor = colors.surface),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 28.dp)
+            .padding(horizontal = 24.dp)
             .border(1.dp, colors.line, RoundedCornerShape(20.dp))
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(24.dp)
+            modifier = Modifier.padding(20.dp)
         ) {
             Box(
                 modifier = Modifier
@@ -1177,28 +1447,58 @@ private fun PreviewPlaceholderCard(
                 )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text = file.name,
                 color = colors.text,
-                fontSize = 16.sp,
+                fontSize = 14.sp,
+                lineHeight = 19.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            Text(
-                text = "${ChecksumUtil.formatBytes(file.size)} • ${file.totalChunks} chunk${if (file.totalChunks == 1) "" else "s"}",
-                color = colors.textDim,
-                fontSize = 12.sp,
-                fontFamily = NumericMonoFont
+            DetailsMetadataRow(
+                icon = Icons.Default.Description,
+                label = "Size",
+                value = ChecksumUtil.formatBytes(file.size),
+                isMono = true
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            DetailsMetadataRow(
+                icon = Icons.Default.CalendarToday,
+                label = "Date",
+                value = ChecksumUtil.formatDate(file.uploadDate),
+                isMono = false
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            DetailsMetadataRow(
+                icon = Icons.Default.Folder,
+                label = "Folder",
+                value = folderName,
+                isMono = false
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            DetailsMetadataRow(
+                icon = if (file.isEncrypted) Icons.Default.Lock else Icons.Default.LockOpen,
+                label = "Encryption",
+                value = if (file.isEncrypted) "AES-256-GCM Encrypted" else "Standard (Unencrypted)",
+                valueColor = if (file.isEncrypted) colors.violet else colors.text,
+                isMono = false
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            DetailsMetadataRow(
+                icon = Icons.Default.Layers,
+                label = "Chunks",
+                value = "$chunkCount chunk${if (chunkCount == 1) "" else "s"}",
+                isMono = true
             )
 
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             Button(
                 onClick = onDownload,
@@ -1219,6 +1519,8 @@ private fun PreviewPlaceholderCard(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Loading (${((activeTransfer?.progressFraction ?: 0f) * 100).toInt()}%)...",
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 } else {
@@ -1230,6 +1532,8 @@ private fun PreviewPlaceholderCard(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = if (file.isEncrypted) "Decrypt & Preview" else "Load Preview",
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -1264,27 +1568,9 @@ private fun PreviewActionItem(
         Text(
             text = label,
             color = tint.copy(alpha = 0.9f),
-            fontSize = 11.sp,
+            fontSize = 9.sp,
+            lineHeight = 13.sp,
             fontWeight = FontWeight.Medium
         )
-    }
-}
-
-private fun openVideoExternally(context: Context, localTarget: String, mimeType: String) {
-    try {
-        val uri: Uri = if (localTarget.startsWith("/")) {
-            val file = File(localTarget)
-            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        } else {
-            Uri.parse(localTarget)
-        }
-
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mimeType.ifBlank { "video/*" })
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(Intent.createChooser(intent, "Play Video"))
-    } catch (e: Exception) {
-        Toast.makeText(context, "Unable to launch video player: ${e.message}", Toast.LENGTH_SHORT).show()
     }
 }

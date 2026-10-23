@@ -144,13 +144,13 @@ fun ShareFileDialog(
                 Column {
                     Text(
                         text = "Encrypted Share & QR Code",
-                        fontSize = 17.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.text
                     )
                     Text(
                         text = file.name,
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         color = colors.textDim,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -186,7 +186,7 @@ fun ShareFileDialog(
                         ) {
                             Text(
                                 text = title,
-                                fontSize = 12.sp,
+                                fontSize = 10.sp,
                                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                                 color = if (selected) colors.teal else colors.textDim
                             )
@@ -241,7 +241,7 @@ fun ShareFileDialog(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "Include Key (${CryptoStreamEngine.getKeyFingerprint(file.encryptionKeyBase64)})",
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = colors.teal
                                 )
@@ -272,7 +272,7 @@ fun ShareFileDialog(
                             FilterChip(
                                 selected = selectedExpireHours == hours,
                                 onClick = { selectedExpireHours = hours },
-                                label = { Text(label, fontSize = 11.sp) },
+                                label = { Text(label, fontSize = 9.sp) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = colors.violet,
                                     selectedLabelColor = Color.White
@@ -302,7 +302,7 @@ fun ShareFileDialog(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = directShareUri,
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
                                 fontFamily = FontFamily.Monospace,
                                 color = colors.text,
                                 maxLines = 1,
@@ -332,7 +332,7 @@ fun ShareFileDialog(
                         ) {
                             Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Copy URI", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("Copy URI", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedButton(
@@ -352,7 +352,7 @@ fun ShareFileDialog(
                         ) {
                             Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Share…", fontSize = 12.sp)
+                            Text("Share…", fontSize = 10.sp)
                         }
                     }
                 } else {
@@ -367,7 +367,7 @@ fun ShareFileDialog(
                         Spacer(modifier = Modifier.height(14.dp))
                         Text(
                             text = "Creating relay share...",
-                            fontSize = 14.sp,
+                            fontSize = 12.sp,
                             color = colors.text,
                             fontWeight = FontWeight.Medium
                         )
@@ -412,7 +412,7 @@ fun ShareFileDialog(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = activeShare.inviteLink,
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     fontFamily = FontFamily.Monospace,
                                     color = colors.text,
                                     maxLines = 1,
@@ -441,7 +441,7 @@ fun ShareFileDialog(
                             } ?: "No expiration"
                             Text(
                                 text = "Expires: $expiryStr • 1 member limit",
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
                                 color = colors.textDim
                             )
                         }
@@ -464,7 +464,7 @@ fun ShareFileDialog(
                             ) {
                                 Icon(imageVector = Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Copy Link", fontSize = 12.sp)
+                                Text("Copy Link", fontSize = 10.sp)
                             }
 
                             OutlinedButton(
@@ -481,7 +481,7 @@ fun ShareFileDialog(
                             ) {
                                 Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Share...", fontSize = 12.sp)
+                                Text("Share...", fontSize = 10.sp)
                             }
                         }
 
@@ -495,7 +495,7 @@ fun ShareFileDialog(
                         ) {
                             Icon(imageVector = Icons.Default.Block, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Revoke Share & Delete Relay Copies", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Revoke Share & Delete Relay Copies", fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
                         }
                     } else {
                         if (!errorMessage.isNullOrBlank()) {
@@ -509,7 +509,7 @@ fun ShareFileDialog(
                                 Text(
                                     text = errorMessage,
                                     color = StatusError,
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -531,7 +531,7 @@ fun ShareFileDialog(
                                 FilterChip(
                                     selected = selectedExpireHours == hours,
                                     onClick = { selectedExpireHours = hours },
-                                    label = { Text(label, fontSize = 11.sp) },
+                                    label = { Text(label, fontSize = 9.sp) },
                                     colors = FilterChipDefaults.filterChipColors(
                                         selectedContainerColor = colors.violet,
                                         selectedLabelColor = Color.White
@@ -553,7 +553,7 @@ fun ShareFileDialog(
                         ) {
                             Icon(imageVector = Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Generate Relay Invite Link", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Generate Relay Invite Link", fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
                         }
                     }
                 }

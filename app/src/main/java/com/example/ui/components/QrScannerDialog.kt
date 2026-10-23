@@ -164,7 +164,7 @@ fun QrScannerDialog(
                     Text(
                         "Camera Permission Required",
                         color = Color.White,
-                        fontSize = 19.sp,
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = BodySansFont,
                         textAlign = TextAlign.Center
@@ -173,10 +173,10 @@ fun QrScannerDialog(
                     Text(
                         "TeleVault uses the camera to scan device pairing QR codes securely offline. No camera frames are stored or transmitted.",
                         color = colors.textDim,
-                        fontSize = 14.sp,
+                        fontSize = 12.sp,
                         fontFamily = BodySansFont,
                         textAlign = TextAlign.Center,
-                        lineHeight = 20.sp
+                        lineHeight = 18.sp
                     )
                     Spacer(modifier = Modifier.height(28.dp))
                     Button(
@@ -191,7 +191,7 @@ fun QrScannerDialog(
                             "Grant Camera Permission",
                             fontFamily = BodySansFont,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
+                            fontSize = 12.sp
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
@@ -207,7 +207,7 @@ fun QrScannerDialog(
                             "Cancel",
                             color = colors.textDim,
                             fontFamily = BodySansFont,
-                            fontSize = 14.sp
+                            fontSize = 12.sp
                         )
                     }
                 }
@@ -426,7 +426,7 @@ fun QrScannerDialog(
                             Text(
                                 text = scannerTitle,
                                 color = Color.White,
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 fontFamily = BodySansFont
                             )
@@ -469,7 +469,7 @@ fun QrScannerDialog(
                         Text(
                             bottomTitle,
                             color = Color.White,
-                            fontSize = 16.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = BodySansFont
                         )
@@ -477,10 +477,10 @@ fun QrScannerDialog(
                         Text(
                             bottomSubtitle,
                             color = Color.LightGray,
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontFamily = BodySansFont,
                             textAlign = TextAlign.Center,
-                            lineHeight = 18.sp
+                            lineHeight = 16.sp
                         )
                     }
                 }

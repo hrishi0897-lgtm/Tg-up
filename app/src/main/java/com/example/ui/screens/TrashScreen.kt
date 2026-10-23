@@ -219,7 +219,7 @@ fun TrashScreen(
                 Text(
                     text = "All ${trashFiles.size} items in the Recycle Bin will be permanently deleted from Telegram and your device. This cannot be undone.",
                     fontFamily = BodySansFont,
-                    fontSize = 14.sp,
+                    fontSize = 12.sp,
                     color = colors.textDim
                 )
             },
@@ -272,7 +272,7 @@ fun TrashScreen(
                 Text(
                     text = "The selected ${selectedTrashIds.size} file(s) will be permanently erased from Telegram and your local vault. This action cannot be reversed.",
                     fontFamily = BodySansFont,
-                    fontSize = 14.sp,
+                    fontSize = 12.sp,
                     color = colors.textDim
                 )
             },
@@ -330,7 +330,7 @@ fun TrashScreen(
                 Text(
                     text = "\"${file.name}\" will be permanently deleted from Telegram and your device. This action cannot be undone.",
                     fontFamily = BodySansFont,
-                    fontSize = 14.sp,
+                    fontSize = 12.sp,
                     color = colors.textDim
                 )
             },
@@ -404,7 +404,7 @@ private fun TrashSelectionTopBar(
                 text = "$selectedCount selected",
                 fontFamily = BodySansFont,
                 fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
+                fontSize = 13.sp,
                 color = colors.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -450,7 +450,7 @@ private fun TrashSelectionTopBar(
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Restore", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text("Restore", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
 
             Button(
@@ -471,7 +471,7 @@ private fun TrashSelectionTopBar(
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Delete", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text("Delete", fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             }
         }
     }
@@ -524,7 +524,7 @@ private fun TrashTopBar(
                         text = "Recycle Bin",
                         fontFamily = DisplaySerifFont,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
+                        fontSize = 18.sp,
                         color = colors.text
                     )
                     if (itemCount > 0) {
@@ -538,7 +538,7 @@ private fun TrashTopBar(
                                 text = "$itemCount",
                                 fontFamily = NumericMonoFont,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
                                 color = colors.amber
                             )
                         }
@@ -566,7 +566,7 @@ private fun TrashTopBar(
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = "Empty",
-                    fontSize = 12.5.sp,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.SemiBold
                 )
             }
@@ -703,7 +703,7 @@ private fun TrashItemCard(
                         text = file.name,
                         fontFamily = BodySansFont,
                         fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
+                        fontSize = 12.sp,
                         color = colors.text,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -716,18 +716,18 @@ private fun TrashItemCard(
                         Text(
                             text = ChecksumUtil.formatFileSize(file.size),
                             fontFamily = NumericMonoFont,
-                            fontSize = 11.5.sp,
+                            fontSize = 9.5.sp,
                             color = colors.textDim
                         )
                         Text(
                             text = "•",
-                            fontSize = 11.sp,
+                            fontSize = 9.sp,
                             color = colors.textFaint
                         )
                         Text(
                             text = if (daysRemaining == 1) "1 day left" else "$daysRemaining days left",
                             fontFamily = BodySansFont,
-                            fontSize = 11.5.sp,
+                            fontSize = 9.5.sp,
                             color = if (daysRemaining <= 3) colors.danger else colors.amber,
                             fontWeight = FontWeight.Medium
                         )
@@ -758,7 +758,7 @@ private fun TrashItemCard(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "Delete",
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -784,7 +784,7 @@ private fun TrashItemCard(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = "Restore",
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }

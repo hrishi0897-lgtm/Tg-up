@@ -97,13 +97,13 @@ fun ShareSheetFolderDialog(
                 Column {
                     Text(
                         text = "Share to TeleVault",
-                        fontSize = 17.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.text
                     )
                     Text(
                         text = "${items.size} file${if (items.size > 1) "s" else ""} • ${ChecksumUtil.formatBytes(totalSize)}",
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         color = colors.textDim
                     )
                 }
@@ -116,7 +116,7 @@ fun ShareSheetFolderDialog(
                 // Shared items preview list
                 Text(
                     text = "Incoming Files",
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.textDim,
                     modifier = Modifier.padding(bottom = 6.dp)
@@ -150,7 +150,7 @@ fun ShareSheetFolderDialog(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = item.name,
-                                    fontSize = 13.sp,
+                                    fontSize = 11.sp,
                                     color = colors.text,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -159,7 +159,7 @@ fun ShareSheetFolderDialog(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = ChecksumUtil.formatBytes(item.size),
-                                    fontSize = 11.sp,
+                                    fontSize = 9.sp,
                                     color = colors.textDim
                                 )
                             }
@@ -172,7 +172,7 @@ fun ShareSheetFolderDialog(
                 // Target Folder Selection
                 Text(
                     text = "Upload destination",
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = colors.textDim,
                     modifier = Modifier.padding(bottom = 6.dp)
@@ -202,7 +202,7 @@ fun ShareSheetFolderDialog(
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = "Root Vault",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = if (isRootSelected) FontWeight.Bold else FontWeight.Normal,
                             color = if (isRootSelected) colors.violet else colors.text,
                             modifier = Modifier.weight(1f)
@@ -243,7 +243,7 @@ fun ShareSheetFolderDialog(
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Text(
                                         text = folder.name,
-                                        fontSize = 13.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                         color = if (isSelected) colors.teal else colors.text,
                                         maxLines = 1,
@@ -285,7 +285,7 @@ fun ShareSheetFolderDialog(
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Always upload to root without asking",
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         color = colors.textDim
                     )
                 }
@@ -300,7 +300,7 @@ fun ShareSheetFolderDialog(
                 Text(
                     text = "Upload to Vault",
                     fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp
+                    fontSize = 11.sp
                 )
             }
         },

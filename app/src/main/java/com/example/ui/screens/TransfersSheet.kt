@@ -103,14 +103,14 @@ fun TransfersSheet(
             ) {
                 Text(
                     text = "Transfer Queue",
-                    fontSize = 18.sp,
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     color = colors.text
                 )
                 Text(
                     text = "${activeItems.size} items",
-                    fontSize = 12.sp,
+                    fontSize = 10.sp,
                     fontFamily = BodySansFont,
                     color = colors.textDim
                 )
@@ -143,14 +143,14 @@ fun TransfersSheet(
                         ) {
                             Text(
                                 text = "Overall Batch Progress",
-                                fontSize = 12.sp,
+                                fontSize = 10.sp,
                                 fontFamily = BodySansFont,
                                 fontWeight = FontWeight.SemiBold,
                                 color = colors.text
                             )
                             Text(
                                 text = "$totalCount items in queue",
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
                                 fontFamily = NumericMonoFont,
                                 fontWeight = FontWeight.Bold,
                                 color = colors.violet
@@ -196,7 +196,7 @@ fun TransfersSheet(
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "All Transfers Completed",
-                            fontSize = 14.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = BodySansFont,
                             color = colors.text
@@ -204,7 +204,7 @@ fun TransfersSheet(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "Queue clear",
-                            fontSize = 12.sp,
+                            fontSize = 10.sp,
                             fontFamily = BodySansFont,
                             color = colors.textDim
                         )
@@ -299,7 +299,7 @@ private fun TransferItemCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = transfer.fileName,
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Medium,
                         fontFamily = BodySansFont,
                         color = colors.text,
@@ -325,7 +325,7 @@ private fun TransferItemCard(
                     }
                     Text(
                         text = "${ChecksumUtil.formatBytes(transfer.totalBytes)} · $statusDesc",
-                        fontSize = 11.sp,
+                        fontSize = 9.sp,
                         fontFamily = NumericMonoFont,
                         color = when (transfer.status) {
                             FileStatus.FAILED -> colors.danger
@@ -396,7 +396,7 @@ private fun TransferItemCard(
                     val rate = if (transfer.speedBytesPerSec > 0) " · ${ChecksumUtil.formatSpeed(transfer.speedBytesPerSec)}" else ""
                     Text(
                         text = "$percent%$rate",
-                        fontSize = 10.5.sp,
+                        fontSize = 8.5.sp,
                         fontFamily = NumericMonoFont,
                         color = colors.violet,
                         fontWeight = FontWeight.SemiBold,
@@ -412,7 +412,7 @@ private fun TransferItemCard(
                     }
                     Text(
                         text = detail,
-                        fontSize = 10.5.sp,
+                        fontSize = 8.5.sp,
                         fontFamily = NumericMonoFont,
                         color = colors.textFaint,
                         maxLines = 1

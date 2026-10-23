@@ -252,7 +252,7 @@ fun StorageBentoGrid(
                 ) {
                     Text(
                         text = "Vault storage",
-                        fontSize = 13.sp,
+                        fontSize = 11.sp,
                         fontFamily = BodySansFont,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.textDim
@@ -280,7 +280,7 @@ fun StorageBentoGrid(
                             )
                             Text(
                                 text = "No archive limit",
-                                fontSize = 11.5.sp,
+                                fontSize = 9.5.sp,
                                 fontFamily = BodySansFont,
                                 fontWeight = FontWeight.Medium,
                                 color = colors.violet
@@ -305,7 +305,7 @@ fun StorageBentoGrid(
                         Text(
                             text = v,
                             fontFamily = NumericMonoFont,
-                            fontSize = 35.sp,
+                            fontSize = 33.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.text,
                             letterSpacing = (-0.5).sp
@@ -324,7 +324,7 @@ fun StorageBentoGrid(
                         Text(
                             text = u,
                             fontFamily = NumericMonoFont,
-                            fontSize = 19.sp,
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = colors.violet,
                             modifier = Modifier.padding(bottom = 3.dp)
@@ -342,7 +342,7 @@ fun StorageBentoGrid(
                 ) {
                     Text(
                         text = "used across ${summary.fileCount} encrypted file${if (summary.fileCount == 1) "" else "s"}",
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         fontFamily = BodySansFont,
                         color = colors.textFaint
                     )
@@ -364,7 +364,7 @@ fun StorageBentoGrid(
                         )
                         Text(
                             text = "Download/TGC",
-                            fontSize = 10.sp,
+                            fontSize = 8.sp,
                             fontFamily = NumericMonoFont,
                             fontWeight = FontWeight.SemiBold,
                             color = colors.violet
@@ -564,7 +564,7 @@ private fun CategoryBentoTile(
                     )
                     Text(
                         text = categoryData.name,
-                        fontSize = 12.5.sp,
+                        fontSize = 10.5.sp,
                         fontFamily = BodySansFont,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                         color = if (isSelected) categoryData.color else colors.text,
@@ -575,7 +575,7 @@ private fun CategoryBentoTile(
 
                 Text(
                     text = "${categoryData.percentage}%",
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontFamily = NumericMonoFont,
                     fontWeight = FontWeight.Medium,
                     color = if (isSelected) categoryData.color else colors.textDim
@@ -591,7 +591,7 @@ private fun CategoryBentoTile(
                 Text(
                     text = categoryData.formattedValue,
                     fontFamily = NumericMonoFont,
-                    fontSize = 16.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = colors.text
                 )
@@ -599,7 +599,7 @@ private fun CategoryBentoTile(
                 Text(
                     text = categoryData.formattedUnit,
                     fontFamily = NumericMonoFont,
-                    fontSize = 11.5.sp,
+                    fontSize = 9.5.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = categoryData.color,
                     modifier = Modifier.padding(bottom = 1.dp)
@@ -712,7 +712,7 @@ private fun VaultStatsBentoTile(
                     )
                     Text(
                         text = "Vault Items",
-                        fontSize = 12.5.sp,
+                        fontSize = 10.5.sp,
                         fontFamily = BodySansFont,
                         fontWeight = FontWeight.SemiBold,
                         color = colors.textDim,
@@ -730,7 +730,7 @@ private fun VaultStatsBentoTile(
                     ) {
                         Text(
                             text = "$activeTransfersCount live",
-                            fontSize = 9.5.sp,
+                            fontSize = 7.5.sp,
                             fontFamily = NumericMonoFont,
                             fontWeight = FontWeight.Bold,
                             color = colors.teal
@@ -753,14 +753,14 @@ private fun VaultStatsBentoTile(
                     Text(
                         text = "$fileCount",
                         fontFamily = NumericMonoFont,
-                        fontSize = 16.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.text
                     )
                     Text(
                         text = "files",
                         fontFamily = BodySansFont,
-                        fontSize = 10.5.sp,
+                        fontSize = 8.5.sp,
                         color = colors.textFaint
                     )
                 }
@@ -782,14 +782,14 @@ private fun VaultStatsBentoTile(
                     Text(
                         text = "$folderCount",
                         fontFamily = NumericMonoFont,
-                        fontSize = 16.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.text
                     )
                     Text(
                         text = "folders",
                         fontFamily = BodySansFont,
-                        fontSize = 10.5.sp,
+                        fontSize = 8.5.sp,
                         color = colors.textFaint
                     )
                 }
@@ -818,7 +818,7 @@ private fun VaultStatsBentoTile(
                     Text(
                         text = if (activeTransfersCount > 0) "$activeTransfersCount in flight" else "Transfers idle",
                         fontFamily = BodySansFont,
-                        fontSize = 10.5.sp,
+                        fontSize = 8.5.sp,
                         color = if (activeTransfersCount > 0) colors.teal else colors.textFaint,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -828,7 +828,7 @@ private fun VaultStatsBentoTile(
                 Text(
                     text = "View →",
                     fontFamily = BodySansFont,
-                    fontSize = 10.sp,
+                    fontSize = 8.sp,
                     color = colors.textDim
                 )
             }

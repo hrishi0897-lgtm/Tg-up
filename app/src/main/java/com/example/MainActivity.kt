@@ -501,9 +501,15 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                 } else if (currentScreen == AppScreen.PREVIEW && uiState.previewFile != null) {
                     val previewFile = uiState.previewFile!!
                     val activeTransfers by viewModel.activeTransfers.collectAsState()
+                    val allFolders by viewModel.allFolders.collectAsState()
                     val activeTransfer = activeTransfers.find { it.fileId == previewFile.id }
+                    val folderName = remember(previewFile.folderId, allFolders) {
+                        if (previewFile.folderId == null) "Root Vault"
+                        else allFolders.find { it.id == previewFile.folderId }?.name ?: "Vault Folder"
+                    }
                     FilePreviewScreen(
                         file = previewFile,
+                        folderName = folderName,
                         activeTransfer = activeTransfer,
                         onBack = { viewModel.closePreview() },
                         onLoadFullImage = { viewModel.loadFullImageInPreview(it) },
@@ -790,7 +796,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     title = {
                         Text(
                             text = "Switch Vault to ${bot.label}?",
-                            fontSize = 18.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.text
                         )
@@ -799,7 +805,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         Column {
                             Text(
                                 text = "Your primary bot was revoked or restricted. This recovery flow safely migrates all file chunks to ${bot.label} using server-side copyMessage.",
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 color = colors.text,
                                 fontWeight = FontWeight.Medium
                             )
@@ -814,17 +820,17 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(
                                         text = "• 0 MB data: Telegram server-side copyMessage",
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         color = colors.textDim
                                     )
                                     Text(
                                         text = "• Generates fresh file_ids and binds chunks to ${bot.label}",
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         color = colors.textDim
                                     )
                                     Text(
                                         text = "• Sets ${bot.label} as active bot credentials",
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         color = colors.textDim
                                     )
                                 }
@@ -876,7 +882,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                     title = {
                         Text(
                             text = "Recovering Vault Chunks...",
-                            fontSize = 18.sp,
+                            fontSize = 16.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.text
                         )
@@ -885,7 +891,7 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                         Column {
                             Text(
                                 text = recoveryState.statusMessage,
-                                fontSize = 13.sp,
+                                fontSize = 11.sp,
                                 color = colors.textDim
                             )
                             Spacer(modifier = Modifier.height(14.dp))
@@ -905,13 +911,13 @@ fun TeleVaultApp(viewModel: TeleVaultViewModel) {
                             ) {
                                 Text(
                                     text = "${recoveryState.currentChunk} / ${recoveryState.totalChunks} chunks",
-                                    fontSize = 11.sp,
+                                    fontSize = 9.sp,
                                     color = colors.textDim,
                                     fontFamily = FontFamily.Monospace
                                 )
                                 Text(
                                     text = "${(recoveryState.progressFraction * 100).toInt()}%",
-                                    fontSize = 11.sp,
+                                    fontSize = 9.sp,
                                     color = colors.violet,
                                     fontWeight = FontWeight.Bold
                                 )

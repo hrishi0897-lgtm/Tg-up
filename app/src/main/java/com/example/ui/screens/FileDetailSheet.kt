@@ -245,7 +245,7 @@ fun FileDetailSheet(
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = "Open Preview",
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         color = Color.White,
                                         fontWeight = FontWeight.Medium
                                     )
@@ -286,7 +286,7 @@ fun FileDetailSheet(
                                         color = colors.teal
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Generating preview...", fontSize = 12.sp)
+                                    Text("Generating preview...", fontSize = 10.sp)
                                 } else {
                                     Icon(
                                         imageVector = Icons.Default.Image,
@@ -294,7 +294,7 @@ fun FileDetailSheet(
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Generate Fast Thumbnail", fontSize = 12.sp)
+                                    Text("Generate Fast Thumbnail", fontSize = 10.sp)
                                 }
                             }
                         }
@@ -303,7 +303,7 @@ fun FileDetailSheet(
                     // File Name
                     Text(
                         text = file.name,
-                        fontSize = 17.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         color = colors.text,
                         maxLines = 2,
@@ -331,18 +331,18 @@ fun FileDetailSheet(
                     ) {
                         Text(
                             text = ChecksumUtil.formatFileSize(file.size),
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = colors.textDim
                         )
                         Text(
                             text = " · ",
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             color = colors.textFaint
                         )
                         Text(
                             text = ChecksumUtil.formatDate(file.uploadDate),
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             color = colors.textDim
                         )
                     }
@@ -372,7 +372,7 @@ fun FileDetailSheet(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Verified",
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = StatusSuccess
                                 )
@@ -395,7 +395,7 @@ fun FileDetailSheet(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "Archived in Vault",
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = colors.violet
                                 )
@@ -413,7 +413,7 @@ fun FileDetailSheet(
                             ) {
                                 Text(
                                     text = "AES-256 • ${CryptoStreamEngine.getKeyFingerprint(file.encryptionKeyBase64)}",
-                                    fontSize = 11.5.sp,
+                                    fontSize = 9.5.sp,
                                     fontFamily = NumericMonoFont,
                                     fontWeight = FontWeight.Bold,
                                     color = colors.teal
@@ -438,7 +438,7 @@ fun FileDetailSheet(
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(
                             text = "SMART TAGS",
-                            fontSize = 11.sp,
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             color = colors.textDim,
                             letterSpacing = 0.8.sp
@@ -467,7 +467,7 @@ fun FileDetailSheet(
                                 ) {
                                     Text(
                                         text = if (isAssigned) "✓ $tag" else "+ $tag",
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         fontWeight = if (isAssigned) FontWeight.Bold else FontWeight.Medium,
                                         color = if (isAssigned) Color.White else colors.textDim
                                     )
@@ -500,7 +500,7 @@ fun FileDetailSheet(
                     Text(
                         text = file.errorMessage,
                         color = StatusError,
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -528,7 +528,7 @@ fun FileDetailSheet(
                     Text(
                         text = "Saved in ${com.example.domain.DownloadStorageManager.getDisplayPath(file.name)}",
                         color = StatusSuccess,
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -539,7 +539,7 @@ fun FileDetailSheet(
             // Actions: Download, Share, Rename, Move to folder, Delete
             Text(
                 text = "Actions",
-                fontSize = 13.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = colors.textDim,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
@@ -698,7 +698,7 @@ fun FileDetailSheet(
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "DEBUG: INTERNAL CHUNKS (${chunks.size})",
-                                        fontSize = 11.sp,
+                                        fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = colors.violet,
                                         letterSpacing = 0.5.sp
@@ -707,7 +707,7 @@ fun FileDetailSheet(
 
                                 Text(
                                     text = if (file.manifestMessageId != null) "Manifest Msg #${file.manifestMessageId}" else "Manifest Pending",
-                                    fontSize = 10.sp,
+                                    fontSize = 8.sp,
                                     color = colors.textFaint
                                 )
                             }
@@ -717,9 +717,9 @@ fun FileDetailSheet(
                             Text(
                                 text = "Checksum: ${file.checksum}",
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
+                                fontSize = 8.sp,
                                 color = colors.textDim,
-                                lineHeight = 14.sp
+                                lineHeight = 12.sp
                             )
 
                             Spacer(modifier = Modifier.height(8.dp))
@@ -727,7 +727,7 @@ fun FileDetailSheet(
                             if (chunks.isEmpty()) {
                                 Text(
                                     text = "No chunk records stored in local database.",
-                                    fontSize = 11.sp,
+                                    fontSize = 9.sp,
                                     color = colors.textFaint
                                 )
                             } else {
@@ -744,12 +744,12 @@ fun FileDetailSheet(
                                         ) {
                                             Text(
                                                 text = "Part ${chunk.chunkIndex + 1} · Msg #${chunk.telegramMessageId ?: "-"}",
-                                                fontSize = 11.sp,
+                                                fontSize = 9.sp,
                                                 color = colors.text
                                             )
                                             Text(
                                                 text = ChecksumUtil.formatFileSize(chunk.size),
-                                                fontSize = 11.sp,
+                                                fontSize = 9.sp,
                                                 color = colors.textFaint
                                             )
                                         }
@@ -757,7 +757,7 @@ fun FileDetailSheet(
                                     if (chunks.size > 8) {
                                         Text(
                                             text = "...and ${chunks.size - 8} more chunks",
-                                            fontSize = 10.sp,
+                                            fontSize = 8.sp,
                                             color = colors.textFaint
                                         )
                                     }
@@ -795,7 +795,7 @@ private fun ActionItem(
         Spacer(modifier = Modifier.width(14.dp))
         Text(
             text = label,
-            fontSize = 14.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             color = labelColor,
             modifier = Modifier.weight(1f)

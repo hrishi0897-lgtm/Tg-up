@@ -109,14 +109,14 @@ fun BatchUploadFolderDialog(
                 Column {
                     Text(
                         text = "Upload ${items.size} File${if (items.size > 1) "s" else ""}",
-                        fontSize = 17.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = BodySansFont,
                         color = colors.text
                     )
                     Text(
                         text = "${items.size} items • ${ChecksumUtil.formatBytes(totalSize)}",
-                        fontSize = 12.sp,
+                        fontSize = 10.sp,
                         fontFamily = NumericMonoFont,
                         color = colors.textDim
                     )
@@ -130,7 +130,7 @@ fun BatchUploadFolderDialog(
                 // Section 1: Selected files preview list
                 Text(
                     text = "FILES IN QUEUE",
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     color = colors.textFaint,
@@ -164,7 +164,7 @@ fun BatchUploadFolderDialog(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = item.name,
-                                    fontSize = 12.sp,
+                                    fontSize = 10.sp,
                                     fontFamily = BodySansFont,
                                     color = colors.text,
                                     maxLines = 1,
@@ -174,7 +174,7 @@ fun BatchUploadFolderDialog(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = ChecksumUtil.formatBytes(item.size),
-                                    fontSize = 11.sp,
+                                    fontSize = 9.sp,
                                     fontFamily = NumericMonoFont,
                                     color = colors.textDim
                                 )
@@ -204,7 +204,7 @@ fun BatchUploadFolderDialog(
                 ) {
                     Text(
                         text = "AES-256-GCM Encryption",
-                        fontSize = 12.5.sp,
+                        fontSize = 10.5.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = BodySansFont,
                         color = if (encryptBeforeUpload) colors.teal else colors.text,
@@ -218,7 +218,7 @@ fun BatchUploadFolderDialog(
                     ) {
                         Text(
                             text = if (encryptBeforeUpload) "ON" else "OFF",
-                            fontSize = 10.5.sp,
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold,
                             fontFamily = NumericMonoFont,
                             color = if (encryptBeforeUpload) Color.Black else colors.textDim
@@ -231,7 +231,7 @@ fun BatchUploadFolderDialog(
                 // Section 1c: Quick Tags
                 Text(
                     text = "TAGS (OPTIONAL)",
-                    fontSize = 10.5.sp,
+                    fontSize = 8.5.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     color = colors.textFaint,
@@ -256,7 +256,7 @@ fun BatchUploadFolderDialog(
                         ) {
                             Text(
                                 text = tag,
-                                fontSize = 11.sp,
+                                fontSize = 9.sp,
                                 fontWeight = if (isTagSelected) FontWeight.Bold else FontWeight.Medium,
                                 color = if (isTagSelected) Color.White else colors.textDim
                             )
@@ -269,7 +269,7 @@ fun BatchUploadFolderDialog(
                 // Section 2: Destination Folder Selection
                 Text(
                     text = "DESTINATION FOLDER",
-                    fontSize = 11.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
                     color = colors.textFaint,
@@ -307,7 +307,7 @@ fun BatchUploadFolderDialog(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = "Vault Root",
-                                    fontSize = 13.sp,
+                                    fontSize = 11.sp,
                                     fontFamily = BodySansFont,
                                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                     color = if (isSelected) colors.teal else colors.text,
@@ -346,7 +346,7 @@ fun BatchUploadFolderDialog(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Text(
                                     text = folder.name,
-                                    fontSize = 13.sp,
+                                    fontSize = 11.sp,
                                     fontFamily = BodySansFont,
                                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                     color = if (isSelected) colors.teal else colors.text,
@@ -391,7 +391,7 @@ fun BatchUploadFolderDialog(
                     text = if (encryptBeforeUpload) "Encrypt & Upload" else "Start Upload",
                     fontWeight = FontWeight.Bold,
                     fontFamily = BodySansFont,
-                    fontSize = 13.sp
+                    fontSize = 11.sp
                 )
             }
         },
@@ -404,7 +404,7 @@ fun BatchUploadFolderDialog(
                     text = "Cancel",
                     color = colors.textDim,
                     fontFamily = BodySansFont,
-                    fontSize = 13.sp
+                    fontSize = 11.sp
                 )
             }
         }
