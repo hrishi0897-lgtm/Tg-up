@@ -3,13 +3,12 @@ package com.example.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
-import android.media.MediaPlayer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
-import android.widget.MediaController
 import android.widget.Toast
-import android.widget.VideoView
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -44,7 +43,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.NavigateBefore
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
-import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Code
@@ -54,14 +52,12 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -74,17 +70,17 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,18 +92,22 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
 import com.example.data.local.entity.FileStatus
+import com.example.data.transfer.EphemeralStreamManager
 import com.example.data.transfer.ThumbnailManager
 import com.example.domain.ChecksumUtil
 import com.example.domain.ThumbnailUtil
@@ -115,7 +115,7 @@ import com.example.domain.model.TransferProgress
 import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.NumericMonoFont
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -133,12 +133,45 @@ fun FilePreviewScreen(
 ) {
     val colors = LocalTeleVaultColors.current
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+
+    val streamManager = remember { EphemeralStreamManager.getInstance(context) }
+    val bufferStats by streamManager.bufferStats.collectAsState()
+    var fileChunks by remember(file.id) { mutableStateOf<List<ChunkEntity>>(emptyList()) }
+
+    // Load ordered chunk metadata for zero-download streaming
+    LaunchedEffect(file.id) {
+        fileChunks = streamManager.getOrderedChunks(file.id)
+    }
+
+    // Strict lifecycle RAM wipe on viewer exit and app backgrounding (ON_STOP)
+    DisposableEffect(file.id, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                streamManager.wipeAllEphemeralBuffers("App backgrounded (ON_STOP)")
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            streamManager.wipeAllEphemeralBuffers("Exited FilePreviewScreen for ${file.name}")
+        }
+    }
+
+    BackHandler {
+        streamManager.wipeAllEphemeralBuffers("Back navigation from FilePreviewScreen")
+        onBack()
+    }
 
     val isImage = remember(file.mimeType) { ThumbnailUtil.isImage(file.mimeType) }
-    val isVideo = remember(file.mimeType) { ThumbnailUtil.isVideo(file.mimeType) }
+    val isVideo = remember(file.mimeType, file.name) {
+        ThumbnailUtil.isVideo(file.mimeType) ||
+            file.name.substringAfterLast('.', "").lowercase() in setOf("mp4", "mkv", "webm", "mov", "avi", "m4v")
+    }
     val isAudio = remember(file.mimeType, file.name) {
         file.mimeType.startsWith("audio/", ignoreCase = true) ||
-            file.name.substringAfterLast('.', "").lowercase() in setOf("mp3", "wav", "flac", "m4a", "ogg", "aac")
+            file.name.substringAfterLast('.', "").lowercase() in setOf("mp3", "wav", "flac", "m4a", "ogg", "aac", "opus")
     }
     val isPdf = remember(file.mimeType, file.name) {
         file.mimeType.equals("application/pdf", ignoreCase = true) ||
@@ -171,7 +204,17 @@ fun FilePreviewScreen(
     }
 
     var showControls by remember { mutableStateOf(true) }
-    var playInlineVideo by remember { mutableStateOf(false) }
+    var isStreamingVideoInline by remember(file.id) { mutableStateOf(true) }
+
+    // Zero-download in-RAM decoded full image bitmap
+    var ramImageBitmap by remember(file.id) { mutableStateOf<Bitmap?>(null) }
+    var isLoadingRamImage by remember(file.id) { mutableStateOf(false) }
+
+    DisposableEffect(file.id) {
+        onDispose {
+            ramImageBitmap = null
+        }
+    }
 
     // Pinch-to-zoom state for images
     var scale by remember { mutableFloatStateOf(1f) }
@@ -237,43 +280,82 @@ fun FilePreviewScreen(
         ) {
             when {
                 isImage -> {
-                    val imageModel: Any? = when {
-                        isFullFileDownloaded && !localTarget.isNullOrBlank() -> {
-                            if (localTarget.startsWith("/")) File(localTarget) else Uri.parse(localTarget)
-                        }
-                        cachedThumbFile != null -> cachedThumbFile
-                        else -> null
-                    }
-
-                    if (imageModel != null) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(imageModel)
-                                .crossfade(true)
-                                .build(),
+                    val bmp = ramImageBitmap
+                    if (bmp != null) {
+                        Image(
+                            bitmap = bmp.asImageBitmap(),
                             contentDescription = file.name,
                             contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize()
                         )
                     } else {
-                        PreviewPlaceholderCard(
-                            file = file,
-                            isVideo = false,
-                            isDownloading = isDownloadingFullFile,
-                            activeTransfer = activeTransfer,
-                            onDownload = { onLoadFullImage(file.id) }
-                        )
+                        val imageModel: Any? = when {
+                            isFullFileDownloaded && !localTarget.isNullOrBlank() -> {
+                                if (localTarget.startsWith("/")) File(localTarget) else Uri.parse(localTarget)
+                            }
+                            cachedThumbFile != null -> cachedThumbFile
+                            else -> null
+                        }
+
+                        if (imageModel != null) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(imageModel)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = file.name,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            PreviewPlaceholderCard(
+                                file = file,
+                                isVideo = false,
+                                isDownloading = isDownloadingFullFile || isLoadingRamImage,
+                                activeTransfer = activeTransfer,
+                                onDownload = {
+                                    if (fileChunks.isNotEmpty()) {
+                                        isLoadingRamImage = true
+                                        scope.launch(Dispatchers.IO) {
+                                            try {
+                                                val bytes = streamManager.getChunkPlaintextBytes(file, fileChunks, 0)
+                                                val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                                withContext(Dispatchers.Main) {
+                                                    ramImageBitmap = decoded
+                                                }
+                                            } catch (e: Exception) {
+                                                withContext(Dispatchers.Main) {
+                                                    onLoadFullImage(file.id)
+                                                }
+                                            } finally {
+                                                withContext(Dispatchers.Main) {
+                                                    isLoadingRamImage = false
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        onLoadFullImage(file.id)
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
 
                 isVideo -> {
-                    if (isFullFileDownloaded && !localTarget.isNullOrBlank() && playInlineVideo) {
-                        InlineVideoPlayer(
+                    if (isStreamingVideoInline && (fileChunks.isNotEmpty() || isFullFileDownloaded)) {
+                        ZeroDownloadExoVideoPlayer(
                             context = context,
+                            file = file,
+                            chunks = fileChunks,
+                            streamManager = streamManager,
+                            bufferStats = bufferStats,
                             localTarget = localTarget,
-                            onCloseInline = { playInlineVideo = false }
+                            isFullFileDownloaded = isFullFileDownloaded,
+                            showOverlayControls = showControls,
+                            onToggleOverlayControls = { showControls = !showControls }
                         )
-                    } else if (cachedThumbFile != null || isFullFileDownloaded) {
+                    } else {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -298,7 +380,7 @@ fun FilePreviewScreen(
                                 modifier = Modifier
                                     .padding(24.dp)
                                     .clip(RoundedCornerShape(24.dp))
-                                    .background(Color.Black.copy(alpha = 0.72f))
+                                    .background(Color.Black.copy(alpha = 0.76f))
                                     .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(24.dp))
                                     .padding(24.dp)
                             ) {
@@ -308,39 +390,23 @@ fun FilePreviewScreen(
                                         .clip(CircleShape)
                                         .background(colors.teal)
                                         .clickable {
-                                            if (isFullFileDownloaded && !localTarget.isNullOrBlank()) {
-                                                playInlineVideo = true
-                                            } else if (!isDownloadingFullFile) {
-                                                onLoadFullImage(file.id)
-                                            }
+                                            isStreamingVideoInline = true
                                         }
                                         .testTag("preview_video_play_button"),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    if (isDownloadingFullFile) {
-                                        CircularProgressIndicator(
-                                            color = Color.White,
-                                            strokeWidth = 2.5.dp,
-                                            modifier = Modifier.size(30.dp)
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = if (isFullFileDownloaded) Icons.Default.PlayArrow else Icons.Default.CloudDownload,
-                                            contentDescription = if (isFullFileDownloaded) "Play Video" else "Download Video",
-                                            tint = Color.White,
-                                            modifier = Modifier.size(36.dp)
-                                        )
-                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = "Stream Video in RAM",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(36.dp)
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(14.dp))
 
                                 Text(
-                                    text = when {
-                                        isDownloadingFullFile -> "Downloading Video (${((activeTransfer?.progressFraction ?: 0f) * 100).toInt()}%)..."
-                                        isFullFileDownloaded -> "Tap to play inline or open external player"
-                                        else -> "Preview Poster Frame • Tap to download full video (${ChecksumUtil.formatBytes(file.size)})"
-                                    },
+                                    text = "Zero-Download RAM Stream Ready (${ChecksumUtil.formatBytes(file.size)})",
                                     color = Color.White,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
@@ -363,33 +429,19 @@ fun FilePreviewScreen(
                                 }
                             }
                         }
-                    } else {
-                        PreviewPlaceholderCard(
-                            file = file,
-                            isVideo = true,
-                            isDownloading = isDownloadingFullFile,
-                            activeTransfer = activeTransfer,
-                            onDownload = { onLoadFullImage(file.id) }
-                        )
                     }
                 }
 
                 isAudio -> {
-                    if (isFullFileDownloaded && !localTarget.isNullOrBlank()) {
-                        InlineAudioPlayerCard(
-                            context = context,
-                            file = file,
-                            localTarget = localTarget
-                        )
-                    } else {
-                        PreviewPlaceholderCard(
-                            file = file,
-                            isVideo = false,
-                            isDownloading = isDownloadingFullFile,
-                            activeTransfer = activeTransfer,
-                            onDownload = { onLoadFullImage(file.id) }
-                        )
-                    }
+                    ZeroDownloadExoAudioPlayerCard(
+                        context = context,
+                        file = file,
+                        chunks = fileChunks,
+                        streamManager = streamManager,
+                        bufferStats = bufferStats,
+                        localTarget = localTarget,
+                        isFullFileDownloaded = isFullFileDownloaded
+                    )
                 }
 
                 isPdf -> {
@@ -411,21 +463,14 @@ fun FilePreviewScreen(
                 }
 
                 isTextOrCode -> {
-                    if (isFullFileDownloaded && !localTarget.isNullOrBlank()) {
-                        InlineTextCodeViewer(
-                            context = context,
-                            file = file,
-                            localTarget = localTarget
-                        )
-                    } else {
-                        PreviewPlaceholderCard(
-                            file = file,
-                            isVideo = false,
-                            isDownloading = isDownloadingFullFile,
-                            activeTransfer = activeTransfer,
-                            onDownload = { onLoadFullImage(file.id) }
-                        )
-                    }
+                    InlineTextCodeViewer(
+                        context = context,
+                        file = file,
+                        chunks = fileChunks,
+                        streamManager = streamManager,
+                        localTarget = localTarget,
+                        isFullFileDownloaded = isFullFileDownloaded
+                    )
                 }
 
                 else -> {
@@ -450,7 +495,7 @@ fun FilePreviewScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.72f))
+                    .background(Color.Black.copy(alpha = 0.76f))
                     .statusBarsPadding()
                     .padding(horizontal = 12.dp, vertical = 10.dp)
             ) {
@@ -459,7 +504,10 @@ fun FilePreviewScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     IconButton(
-                        onClick = onBack,
+                        onClick = {
+                            streamManager.wipeAllEphemeralBuffers("Back button clicked in FilePreviewScreen")
+                            onBack()
+                        },
                         modifier = Modifier.testTag("preview_back_button")
                     ) {
                         Icon(
@@ -497,12 +545,28 @@ fun FilePreviewScreen(
                                 color = Color.White.copy(alpha = 0.5f),
                                 fontSize = 11.sp
                             )
-                            Text(
-                                text = if (isFullFileDownloaded) "Full Resolution Ready" else "Cloud Vault File",
-                                color = colors.violet,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(colors.teal.copy(alpha = 0.2f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Memory,
+                                    contentDescription = null,
+                                    tint = colors.teal,
+                                    modifier = Modifier.size(10.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = formatRamWindowBadge(bufferStats),
+                                    color = colors.teal,
+                                    fontSize = 9.sp,
+                                    fontFamily = NumericMonoFont,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             if (file.isEncrypted) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -603,10 +667,33 @@ fun FilePreviewScreen(
                     .navigationBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                if (isImage && !isFullFileDownloaded) {
+                if (isImage && !isFullFileDownloaded && ramImageBitmap == null) {
                     FilledTonalButton(
-                        onClick = { onLoadFullImage(file.id) },
-                        enabled = !isDownloadingFullFile,
+                        onClick = {
+                            if (fileChunks.isNotEmpty()) {
+                                isLoadingRamImage = true
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val bytes = streamManager.getChunkPlaintextBytes(file, fileChunks, 0)
+                                        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                                        withContext(Dispatchers.Main) {
+                                            ramImageBitmap = decoded
+                                        }
+                                    } catch (e: Exception) {
+                                        withContext(Dispatchers.Main) {
+                                            onLoadFullImage(file.id)
+                                        }
+                                    } finally {
+                                        withContext(Dispatchers.Main) {
+                                            isLoadingRamImage = false
+                                        }
+                                    }
+                                }
+                            } else {
+                                onLoadFullImage(file.id)
+                            }
+                        },
+                        enabled = !isDownloadingFullFile && !isLoadingRamImage,
                         colors = ButtonDefaults.filledTonalButtonColors(
                             containerColor = colors.teal,
                             contentColor = Color.White,
@@ -619,7 +706,7 @@ fun FilePreviewScreen(
                             .padding(bottom = 12.dp)
                             .testTag("load_full_image_button")
                     ) {
-                        if (isDownloadingFullFile) {
+                        if (isDownloadingFullFile || isLoadingRamImage) {
                             CircularProgressIndicator(
                                 color = Color.White,
                                 strokeWidth = 2.dp,
@@ -627,25 +714,25 @@ fun FilePreviewScreen(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Loading Full Image (${((activeTransfer?.progressFraction ?: 0f) * 100).toInt()}%)...",
+                                text = "Streaming Full Image into RAM…",
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp
                             )
                         } else {
                             Icon(
-                                imageVector = Icons.Default.CloudDownload,
+                                imageVector = Icons.Default.Memory,
                                 contentDescription = null,
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Load Full Image (${ChecksumUtil.formatBytes(file.size)})",
+                                text = "Stream Full Resolution in RAM (${ChecksumUtil.formatBytes(file.size)})",
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp
                             )
                         }
                     }
-                } else if (isImage && isFullFileDownloaded) {
+                } else if (isImage && (isFullFileDownloaded || ramImageBitmap != null)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
@@ -656,12 +743,16 @@ fun FilePreviewScreen(
                         Icon(
                             imageVector = Icons.Default.Check,
                             contentDescription = null,
-                            tint = colors.violet,
+                            tint = colors.teal,
                             modifier = Modifier.size(15.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Viewing Full Resolution Image • Pinch or double-tap to zoom",
+                            text = if (ramImageBitmap != null) {
+                                "Viewing Full Resolution in RAM (Zero-Download) • Pinch to zoom"
+                            } else {
+                                "Viewing Full Resolution Image • Pinch or double-tap to zoom"
+                            },
                             color = Color.White.copy(alpha = 0.8f),
                             fontSize = 11.sp
                         )
@@ -705,236 +796,6 @@ fun FilePreviewScreen(
                         onClick = onDelete,
                         testTag = "preview_delete_action"
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InlineVideoPlayer(
-    context: Context,
-    localTarget: String,
-    onCloseInline: () -> Unit
-) {
-    val videoUri = remember(localTarget) {
-        resolveLocalFileUri(context, localTarget)
-    }
-
-    if (videoUri == null) {
-        Text("Unable to resolve local video URI", color = Color.White)
-        return
-    }
-
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        AndroidView(
-            factory = { ctx ->
-                VideoView(ctx).apply {
-                    val mediaController = MediaController(ctx)
-                    mediaController.setAnchorView(this)
-                    setMediaController(mediaController)
-                    setVideoURI(videoUri)
-                    setOnPreparedListener { mp ->
-                        mp.isLooping = false
-                        start()
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-}
-
-@Composable
-private fun InlineAudioPlayerCard(
-    context: Context,
-    file: FileEntity,
-    localTarget: String
-) {
-    val colors = LocalTeleVaultColors.current
-    var isPlaying by remember { mutableStateOf(false) }
-    var durationMs by remember { mutableIntStateOf(0) }
-    var positionMs by remember { mutableIntStateOf(0) }
-    var playerError by remember { mutableStateOf<String?>(null) }
-
-    val mediaPlayer = remember(localTarget) {
-        MediaPlayer().apply {
-            try {
-                if (localTarget.startsWith("/")) {
-                    setDataSource(localTarget)
-                } else {
-                    setDataSource(context, Uri.parse(localTarget))
-                }
-                prepare()
-                durationMs = duration.coerceAtLeast(0)
-                setOnCompletionListener {
-                    isPlaying = false
-                    positionMs = 0
-                }
-            } catch (e: Exception) {
-                playerError = e.message ?: "Unable to initialize audio player"
-            }
-        }
-    }
-
-    DisposableEffect(mediaPlayer) {
-        onDispose {
-            try {
-                if (mediaPlayer.isPlaying) {
-                    mediaPlayer.stop()
-                }
-                mediaPlayer.release()
-            } catch (_: Exception) {
-            }
-        }
-    }
-
-    LaunchedEffect(isPlaying) {
-        while (isPlaying) {
-            try {
-                positionMs = mediaPlayer.currentPosition.coerceAtLeast(0)
-            } catch (_: Exception) {
-            }
-            delay(250)
-        }
-    }
-
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = colors.surface),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp)
-            .border(1.dp, colors.line, RoundedCornerShape(24.dp))
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(24.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(76.dp)
-                    .clip(CircleShape)
-                    .background(colors.teal.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AudioFile,
-                    contentDescription = null,
-                    tint = colors.teal,
-                    modifier = Modifier.size(38.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                text = file.name,
-                color = colors.text,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "${ChecksumUtil.formatBytes(file.size)} • Built-in Audio Player",
-                color = colors.textDim,
-                fontSize = 12.sp
-            )
-
-            if (playerError != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = playerError ?: "",
-                    color = colors.violet,
-                    fontSize = 12.sp
-                )
-            } else {
-                Spacer(modifier = Modifier.height(18.dp))
-
-                Slider(
-                    value = if (durationMs > 0) positionMs.toFloat() / durationMs.toFloat() else 0f,
-                    onValueChange = { frac ->
-                        if (durationMs > 0) {
-                            val target = (frac * durationMs).toInt()
-                            mediaPlayer.seekTo(target)
-                            positionMs = target
-                        }
-                    },
-                    colors = SliderDefaults.colors(
-                        thumbColor = colors.teal,
-                        activeTrackColor = colors.teal,
-                        inactiveTrackColor = colors.surfaceHi
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = formatDurationMs(positionMs),
-                        color = colors.textDim,
-                        fontSize = 11.sp,
-                        fontFamily = NumericMonoFont
-                    )
-                    Text(
-                        text = formatDurationMs(durationMs),
-                        color = colors.textDim,
-                        fontSize = 11.sp,
-                        fontFamily = NumericMonoFont
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    IconButton(
-                        onClick = {
-                            val rewind = (mediaPlayer.currentPosition - 10_000).coerceAtLeast(0)
-                            mediaPlayer.seekTo(rewind)
-                            positionMs = rewind
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Replay10,
-                            contentDescription = "Rewind 10s",
-                            tint = colors.text,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(CircleShape)
-                            .background(colors.teal)
-                            .clickable {
-                                if (mediaPlayer.isPlaying) {
-                                    mediaPlayer.pause()
-                                    isPlaying = false
-                                } else {
-                                    mediaPlayer.start()
-                                    isPlaying = true
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = Color.White,
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
                 }
             }
         }
@@ -1000,7 +861,6 @@ private fun InlinePdfViewer(
         if (errorMessage != null) {
             Text(text = errorMessage ?: "", color = colors.violet, fontSize = 13.sp)
         } else {
-            // Page switcher bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1085,26 +945,37 @@ private fun InlinePdfViewer(
 private fun InlineTextCodeViewer(
     context: Context,
     file: FileEntity,
-    localTarget: String
+    chunks: List<ChunkEntity>,
+    streamManager: EphemeralStreamManager,
+    localTarget: String?,
+    isFullFileDownloaded: Boolean
 ) {
     val colors = LocalTeleVaultColors.current
     var lines by remember { mutableStateOf<List<String>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
 
-    LaunchedEffect(localTarget) {
+    LaunchedEffect(localTarget, isFullFileDownloaded, chunks) {
         withContext(Dispatchers.IO) {
             try {
-                val text = if (localTarget.startsWith("/")) {
-                    File(localTarget).bufferedReader().use { it.readText().take(200_000) }
+                val text = if (isFullFileDownloaded && !localTarget.isNullOrBlank()) {
+                    if (localTarget.startsWith("/")) {
+                        File(localTarget).bufferedReader().use { it.readText().take(200_000) }
+                    } else {
+                        context.contentResolver.openInputStream(Uri.parse(localTarget))
+                            ?.bufferedReader()
+                            ?.use { it.readText().take(200_000) } ?: ""
+                    }
+                } else if (chunks.isNotEmpty()) {
+                    val bytes = streamManager.getChunkPlaintextBytes(file, chunks, 0)
+                    val sliceLen = minOf(bytes.size, 200_000)
+                    String(bytes, 0, sliceLen, Charsets.UTF_8)
                 } else {
-                    context.contentResolver.openInputStream(Uri.parse(localTarget))
-                        ?.bufferedReader()
-                        ?.use { it.readText().take(200_000) } ?: ""
+                    "Waiting for cloud chunk metadata…"
                 }
                 lines = text.lines()
             } catch (e: Exception) {
-                lines = listOf("Error reading document: ${e.message}")
+                lines = listOf("Error reading document in RAM: ${e.message}")
             } finally {
                 isLoading = false
             }
@@ -1290,7 +1161,7 @@ private fun PreviewPlaceholderCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Downloading (${((activeTransfer?.progressFraction ?: 0f) * 100).toInt()}%)...",
+                        text = "Loading (${((activeTransfer?.progressFraction ?: 0f) * 100).toInt()}%)...",
                         fontWeight = FontWeight.SemiBold
                     )
                 } else {
@@ -1301,7 +1172,7 @@ private fun PreviewPlaceholderCard(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (file.isEncrypted) "Download & Decrypt to Preview" else "Download Full File to Preview",
+                        text = if (file.isEncrypted) "Decrypt & Preview" else "Load Preview",
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -1340,26 +1211,6 @@ private fun PreviewActionItem(
             fontWeight = FontWeight.Medium
         )
     }
-}
-
-private fun resolveLocalFileUri(context: Context, localTarget: String): Uri? {
-    return try {
-        if (localTarget.startsWith("/")) {
-            val f = File(localTarget)
-            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
-        } else {
-            Uri.parse(localTarget)
-        }
-    } catch (_: Exception) {
-        null
-    }
-}
-
-private fun formatDurationMs(ms: Int): String {
-    val totalSec = (ms / 1000).coerceAtLeast(0)
-    val min = totalSec / 60
-    val sec = totalSec % 60
-    return "%d:%02d".format(min, sec)
 }
 
 private fun openVideoExternally(context: Context, localTarget: String, mimeType: String) {

@@ -133,4 +133,22 @@ object CryptoStreamEngine {
             }
         }
     }
+
+    /**
+     * Decrypts an AES-256-GCM encrypted chunk entirely in RAM without touching disk storage.
+     * Extracts the 12-byte IV prefix and verifies the 128-bit GCM authentication tag.
+     */
+    fun decryptChunkBytes(
+        encryptedBytes: ByteArray,
+        keyBase64: String
+    ): ByteArray {
+        require(encryptedBytes.size >= GCM_OVERHEAD_BYTES) {
+            "Encrypted chunk payload is truncated (${encryptedBytes.size} bytes < $GCM_OVERHEAD_BYTES bytes)"
+        }
+        val secretKey = decodeSecretKey(keyBase64)
+        val iv = encryptedBytes.copyOfRange(0, GCM_IV_BYTES)
+        val cipher = Cipher.getInstance(TRANSFORMATION)
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(GCM_TAG_BITS, iv))
+        return cipher.doFinal(encryptedBytes, GCM_IV_BYTES, encryptedBytes.size - GCM_IV_BYTES)
+    }
 }
