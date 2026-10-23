@@ -1,7 +1,10 @@
 package com.example.ui.screens
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
@@ -91,6 +94,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
@@ -149,7 +153,10 @@ fun FilePreviewScreen(
     DisposableEffect(file.id, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
-                streamManager.wipeAllEphemeralBuffers("App backgrounded (ON_STOP)")
+                val activity = context as? Activity
+                if (activity?.isChangingConfigurations != true) {
+                    streamManager.wipeAllEphemeralBuffers("App backgrounded (ON_STOP)")
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -157,11 +164,6 @@ fun FilePreviewScreen(
             lifecycleOwner.lifecycle.removeObserver(observer)
             streamManager.wipeAllEphemeralBuffers("Exited FilePreviewScreen for ${file.name}")
         }
-    }
-
-    BackHandler {
-        streamManager.wipeAllEphemeralBuffers("Back navigation from FilePreviewScreen")
-        onBack()
     }
 
     val isImage = remember(file.mimeType) { ThumbnailUtil.isImage(file.mimeType) }
@@ -203,8 +205,23 @@ fun FilePreviewScreen(
         ThumbnailManager.getInstance(context).getOrFetchThumbnail(file)
     }
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     var showControls by remember { mutableStateOf(true) }
     var isStreamingVideoInline by remember(file.id) { mutableStateOf(true) }
+    var isVideoFullscreen by remember(file.id) { mutableStateOf(false) }
+    val isVideoLandscapeOrFullscreen = isVideo && (isLandscape || isVideoFullscreen)
+
+    BackHandler {
+        if (isVideoFullscreen) {
+            isVideoFullscreen = false
+            (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        } else {
+            streamManager.wipeAllEphemeralBuffers("Back navigation from FilePreviewScreen")
+            onBack()
+        }
+    }
 
     // Zero-download in-RAM decoded full image bitmap
     var ramImageBitmap by remember(file.id) { mutableStateOf<Bitmap?>(null) }
@@ -353,7 +370,10 @@ fun FilePreviewScreen(
                             localTarget = localTarget,
                             isFullFileDownloaded = isFullFileDownloaded,
                             showOverlayControls = showControls,
-                            onToggleOverlayControls = { showControls = !showControls }
+                            onToggleOverlayControls = { showControls = !showControls },
+                            onSetOverlayControls = { showControls = it },
+                            isFullscreen = isVideoFullscreen,
+                            onFullscreenChange = { isVideoFullscreen = it }
                         )
                     } else {
                         Box(
@@ -653,9 +673,9 @@ fun FilePreviewScreen(
             }
         }
 
-        // Bottom Controls & Action Bar
+        // Bottom Controls & Action Bar (hidden in landscape and fullscreen mode for video)
         AnimatedVisibility(
-            visible = showControls,
+            visible = showControls && !isVideoLandscapeOrFullscreen,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)

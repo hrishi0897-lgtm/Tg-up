@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.net.Uri
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -28,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
@@ -46,7 +48,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -55,6 +56,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -82,6 +85,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.example.data.local.entity.ChunkEntity
@@ -98,9 +102,18 @@ import java.io.File
 /**
  * Phase 1 Zero-Download Media3 ExoPlayer for Video Streaming.
  *
- * Streams directly from Telegram chunks via [TelegramChunkDataSource] and [EphemeralStreamManager]'s
- * 20–50 MB RAM sliding window (or local file if already downloaded), supporting arbitrary byte-range
- * seeking across chunk boundaries and basic playback controls.
+ * Polished behaviors:
+ * 1. Automatic playback as soon as Chunk 1 loads (`playWhenReady = true`, low `bufferForPlaybackMs = 500`),
+ *    real-time 100ms timecode & seek bar updates, and visible buffered position bar on the seek bar.
+ * 2. Auto-hides player controls and top bar after 3 seconds of active playback; restores on video tap;
+ *    keeps controls visible while paused, buffering, scrubbing, or on error.
+ * 3. Fullscreen and landscape support with bottom action bar hidden and compact bottom-pinned HUD
+ *    that never covers the center of the video.
+ * 4. Shows `"Buffering Chunk X/Y in RAM..."` card ONLY when waiting for data (initial load before first frame
+ *    renders or when seeking to an uncached chunk), never during background lookahead prefetching.
+ * 5. Single-retry error handling (refreshes Telegram link once in `EphemeralStreamManager`, zero ExoPlayer
+ *    looping retries via `DefaultLoadErrorHandlingPolicy(0)`), showing a clear error + Retry button on failure.
+ * 6. Immediate RAM buffer wipe (`0.0/36 MB RAM`) when leaving the player or backgrounding the app.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -113,33 +126,42 @@ fun ZeroDownloadExoVideoPlayer(
     localTarget: String?,
     isFullFileDownloaded: Boolean,
     showOverlayControls: Boolean,
-    onToggleOverlayControls: () -> Unit
+    onToggleOverlayControls: () -> Unit,
+    onSetOverlayControls: (Boolean) -> Unit = {},
+    isFullscreen: Boolean = false,
+    onFullscreenChange: (Boolean) -> Unit = {}
 ) {
     val colors = LocalTeleVaultColors.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isLandscapeOrFullscreen = isLandscape || isFullscreen
 
-    var isPlaying by remember { mutableStateOf(true) }
+    var isPlaying by remember { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(true) }
+    var hasRenderedFirstFrame by remember(file.id) { mutableStateOf(false) }
+    var seekingUncachedChunkIndex by remember(file.id) { mutableStateOf<Int?>(null) }
     var isMuted by remember { mutableStateOf(false) }
-    var isLandscapeFullscreen by remember { mutableStateOf(false) }
     var currentPositionMs by remember { mutableLongStateOf(0L) }
     var bufferedPositionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var isUserScrubbing by remember { mutableStateOf(false) }
     var scrubFraction by remember { mutableFloatStateOf(0f) }
     var playerError by remember { mutableStateOf<String?>(null) }
-    var retryNonce by remember { mutableStateOf(0) }
+    var retryNonce by remember { mutableIntStateOf(0) }
+    var resumePositionOnRetryMs by remember { mutableLongStateOf(0L) }
+    var interactionTick by remember { mutableIntStateOf(0) }
 
-    val exoPlayer = remember(file.id, chunks.size, isFullFileDownloaded, retryNonce) {
+    val exoPlayer = remember(file.id, chunks.size, isFullFileDownloaded) {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 8_000,
-                /* maxBufferMs = */ 25_000,
-                /* bufferForPlaybackMs = */ 1_500,
-                /* bufferForPlaybackAfterRebufferMs = */ 3_000
+                /* minBufferMs = */ 4_000,
+                /* maxBufferMs = */ 20_000,
+                /* bufferForPlaybackMs = */ 500,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_000
             )
             .setTargetBufferBytes(16 * 1024 * 1024) // Keep ExoPlayer internal ring buffer <= 16 MB
-            .setPrioritizeTimeOverSizeThresholds(false)
+            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
         ExoPlayer.Builder(context)
@@ -154,16 +176,22 @@ fun ZeroDownloadExoVideoPlayer(
     LaunchedEffect(exoPlayer, file.id, chunks, isFullFileDownloaded, retryNonce) {
         playerError = null
         isBuffering = true
+        if (retryNonce == 0) {
+            hasRenderedFirstFrame = false
+        }
 
         if (isFullFileDownloaded && !localTarget.isNullOrBlank()) {
             val localUri = if (localTarget.startsWith("/")) Uri.fromFile(File(localTarget)) else Uri.parse(localTarget)
             val itemBuilder = MediaItem.Builder().setUri(localUri)
             resolveMedia3MimeType(file.mimeType, file.name)?.let { itemBuilder.setMimeType(it) }
             exoPlayer.setMediaItem(itemBuilder.build())
+            exoPlayer.playWhenReady = true
             exoPlayer.prepare()
+            if (resumePositionOnRetryMs > 0L) {
+                exoPlayer.seekTo(resumePositionOnRetryMs)
+            }
+            exoPlayer.play()
         } else if (chunks.isNotEmpty()) {
-            // Prefetch chunk 0 immediately in RAM sliding window
-            streamManager.prefetchChunkAsync(file, chunks, 0)
             val streamUri = Uri.parse("televault://stream/${file.id}/${Uri.encode(file.name)}")
             val itemBuilder = MediaItem.Builder().setUri(streamUri)
             resolveMedia3MimeType(file.mimeType, file.name)?.let { itemBuilder.setMimeType(it) }
@@ -173,46 +201,75 @@ fun ZeroDownloadExoVideoPlayer(
                 chunks = chunks,
                 streamManager = streamManager
             )
+            // Disable ExoPlayer internal retry loops so EphemeralStreamManager's single retry (with link refresh) is authoritative
             val mediaSource = ProgressiveMediaSource.Factory(dataSourceFactory)
+                .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount = */ 0))
                 .createMediaSource(itemBuilder.build())
             exoPlayer.setMediaSource(mediaSource)
+            exoPlayer.playWhenReady = true
             exoPlayer.prepare()
+            if (resumePositionOnRetryMs > 0L) {
+                exoPlayer.seekTo(resumePositionOnRetryMs)
+            }
+            exoPlayer.play()
         } else {
             isBuffering = false
             playerError = "Waiting for cloud chunk metadata…"
         }
     }
 
-    // Player listener & lifecycle observer (pause & wipe RAM buffer on ON_STOP)
+    // Player listener & lifecycle observer (stop & wipe RAM buffer on background / exit)
     DisposableEffect(exoPlayer, lifecycleOwner) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 isBuffering = playbackState == Player.STATE_BUFFERING
                 if (playbackState == Player.STATE_READY) {
+                    seekingUncachedChunkIndex = null
                     val dur = exoPlayer.duration
                     if (dur != C.TIME_UNSET && dur > 0L) {
                         durationMs = dur
                     }
                 } else if (playbackState == Player.STATE_ENDED) {
                     isPlaying = false
+                    seekingUncachedChunkIndex = null
+                    onSetOverlayControls(true)
                 }
+            }
+
+            override fun onRenderedFirstFrame() {
+                hasRenderedFirstFrame = true
+                seekingUncachedChunkIndex = null
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+                if (playing) {
+                    seekingUncachedChunkIndex = null
+                }
             }
 
             override fun onPlayerError(error: PlaybackException) {
                 isBuffering = false
-                playerError = error.cause?.message ?: error.message ?: "Stream playback error"
+                isPlaying = false
+                seekingUncachedChunkIndex = null
+                val rawMessage = error.cause?.cause?.message
+                    ?: error.cause?.message
+                    ?: error.message
+                    ?: "Chunk download or decryption failed."
+                playerError = rawMessage
+                onSetOverlayControls(true)
             }
         }
         exoPlayer.addListener(listener)
 
         val lifecycleObserver = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
-                exoPlayer.pause()
-                streamManager.wipeAllEphemeralBuffers("App backgrounded during video playback")
+                val activity = context as? Activity
+                if (activity?.isChangingConfigurations != true) {
+                    exoPlayer.pause()
+                    exoPlayer.stop()
+                    streamManager.wipeAllEphemeralBuffers("App backgrounded during video playback")
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
@@ -223,24 +280,78 @@ fun ZeroDownloadExoVideoPlayer(
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
             exoPlayer.release()
-            // Restore unspecified screen orientation if fullscreen was toggled
+            streamManager.wipeAllEphemeralBuffers("Left video player for ${file.name}")
             (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
 
-    // Poll playback position for smooth seekbar updates
-    LaunchedEffect(exoPlayer, isPlaying, isUserScrubbing) {
+    // Real-time 100ms polling for current time (0:00), duration, and buffered position on seek bar
+    LaunchedEffect(exoPlayer) {
         while (true) {
+            val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
+            val bufPos = exoPlayer.bufferedPosition.coerceAtLeast(pos)
+            val dur = exoPlayer.duration
+
             if (!isUserScrubbing) {
-                currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
-                bufferedPositionMs = exoPlayer.bufferedPosition.coerceAtLeast(currentPositionMs)
-                val dur = exoPlayer.duration
-                if (dur != C.TIME_UNSET && dur > 0L) {
-                    durationMs = dur
-                }
+                currentPositionMs = pos
             }
-            delay(200L)
+            bufferedPositionMs = bufPos
+            if (dur != C.TIME_UNSET && dur > 0L) {
+                durationMs = dur
+            }
+            if (exoPlayer.isPlaying && pos > 0L) {
+                hasRenderedFirstFrame = true
+                seekingUncachedChunkIndex = null
+            }
+            val pendingSeekChunk = seekingUncachedChunkIndex
+            if (pendingSeekChunk != null && streamManager.isChunkCachedInRam(file.id, pendingSeekChunk) && exoPlayer.playbackState == Player.STATE_READY) {
+                seekingUncachedChunkIndex = null
+            }
+            delay(100L)
         }
+    }
+
+    // Determine whether the player is genuinely waiting for data
+    val isWaitingForData = playerError == null && (
+        !hasRenderedFirstFrame ||
+            isBuffering ||
+            seekingUncachedChunkIndex != null
+        )
+
+    // Keep controls visible while paused, buffering, scrubbing, or on error;
+    // auto-hide controls and top bar after 3 seconds of active playback
+    LaunchedEffect(isPlaying, isWaitingForData, isUserScrubbing, playerError, showOverlayControls, interactionTick) {
+        if (!isPlaying || isWaitingForData || isUserScrubbing || playerError != null) {
+            if (!showOverlayControls) {
+                onSetOverlayControls(true)
+            }
+        } else if (showOverlayControls) {
+            delay(3_000L)
+            onSetOverlayControls(false)
+        }
+    }
+
+    // Helper to perform seek and detect if target chunk is not yet in RAM
+    val performSeekToMs: (Long) -> Unit = { targetMs ->
+        val safeTargetMs = if (durationMs > 0L) targetMs.coerceIn(0L, durationMs) else targetMs.coerceAtLeast(0L)
+        if (!isFullFileDownloaded && chunks.isNotEmpty() && durationMs > 0L) {
+            val totalBytes = streamManager.computeTotalPlaintextSize(file, chunks)
+            val approxBytePos = ((safeTargetMs.toDouble() / durationMs.toDouble()) * totalBytes.toDouble())
+                .toLong()
+                .coerceIn(0L, (totalBytes - 1L).coerceAtLeast(0L))
+            val targetChunkIdx = streamManager.getChunkIndexForPosition(file, chunks, approxBytePos)
+            if (!streamManager.isChunkCachedInRam(file.id, targetChunkIdx)) {
+                seekingUncachedChunkIndex = targetChunkIdx
+            } else {
+                seekingUncachedChunkIndex = null
+            }
+        }
+        currentPositionMs = safeTargetMs
+        exoPlayer.seekTo(safeTargetMs)
+        if (!exoPlayer.isPlaying && playerError == null) {
+            exoPlayer.play()
+        }
+        interactionTick++
     }
 
     Box(
@@ -261,6 +372,7 @@ fun ZeroDownloadExoVideoPlayer(
                     )
                     player = exoPlayer
                     setOnClickListener {
+                        interactionTick++
                         onToggleOverlayControls()
                     }
                 }
@@ -273,24 +385,30 @@ fun ZeroDownloadExoVideoPlayer(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Buffering / Chunk Decryption Indicator
-        if (isBuffering || bufferStats.isFetchingChunk) {
+        // Buffering UI: Show "Buffering Chunk X/Y in RAM..." card ONLY while waiting for data
+        if (isWaitingForData) {
+            val totalChunks = chunks.size.coerceAtLeast(1)
+            val activeChunkOneBased = ((seekingUncachedChunkIndex ?: bufferStats.fetchingChunkIndex ?: 0) + 1)
+                .coerceIn(1, totalChunks)
+            val bufferingTitle = "Buffering Chunk $activeChunkOneBased/$totalChunks in RAM…"
+
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .clip(RoundedCornerShape(18.dp))
-                    .background(Color.Black.copy(alpha = 0.78f))
+                    .background(Color.Black.copy(alpha = 0.80f))
                     .border(1.dp, Color.White.copy(alpha = 0.16f), RoundedCornerShape(18.dp))
                     .padding(horizontal = 20.dp, vertical = 14.dp)
+                    .testTag("video_buffering_card")
             ) {
                 CircularProgressIndicator(
                     color = colors.teal,
                     strokeWidth = 2.5.dp,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
-                    text = bufferStats.statusLabel,
+                    text = bufferingTitle,
                     color = Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
@@ -298,45 +416,53 @@ fun ZeroDownloadExoVideoPlayer(
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = formatRamWindowBadge(bufferStats),
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = Color.White.copy(alpha = 0.72f),
                     fontSize = 11.sp,
                     fontFamily = NumericMonoFont
                 )
             }
         }
 
-        // Stream Error Recovery Overlay
+        // Stream Error Recovery Overlay (after 1 automatic link-refresh retry fails)
         if (playerError != null) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .padding(24.dp)
                     .clip(RoundedCornerShape(20.dp))
-                    .background(Color.Black.copy(alpha = 0.85f))
-                    .border(1.dp, colors.violet.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
+                    .background(Color.Black.copy(alpha = 0.88f))
+                    .border(1.dp, colors.violet.copy(alpha = 0.45f), RoundedCornerShape(20.dp))
                     .padding(20.dp)
+                    .testTag("video_error_card")
             ) {
+                Icon(
+                    imageVector = Icons.Default.ErrorOutline,
+                    contentDescription = null,
+                    tint = colors.violet,
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Stream Interrupted",
+                    text = "Chunk Stream Failed",
                     color = Color.White,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = playerError ?: "",
-                    color = Color.White.copy(alpha = 0.75f),
+                    text = playerError ?: "Unable to download or decrypt chunk after refreshing Telegram link.",
+                    color = Color.White.copy(alpha = 0.78f),
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(14.dp))
                 FilledTonalButton(
                     onClick = {
-                        val resumePos = currentPositionMs
+                        resumePositionOnRetryMs = currentPositionMs
+                        playerError = null
+                        isBuffering = true
+                        interactionTick++
                         retryNonce++
-                        exoPlayer.seekTo(resumePos)
-                        exoPlayer.prepare()
-                        exoPlayer.play()
                     },
                     colors = ButtonDefaults.filledTonalButtonColors(
                         containerColor = colors.teal,
@@ -346,12 +472,12 @@ fun ZeroDownloadExoVideoPlayer(
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Refresh Link & Resume Stream", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Retry", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
 
-        // Phase 1 Video Transport & Seek Controls Overlay
+        // Bottom-Pinned Video Transport & Seek Controls Overlay (never covers the middle of the video)
         AnimatedVisibility(
             visible = showOverlayControls,
             enter = fadeIn(),
@@ -359,17 +485,20 @@ fun ZeroDownloadExoVideoPlayer(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(bottom = 86.dp, start = 14.dp, end = 14.dp)
+                .padding(
+                    bottom = if (isLandscapeOrFullscreen) 14.dp else 76.dp,
+                    start = if (isLandscapeOrFullscreen) 24.dp else 14.dp,
+                    end = if (isLandscapeOrFullscreen) 24.dp else 14.dp
+                )
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color.Black.copy(alpha = 0.82f))
-                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(18.dp))
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.Black.copy(alpha = 0.80f))
+                    .border(1.dp, Color.White.copy(alpha = 0.14f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
-                // Seekbar + Timecodes
                 val activeDisplayMs = if (isUserScrubbing && durationMs > 0L) {
                     (scrubFraction * durationMs).toLong()
                 } else {
@@ -381,28 +510,35 @@ fun ZeroDownloadExoVideoPlayer(
                     (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
                 } else 0f
 
-                Slider(
+                val bufferedFraction = computeBufferedFraction(
+                    fileId = file.id,
+                    totalChunks = chunks.size,
+                    streamManager = streamManager,
+                    currentPositionMs = currentPositionMs,
+                    bufferedPositionMs = bufferedPositionMs,
+                    durationMs = durationMs
+                )
+
+                // Dual-layer Seek Bar showing Buffered Position + Active Playback Position
+                BufferedStreamSeekBar(
                     value = sliderValue,
+                    bufferedFraction = bufferedFraction,
+                    activeColor = colors.teal,
+                    bufferedColor = colors.teal.copy(alpha = 0.45f),
+                    inactiveColor = Color.White.copy(alpha = 0.20f),
                     onValueChange = { frac ->
                         isUserScrubbing = true
                         scrubFraction = frac.coerceIn(0f, 1f)
+                        interactionTick++
                     },
                     onValueChangeFinished = {
-                        if (durationMs > 0L) {
-                            val targetMs = (scrubFraction * durationMs).toLong().coerceIn(0L, durationMs)
-                            exoPlayer.seekTo(targetMs)
-                            currentPositionMs = targetMs
-                        }
+                        val targetMs = if (durationMs > 0L) {
+                            (scrubFraction * durationMs).toLong().coerceIn(0L, durationMs)
+                        } else 0L
                         isUserScrubbing = false
+                        performSeekToMs(targetMs)
                     },
-                    colors = SliderDefaults.colors(
-                        thumbColor = colors.teal,
-                        activeTrackColor = colors.teal,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.25f)
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("preview_video_seek_slider")
+                    testTag = "preview_video_seek_slider"
                 )
 
                 Row(
@@ -413,27 +549,27 @@ fun ZeroDownloadExoVideoPlayer(
                     Text(
                         text = formatStreamTimecode(activeDisplayMs),
                         color = Color.White,
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontFamily = NumericMonoFont
                     )
                     Text(
-                        text = formatRamWindowBadge(bufferStats),
+                        text = "${formatRamWindowBadge(bufferStats)} • Buf ${(bufferedFraction * 100).toInt()}%",
                         color = colors.teal,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontFamily = NumericMonoFont,
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         text = formatStreamTimecode(durationMs),
                         color = Color.White.copy(alpha = 0.75f),
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontFamily = NumericMonoFont
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
-                // Transport Buttons Row: Mute | -10s | Play/Pause | +10s | Fullscreen
+                // Compact Transport Buttons Row: Mute | -10s | Play/Pause | +10s | Fullscreen
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
@@ -443,43 +579,49 @@ fun ZeroDownloadExoVideoPlayer(
                         onClick = {
                             isMuted = !isMuted
                             exoPlayer.volume = if (isMuted) 0f else 1f
+                            interactionTick++
                         },
-                        modifier = Modifier.testTag("preview_video_mute_button")
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag("preview_video_mute_button")
                     ) {
                         Icon(
                             imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
                             contentDescription = if (isMuted) "Unmute" else "Mute",
-                            tint = Color.White
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
                     IconButton(
                         onClick = {
                             val target = (exoPlayer.currentPosition - 10_000L).coerceAtLeast(0L)
-                            exoPlayer.seekTo(target)
-                            currentPositionMs = target
+                            performSeekToMs(target)
                         },
-                        modifier = Modifier.testTag("preview_video_rewind_button")
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag("preview_video_rewind_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Replay10,
                             contentDescription = "Rewind 10 seconds",
                             tint = Color.White,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                     }
 
                     Box(
                         modifier = Modifier
-                            .size(54.dp)
+                            .size(46.dp)
                             .clip(CircleShape)
                             .background(colors.teal)
                             .clickable {
+                                interactionTick++
                                 if (exoPlayer.isPlaying) {
                                     exoPlayer.pause()
                                 } else {
                                     if (exoPlayer.playbackState == Player.STATE_ENDED) {
-                                        exoPlayer.seekTo(0L)
+                                        performSeekToMs(0L)
                                     }
                                     exoPlayer.play()
                                 }
@@ -491,7 +633,7 @@ fun ZeroDownloadExoVideoPlayer(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
                             tint = Color.White,
-                            modifier = Modifier.size(30.dp)
+                            modifier = Modifier.size(26.dp)
                         )
                     }
 
@@ -499,34 +641,40 @@ fun ZeroDownloadExoVideoPlayer(
                         onClick = {
                             val maxDur = if (durationMs > 0L) durationMs else Long.MAX_VALUE
                             val target = (exoPlayer.currentPosition + 10_000L).coerceAtMost(maxDur)
-                            exoPlayer.seekTo(target)
-                            currentPositionMs = target
+                            performSeekToMs(target)
                         },
-                        modifier = Modifier.testTag("preview_video_ffwd_button")
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag("preview_video_ffwd_button")
                     ) {
                         Icon(
                             imageVector = Icons.Default.Forward10,
                             contentDescription = "Fast-forward 10 seconds",
                             tint = Color.White,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                     }
 
                     IconButton(
                         onClick = {
-                            isLandscapeFullscreen = !isLandscapeFullscreen
-                            (context as? Activity)?.requestedOrientation = if (isLandscapeFullscreen) {
+                            interactionTick++
+                            val targetFullscreen = !isLandscapeOrFullscreen
+                            onFullscreenChange(targetFullscreen)
+                            (context as? Activity)?.requestedOrientation = if (targetFullscreen) {
                                 ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                             } else {
                                 ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                             }
                         },
-                        modifier = Modifier.testTag("preview_video_fullscreen_button")
+                        modifier = Modifier
+                            .size(40.dp)
+                            .testTag("preview_video_fullscreen_button")
                     ) {
                         Icon(
-                            imageVector = if (isLandscapeFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                            contentDescription = if (isLandscapeFullscreen) "Exit Fullscreen" else "Fullscreen",
-                            tint = Color.White
+                            imageVector = if (isLandscapeOrFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                            contentDescription = if (isLandscapeOrFullscreen) "Exit Fullscreen" else "Fullscreen",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
@@ -538,8 +686,8 @@ fun ZeroDownloadExoVideoPlayer(
 /**
  * Phase 1 Zero-Download Media3 ExoPlayer Card for Audio Streaming.
  *
- * Streams audio directly from Telegram chunks via [TelegramChunkDataSource] and [EphemeralStreamManager]'s
- * 20–50 MB RAM sliding window (or local file if already downloaded) with seek support and basic controls.
+ * Automatically starts playback as soon as Chunk 1 loads, updates timecodes and buffered position
+ * in real time, retries once with a fresh Telegram link on chunk error, and wipes RAM on exit/background.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -556,36 +704,53 @@ fun ZeroDownloadExoAudioPlayerCard(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     var isPlaying by remember { mutableStateOf(false) }
-    var isBuffering by remember { mutableStateOf(false) }
+    var isBuffering by remember { mutableStateOf(true) }
+    var seekingUncachedChunkIndex by remember(file.id) { mutableStateOf<Int?>(null) }
     var isMuted by remember { mutableStateOf(false) }
     var currentPositionMs by remember { mutableLongStateOf(0L) }
+    var bufferedPositionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var isUserScrubbing by remember { mutableStateOf(false) }
     var scrubFraction by remember { mutableFloatStateOf(0f) }
     var playerError by remember { mutableStateOf<String?>(null) }
-    var retryNonce by remember { mutableStateOf(0) }
+    var retryNonce by remember { mutableIntStateOf(0) }
+    var resumePositionOnRetryMs by remember { mutableLongStateOf(0L) }
 
-    val exoPlayer = remember(file.id, chunks.size, isFullFileDownloaded, retryNonce) {
+    val exoPlayer = remember(file.id, chunks.size, isFullFileDownloaded) {
         val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(6_000, 20_000, 1_000, 2_000)
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 4_000,
+                /* maxBufferMs = */ 20_000,
+                /* bufferForPlaybackMs = */ 500,
+                /* bufferForPlaybackAfterRebufferMs = */ 1_000
+            )
             .setTargetBufferBytes(12 * 1024 * 1024)
+            .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
         ExoPlayer.Builder(context)
             .setLoadControl(loadControl)
             .build()
+            .apply {
+                playWhenReady = true
+            }
     }
 
     LaunchedEffect(exoPlayer, file.id, chunks, isFullFileDownloaded, retryNonce) {
         playerError = null
+        isBuffering = true
         if (isFullFileDownloaded && !localTarget.isNullOrBlank()) {
             val localUri = if (localTarget.startsWith("/")) Uri.fromFile(File(localTarget)) else Uri.parse(localTarget)
             val itemBuilder = MediaItem.Builder().setUri(localUri)
             resolveMedia3MimeType(file.mimeType, file.name)?.let { itemBuilder.setMimeType(it) }
             exoPlayer.setMediaItem(itemBuilder.build())
+            exoPlayer.playWhenReady = true
             exoPlayer.prepare()
+            if (resumePositionOnRetryMs > 0L) {
+                exoPlayer.seekTo(resumePositionOnRetryMs)
+            }
+            exoPlayer.play()
         } else if (chunks.isNotEmpty()) {
-            streamManager.prefetchChunkAsync(file, chunks, 0)
             val streamUri = Uri.parse("televault://stream/${file.id}/${Uri.encode(file.name)}")
             val itemBuilder = MediaItem.Builder().setUri(streamUri)
             resolveMedia3MimeType(file.mimeType, file.name)?.let { itemBuilder.setMimeType(it) }
@@ -596,10 +761,17 @@ fun ZeroDownloadExoAudioPlayerCard(
                 streamManager = streamManager
             )
             val mediaSource = ProgressiveMediaSource.Factory(dataSourceFactory)
+                .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount = */ 0))
                 .createMediaSource(itemBuilder.build())
             exoPlayer.setMediaSource(mediaSource)
+            exoPlayer.playWhenReady = true
             exoPlayer.prepare()
+            if (resumePositionOnRetryMs > 0L) {
+                exoPlayer.seekTo(resumePositionOnRetryMs)
+            }
+            exoPlayer.play()
         } else {
+            isBuffering = false
             playerError = "Waiting for cloud chunk metadata…"
         }
     }
@@ -609,30 +781,44 @@ fun ZeroDownloadExoAudioPlayerCard(
             override fun onPlaybackStateChanged(playbackState: Int) {
                 isBuffering = playbackState == Player.STATE_BUFFERING
                 if (playbackState == Player.STATE_READY) {
+                    seekingUncachedChunkIndex = null
                     val dur = exoPlayer.duration
                     if (dur != C.TIME_UNSET && dur > 0L) {
                         durationMs = dur
                     }
                 } else if (playbackState == Player.STATE_ENDED) {
                     isPlaying = false
+                    seekingUncachedChunkIndex = null
                 }
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
+                if (playing) {
+                    seekingUncachedChunkIndex = null
+                }
             }
 
             override fun onPlayerError(error: PlaybackException) {
                 isBuffering = false
-                playerError = error.cause?.message ?: error.message ?: "Audio stream error"
+                isPlaying = false
+                seekingUncachedChunkIndex = null
+                playerError = error.cause?.cause?.message
+                    ?: error.cause?.message
+                    ?: error.message
+                    ?: "Audio chunk download or decryption failed."
             }
         }
         exoPlayer.addListener(listener)
 
         val lifecycleObserver = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
-                exoPlayer.pause()
-                streamManager.wipeAllEphemeralBuffers("App backgrounded during audio playback")
+                val activity = context as? Activity
+                if (activity?.isChangingConfigurations != true) {
+                    exoPlayer.pause()
+                    exoPlayer.stop()
+                    streamManager.wipeAllEphemeralBuffers("App backgrounded during audio playback")
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
@@ -643,21 +829,52 @@ fun ZeroDownloadExoAudioPlayerCard(
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
             exoPlayer.release()
+            streamManager.wipeAllEphemeralBuffers("Left audio player for ${file.name}")
         }
     }
 
-    LaunchedEffect(exoPlayer, isPlaying, isUserScrubbing) {
+    LaunchedEffect(exoPlayer) {
         while (true) {
+            val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
+            val bufPos = exoPlayer.bufferedPosition.coerceAtLeast(pos)
+            val dur = exoPlayer.duration
+
             if (!isUserScrubbing) {
-                currentPositionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
-                val dur = exoPlayer.duration
-                if (dur != C.TIME_UNSET && dur > 0L) {
-                    durationMs = dur
-                }
+                currentPositionMs = pos
             }
-            delay(200L)
+            bufferedPositionMs = bufPos
+            if (dur != C.TIME_UNSET && dur > 0L) {
+                durationMs = dur
+            }
+            if (exoPlayer.isPlaying && pos > 0L) {
+                seekingUncachedChunkIndex = null
+            }
+            delay(100L)
         }
     }
+
+    val performAudioSeekToMs: (Long) -> Unit = { targetMs ->
+        val safeTargetMs = if (durationMs > 0L) targetMs.coerceIn(0L, durationMs) else targetMs.coerceAtLeast(0L)
+        if (!isFullFileDownloaded && chunks.isNotEmpty() && durationMs > 0L) {
+            val totalBytes = streamManager.computeTotalPlaintextSize(file, chunks)
+            val approxBytePos = ((safeTargetMs.toDouble() / durationMs.toDouble()) * totalBytes.toDouble())
+                .toLong()
+                .coerceIn(0L, (totalBytes - 1L).coerceAtLeast(0L))
+            val targetChunkIdx = streamManager.getChunkIndexForPosition(file, chunks, approxBytePos)
+            if (!streamManager.isChunkCachedInRam(file.id, targetChunkIdx)) {
+                seekingUncachedChunkIndex = targetChunkIdx
+            } else {
+                seekingUncachedChunkIndex = null
+            }
+        }
+        currentPositionMs = safeTargetMs
+        exoPlayer.seekTo(safeTargetMs)
+        if (!exoPlayer.isPlaying && playerError == null) {
+            exoPlayer.play()
+        }
+    }
+
+    val isWaitingForAudioData = playerError == null && (isBuffering || seekingUncachedChunkIndex != null)
 
     Card(
         shape = RoundedCornerShape(24.dp),
@@ -679,7 +896,7 @@ fun ZeroDownloadExoAudioPlayerCard(
                     .background(colors.teal.copy(alpha = 0.14f)),
                 contentAlignment = Alignment.Center
             ) {
-                if (isBuffering || bufferStats.isFetchingChunk) {
+                if (isWaitingForAudioData) {
                     CircularProgressIndicator(
                         color = colors.teal,
                         strokeWidth = 2.5.dp,
@@ -732,10 +949,23 @@ fun ZeroDownloadExoAudioPlayerCard(
                 )
             }
 
+            if (isWaitingForAudioData) {
+                val totalChunks = chunks.size.coerceAtLeast(1)
+                val activeChunkOneBased = ((seekingUncachedChunkIndex ?: bufferStats.fetchingChunkIndex ?: 0) + 1)
+                    .coerceIn(1, totalChunks)
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Buffering Chunk $activeChunkOneBased/$totalChunks in RAM…",
+                    color = colors.teal,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
             if (playerError != null) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = playerError ?: "",
+                    text = playerError ?: "Audio stream interrupted.",
                     color = colors.violet,
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center
@@ -743,20 +973,20 @@ fun ZeroDownloadExoAudioPlayerCard(
                 Spacer(modifier = Modifier.height(10.dp))
                 FilledTonalButton(
                     onClick = {
-                        val pos = currentPositionMs
+                        resumePositionOnRetryMs = currentPositionMs
+                        playerError = null
+                        isBuffering = true
                         retryNonce++
-                        exoPlayer.seekTo(pos)
-                        exoPlayer.prepare()
-                        exoPlayer.play()
                     },
                     colors = ButtonDefaults.filledTonalButtonColors(
                         containerColor = colors.teal,
                         contentColor = Color.White
-                    )
+                    ),
+                    modifier = Modifier.testTag("audio_retry_stream_button")
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Refresh Link & Retry", fontSize = 12.sp)
+                    Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             } else {
                 Spacer(modifier = Modifier.height(18.dp))
@@ -772,33 +1002,39 @@ fun ZeroDownloadExoAudioPlayerCard(
                     (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
                 } else 0f
 
-                Slider(
+                val bufferedFraction = computeBufferedFraction(
+                    fileId = file.id,
+                    totalChunks = chunks.size,
+                    streamManager = streamManager,
+                    currentPositionMs = currentPositionMs,
+                    bufferedPositionMs = bufferedPositionMs,
+                    durationMs = durationMs
+                )
+
+                BufferedStreamSeekBar(
                     value = sliderValue,
+                    bufferedFraction = bufferedFraction,
+                    activeColor = colors.teal,
+                    bufferedColor = colors.teal.copy(alpha = 0.38f),
+                    inactiveColor = colors.surfaceHi,
                     onValueChange = { frac ->
                         isUserScrubbing = true
                         scrubFraction = frac.coerceIn(0f, 1f)
                     },
                     onValueChangeFinished = {
-                        if (durationMs > 0L) {
-                            val targetMs = (scrubFraction * durationMs).toLong().coerceIn(0L, durationMs)
-                            exoPlayer.seekTo(targetMs)
-                            currentPositionMs = targetMs
-                        }
+                        val targetMs = if (durationMs > 0L) {
+                            (scrubFraction * durationMs).toLong().coerceIn(0L, durationMs)
+                        } else 0L
                         isUserScrubbing = false
+                        performAudioSeekToMs(targetMs)
                     },
-                    colors = SliderDefaults.colors(
-                        thumbColor = colors.teal,
-                        activeTrackColor = colors.teal,
-                        inactiveTrackColor = colors.surfaceHi
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("preview_audio_seek_slider")
+                    testTag = "preview_audio_seek_slider"
                 )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = formatStreamTimecode(activeDisplayMs),
@@ -807,9 +1043,10 @@ fun ZeroDownloadExoAudioPlayerCard(
                         fontFamily = NumericMonoFont
                     )
                     Text(
-                        text = bufferStats.statusLabel,
+                        text = "Buffered ${(bufferedFraction * 100).toInt()}%",
                         color = colors.teal,
                         fontSize = 11.sp,
+                        fontFamily = NumericMonoFont,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
@@ -843,8 +1080,7 @@ fun ZeroDownloadExoAudioPlayerCard(
                     IconButton(
                         onClick = {
                             val target = (exoPlayer.currentPosition - 10_000L).coerceAtLeast(0L)
-                            exoPlayer.seekTo(target)
-                            currentPositionMs = target
+                            performAudioSeekToMs(target)
                         },
                         modifier = Modifier.testTag("preview_audio_rewind_button")
                     ) {
@@ -866,7 +1102,7 @@ fun ZeroDownloadExoAudioPlayerCard(
                                     exoPlayer.pause()
                                 } else {
                                     if (exoPlayer.playbackState == Player.STATE_ENDED) {
-                                        exoPlayer.seekTo(0L)
+                                        performAudioSeekToMs(0L)
                                     }
                                     exoPlayer.play()
                                 }
@@ -886,8 +1122,7 @@ fun ZeroDownloadExoAudioPlayerCard(
                         onClick = {
                             val maxDur = if (durationMs > 0L) durationMs else Long.MAX_VALUE
                             val target = (exoPlayer.currentPosition + 10_000L).coerceAtMost(maxDur)
-                            exoPlayer.seekTo(target)
-                            currentPositionMs = target
+                            performAudioSeekToMs(target)
                         },
                         modifier = Modifier.testTag("preview_audio_ffwd_button")
                     ) {
@@ -902,6 +1137,87 @@ fun ZeroDownloadExoAudioPlayerCard(
             }
         }
     }
+}
+
+/**
+ * Dual-layer seek bar that renders the buffered position track behind the interactive playback Slider.
+ */
+@Composable
+private fun BufferedStreamSeekBar(
+    value: Float,
+    bufferedFraction: Float,
+    activeColor: Color,
+    bufferedColor: Color,
+    inactiveColor: Color,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
+    testTag: String
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        // Background track + Buffered progress bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp)
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(inactiveColor)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(bufferedFraction.coerceIn(0f, 1f))
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(bufferedColor)
+            )
+        }
+
+        // Foreground interactive Slider
+        Slider(
+            value = value.coerceIn(0f, 1f),
+            onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
+            colors = SliderDefaults.colors(
+                thumbColor = activeColor,
+                activeTrackColor = activeColor,
+                inactiveTrackColor = Color.Transparent
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(32.dp)
+                .testTag(testTag)
+        )
+    }
+}
+
+private fun computeBufferedFraction(
+    fileId: String,
+    totalChunks: Int,
+    streamManager: EphemeralStreamManager,
+    currentPositionMs: Long,
+    bufferedPositionMs: Long,
+    durationMs: Long
+): Float {
+    val exoBufferedFraction = if (durationMs > 0L) {
+        (bufferedPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+
+    if (totalChunks <= 0 || durationMs <= 0L) return exoBufferedFraction
+
+    val playFraction = (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+    val currentChunkIdx = (playFraction * totalChunks).toInt().coerceIn(0, totalChunks - 1)
+    var contiguousCachedEndChunk = currentChunkIdx
+    while (contiguousCachedEndChunk < totalChunks && streamManager.isChunkCachedInRam(fileId, contiguousCachedEndChunk)) {
+        contiguousCachedEndChunk++
+    }
+    val ramChunkFraction = if (contiguousCachedEndChunk > currentChunkIdx) {
+        (contiguousCachedEndChunk.toFloat() / totalChunks.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+
+    return maxOf(exoBufferedFraction, ramChunkFraction, playFraction).coerceIn(0f, 1f)
 }
 
 internal fun formatStreamTimecode(ms: Long): String {

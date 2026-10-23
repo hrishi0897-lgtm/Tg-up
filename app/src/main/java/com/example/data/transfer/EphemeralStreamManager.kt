@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,7 +26,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.coroutineContext
 
 /**
  * Live telemetry for the zero-download RAM sliding window.
@@ -37,6 +41,7 @@ data class EphemeralBufferStats(
     val activeChunkIndex: Int = 0,
     val totalChunks: Int = 1,
     val isFetchingChunk: Boolean = false,
+    val fetchingChunkIndex: Int? = null,
     val isRefreshingLink: Boolean = false,
     val refreshedLinksCount: Int = 0,
     val statusLabel: String = "RAM Stream Ready"
@@ -46,7 +51,7 @@ data class EphemeralBufferStats(
  * Cached Telegram `getFile` link entry with TTL tracking.
  * Telegram Bot API download links (`https://api.telegram.org/file/bot<token>/<file_path>`)
  * expire after ~1 hour. We enforce a 45-minute proactive TTL plus automatic reactive
- * re-requesting whenever a download returns HTTP 400/401/403/404.
+ * re-requesting whenever a download or decryption fails.
  */
 private data class ResolvedTelegramLink(
     val token: String,
@@ -62,9 +67,9 @@ private data class ResolvedTelegramLink(
  *   ([MAX_RAM_WINDOW_BYTES] = 36 MB, holding the active 18 MB chunk + 1 lookahead/adjacent chunk).
  * - Zero-fills (`ByteArray.fill(0)`) evicted and wiped buffers immediately so sensitive plaintext
  *   never lingers in memory or on disk.
- * - Transparently handles expiring Telegram file links by re-requesting `getFile` (and falling back
- *   to server-side `regenerateFileId` + multi-bot token rotation if a bot token or `file_id` expired).
- * - Guarantees cleanup on viewer exit, app backgrounding (`ON_STOP`), and app startup crash recovery.
+ * - On chunk download or decryption failure, retries exactly once after refreshing the Telegram
+ *   file link (`getFile`), then surfaces a clear error without retrying in a loop.
+ * - Guarantees immediate 0.0 MB RAM wipe on viewer exit, app backgrounding, and startup crash recovery.
  */
 class EphemeralStreamManager private constructor(
     private val context: Context,
@@ -117,7 +122,6 @@ class EphemeralStreamManager private constructor(
                     orphanDir.walkBottomUp().forEach { file ->
                         if (file.isFile) {
                             try {
-                                // Overwrite with zeros before deleting if small
                                 if (file.length() in 1..(64 * 1024)) {
                                     file.writeBytes(ByteArray(file.length().toInt()))
                                 }
@@ -137,6 +141,9 @@ class EphemeralStreamManager private constructor(
 
     private val streamJob = SupervisorJob()
     private val streamScope = CoroutineScope(Dispatchers.IO + streamJob)
+
+    // Incremented on every wipe so late-completing fetches never repopulate a wiped RAM window
+    private val wipeGeneration = AtomicLong(0L)
 
     private val cacheLock = Any()
 
@@ -162,6 +169,28 @@ class EphemeralStreamManager private constructor(
     }
 
     /**
+     * Returns true if [chunkIndex] for [fileId] is already decrypted and resident in the RAM sliding window.
+     */
+    fun isChunkCachedInRam(fileId: String, chunkIndex: Int): Boolean {
+        val key = "$fileId:$chunkIndex"
+        return synchronized(cacheLock) {
+            ramWindowCache.containsKey(key)
+        }
+    }
+
+    /**
+     * Maps a byte position in [file] to the corresponding chunk index.
+     */
+    fun getChunkIndexForPosition(
+        file: FileEntity,
+        chunks: List<ChunkEntity>,
+        globalPosition: Long
+    ): Int {
+        if (chunks.isEmpty()) return 0
+        return resolveChunkAndOffset(file, chunks, globalPosition.coerceAtLeast(0L)).first
+    }
+
+    /**
      * Reads up to [length] plaintext bytes starting at [globalPosition] across chunk boundaries
      * into [buffer] at [offset]. Returns the number of bytes read, or -1 if at EOF.
      */
@@ -179,15 +208,23 @@ class EphemeralStreamManager private constructor(
         val totalSize = computeTotalPlaintextSize(file, chunks)
         if (globalPosition >= totalSize) return@withContext -1
 
-        // Locate which chunk contains globalPosition
         val (chunkIndex, offsetInChunk) = resolveChunkAndOffset(file, chunks, globalPosition)
         if (chunkIndex < 0 || chunkIndex >= chunks.size) return@withContext -1
 
-        val chunkBytes = getChunkPlaintextBytes(file, chunks, chunkIndex)
+        val chunkBytes = getChunkPlaintextBytes(
+            file = file,
+            chunks = chunks,
+            chunkIndex = chunkIndex,
+            isForegroundDemand = true
+        )
         if (offsetInChunk >= chunkBytes.size) {
-            // If current chunk was slightly smaller than estimated, advance to next chunk if available
             if (chunkIndex + 1 < chunks.size) {
-                val nextChunkBytes = getChunkPlaintextBytes(file, chunks, chunkIndex + 1)
+                val nextChunkBytes = getChunkPlaintextBytes(
+                    file = file,
+                    chunks = chunks,
+                    chunkIndex = chunkIndex + 1,
+                    isForegroundDemand = true
+                )
                 if (nextChunkBytes.isEmpty()) return@withContext -1
                 val toCopy = minOf(length, nextChunkBytes.size)
                 System.arraycopy(nextChunkBytes, 0, buffer, offset, toCopy)
@@ -200,7 +237,7 @@ class EphemeralStreamManager private constructor(
         val bytesToCopy = minOf(length, availableInChunk)
         System.arraycopy(chunkBytes, offsetInChunk.toInt(), buffer, offset, bytesToCopy)
 
-        // Trigger lookahead prefetch of the next chunk once playback crosses 65% of the active chunk
+        // Trigger silent background lookahead prefetch of the next chunk once reading crosses 65%
         val progressInChunk = (offsetInChunk + bytesToCopy).toFloat() / chunkBytes.size.coerceAtLeast(1).toFloat()
         if (progressInChunk >= 0.65f && chunkIndex + 1 < chunks.size) {
             prefetchChunkAsync(file, chunks, chunkIndex + 1)
@@ -210,6 +247,7 @@ class EphemeralStreamManager private constructor(
             activeChunkIndex = chunkIndex,
             totalChunks = chunks.size,
             isFetching = false,
+            fetchingChunkIndex = null,
             statusLabel = "RAM Stream • Chunk ${chunkIndex + 1}/${chunks.size}"
         )
 
@@ -223,7 +261,8 @@ class EphemeralStreamManager private constructor(
     suspend fun getChunkPlaintextBytes(
         file: FileEntity,
         chunks: List<ChunkEntity>,
-        chunkIndex: Int
+        chunkIndex: Int,
+        isForegroundDemand: Boolean = true
     ): ByteArray = withContext(Dispatchers.IO) {
         val key = "${file.id}:$chunkIndex"
 
@@ -233,6 +272,17 @@ class EphemeralStreamManager private constructor(
             }
         }
 
+        if (isForegroundDemand) {
+            updateStatsSnapshot(
+                activeChunkIndex = chunkIndex,
+                totalChunks = chunks.size,
+                isFetching = true,
+                fetchingChunkIndex = chunkIndex,
+                statusLabel = "Buffering Chunk ${chunkIndex + 1}/${chunks.size} in RAM..."
+            )
+        }
+
+        val startGen = wipeGeneration.get()
         val deferred = inFlightMutex.withLock {
             synchronized(cacheLock) {
                 ramWindowCache[key]?.let { cached ->
@@ -241,7 +291,13 @@ class EphemeralStreamManager private constructor(
             }
             inFlightChunks[key]?.takeIf { it.isActive } ?: streamScope.async {
                 try {
-                    fetchAndDecryptChunkToRam(file, chunks, chunkIndex)
+                    fetchAndDecryptChunkToRam(
+                        file = file,
+                        chunks = chunks,
+                        chunkIndex = chunkIndex,
+                        isForegroundDemand = isForegroundDemand,
+                        expectedGeneration = startGen
+                    )
                 } finally {
                     inFlightChunks.remove(key)
                 }
@@ -253,6 +309,7 @@ class EphemeralStreamManager private constructor(
 
     /**
      * Warms [chunkIndex] in the background into the RAM sliding window if not already cached.
+     * Does not flip foreground buffering UI flags unless playback actually demands the chunk.
      */
     fun prefetchChunkAsync(
         file: FileEntity,
@@ -268,43 +325,71 @@ class EphemeralStreamManager private constructor(
 
         streamScope.launch {
             try {
-                getChunkPlaintextBytes(file, chunks, chunkIndex)
+                getChunkPlaintextBytes(
+                    file = file,
+                    chunks = chunks,
+                    chunkIndex = chunkIndex,
+                    isForegroundDemand = false
+                )
             } catch (_: CancellationException) {
             } catch (e: Exception) {
-                Log.d(TAG, "Lookahead prefetch skipped for chunk $chunkIndex: ${e.message}")
+                Log.d(TAG, "Background prefetch skipped for chunk $chunkIndex: ${e.message}")
             }
         }
     }
 
     /**
-     * Downloads the raw chunk bytes from Telegram into RAM, automatically re-requesting
-     * expired `getFile` links on HTTP 400/401/403/404, decrypts AES-256-GCM in memory if encrypted,
-     * and inserts the plaintext into the 36 MB LRU RAM sliding window.
+     * Downloads the raw chunk bytes from Telegram into RAM and decrypts AES-256-GCM in memory.
+     *
+     * Error Handling Contract:
+     * - Attempt 1: Uses the cached/current Telegram `file_path` link to download & decrypt.
+     * - If Attempt 1 fails (download OR decryption error), invalidates the cached link, refreshes
+     *   the Telegram link first (`forceRefresh = true`), and retries **once** (Attempt 2).
+     * - If Attempt 2 also fails, throws a clear [IOException] without retrying in a loop.
      */
     private suspend fun fetchAndDecryptChunkToRam(
         file: FileEntity,
         chunks: List<ChunkEntity>,
-        chunkIndex: Int
+        chunkIndex: Int,
+        isForegroundDemand: Boolean,
+        expectedGeneration: Long
     ): ByteArray {
         val chunk = chunks.getOrNull(chunkIndex)
-            ?: throw IllegalArgumentException("Chunk index $chunkIndex out of bounds (total=${chunks.size})")
+            ?: throw IOException("Chunk ${chunkIndex + 1} metadata missing (total=${chunks.size})")
 
-        updateStatsSnapshot(
-            activeChunkIndex = chunkIndex,
-            totalChunks = chunks.size,
-            isFetching = true,
-            statusLabel = if (file.isEncrypted) {
-                "Decrypting Chunk ${chunkIndex + 1}/${chunks.size} in RAM…"
-            } else {
-                "Buffering Chunk ${chunkIndex + 1}/${chunks.size} in RAM…"
-            }
-        )
+        if (isForegroundDemand) {
+            updateStatsSnapshot(
+                activeChunkIndex = chunkIndex,
+                totalChunks = chunks.size,
+                isFetching = true,
+                fetchingChunkIndex = chunkIndex,
+                statusLabel = "Buffering Chunk ${chunkIndex + 1}/${chunks.size} in RAM..."
+            )
+        }
 
         var lastException: Throwable? = null
-        var forceLinkRefresh = false
 
-        for (attempt in 1..3) {
+        // Exactly 2 attempts maximum: initial attempt (1) + 1 retry after refreshing link (2)
+        for (attempt in 1..2) {
+            coroutineContext.ensureActive()
+            if (wipeGeneration.get() != expectedGeneration) {
+                throw CancellationException("RAM stream session wiped")
+            }
+
+            val forceLinkRefresh = (attempt == 2)
             try {
+                if (forceLinkRefresh && isForegroundDemand) {
+                    updateStatsSnapshot(
+                        activeChunkIndex = chunkIndex,
+                        totalChunks = chunks.size,
+                        isFetching = true,
+                        fetchingChunkIndex = chunkIndex,
+                        isRefreshingLink = true,
+                        incrementRefreshedLinks = true,
+                        statusLabel = "Refreshing Telegram link for Chunk ${chunkIndex + 1}/${chunks.size}..."
+                    )
+                }
+
                 val resolvedLink = resolveTelegramFileLink(
                     file = file,
                     chunk = chunk,
@@ -319,21 +404,10 @@ class EphemeralStreamManager private constructor(
 
                 if (streamResult.isFailure) {
                     val ex = streamResult.exceptionOrNull()
-                    if (isLinkExpiredOrAuthError(ex)) {
-                        Log.w(TAG, "Telegram file link expired or unauthorized on chunk $chunkIndex (attempt $attempt). Re-requesting fresh link...")
-                        resolvedLinks.remove("${file.id}:${chunk.chunkIndex}")
-                        forceLinkRefresh = true
-                        updateStatsSnapshot(
-                            activeChunkIndex = chunkIndex,
-                            totalChunks = chunks.size,
-                            isFetching = true,
-                            isRefreshingLink = true,
-                            incrementRefreshedLinks = true,
-                            statusLabel = "Refreshing expired Telegram link…"
-                        )
-                        continue
-                    }
-                    throw ex ?: IllegalStateException("Failed to stream chunk $chunkIndex")
+                    throw IOException(
+                        ex?.message ?: "HTTP download failed for chunk ${chunkIndex + 1}/${chunks.size}",
+                        ex
+                    )
                 }
 
                 val body = streamResult.getOrThrow().body
@@ -344,6 +418,11 @@ class EphemeralStreamManager private constructor(
                         val tempBuf = ByteArray(64 * 1024)
                         var read: Int
                         while (input.read(tempBuf).also { read = it } != -1) {
+                            coroutineContext.ensureActive()
+                            if (wipeGeneration.get() != expectedGeneration) {
+                                tempBuf.fill(0)
+                                throw CancellationException("RAM stream session wiped during download")
+                            }
                             baos.write(tempBuf, 0, read)
                         }
                         tempBuf.fill(0)
@@ -351,15 +430,29 @@ class EphemeralStreamManager private constructor(
                     baos.toByteArray()
                 }
 
+                if (rawBytes.isEmpty()) {
+                    throw IOException("Received empty payload for chunk ${chunkIndex + 1}/${chunks.size}")
+                }
+
                 val plainBytes = if (file.isEncrypted && !file.encryptionKeyBase64.isNullOrBlank()) {
                     try {
                         CryptoStreamEngine.decryptChunkBytes(rawBytes, file.encryptionKeyBase64)
+                    } catch (decryptEx: Exception) {
+                        throw IOException(
+                            "AES-256-GCM decryption failed on chunk ${chunkIndex + 1}/${chunks.size}: ${decryptEx.message}",
+                            decryptEx
+                        )
                     } finally {
-                        // Zero-fill raw ciphertext buffer immediately
                         rawBytes.fill(0)
                     }
                 } else {
                     rawBytes
+                }
+
+                // Verify session wasn't wiped while downloading/decrypting
+                if (wipeGeneration.get() != expectedGeneration) {
+                    plainBytes.fill(0)
+                    throw CancellationException("RAM stream session wiped before caching")
                 }
 
                 storeInRamSlidingWindow("${file.id}:$chunkIndex", plainBytes)
@@ -368,6 +461,7 @@ class EphemeralStreamManager private constructor(
                     activeChunkIndex = chunkIndex,
                     totalChunks = chunks.size,
                     isFetching = false,
+                    fetchingChunkIndex = null,
                     isRefreshingLink = false,
                     statusLabel = "RAM Stream • Chunk ${chunkIndex + 1}/${chunks.size}"
                 )
@@ -377,9 +471,11 @@ class EphemeralStreamManager private constructor(
                 throw e
             } catch (e: Throwable) {
                 lastException = e
-                Log.w(TAG, "Attempt $attempt/3 failed to stream chunk $chunkIndex: ${e.message}")
                 resolvedLinks.remove("${file.id}:${chunk.chunkIndex}")
-                forceLinkRefresh = true
+                Log.w(
+                    TAG,
+                    "Chunk ${chunkIndex + 1}/${chunks.size} attempt $attempt/2 failed: ${e.message}"
+                )
             }
         }
 
@@ -387,11 +483,13 @@ class EphemeralStreamManager private constructor(
             activeChunkIndex = chunkIndex,
             totalChunks = chunks.size,
             isFetching = false,
+            fetchingChunkIndex = null,
             isRefreshingLink = false,
-            statusLabel = "Stream Error on Chunk ${chunkIndex + 1}"
+            statusLabel = "Error on Chunk ${chunkIndex + 1}/${chunks.size}"
         )
-        throw IllegalStateException(
-            lastException?.message ?: "Unable to stream chunk ${chunkIndex + 1} from Telegram",
+
+        throw IOException(
+            "Unable to download or decrypt chunk ${chunkIndex + 1}/${chunks.size} after refreshing Telegram link: ${lastException?.message ?: "Unknown stream error"}",
             lastException
         )
     }
@@ -399,7 +497,6 @@ class EphemeralStreamManager private constructor(
     /**
      * Resolves a fresh Telegram `file_path` for [chunk], automatically re-requesting `getFile`
      * if the cached URL exceeded its 45-minute TTL or if [forceRefresh] is true.
-     * Also performs ban-resilient `regenerateFileId` recovery if `file_id` is missing or expired.
      */
     private suspend fun resolveTelegramFileLink(
         file: FileEntity,
@@ -414,10 +511,12 @@ class EphemeralStreamManager private constructor(
             if (cached != null && (now - cached.resolvedAtMs) < LINK_TTL_MS) {
                 return cached
             }
+        } else {
+            resolvedLinks.remove(linkKey)
         }
 
         val primaryToken = credentialsManager.getBotToken()
-            ?: throw IllegalStateException("No Telegram bot token configured")
+            ?: throw IOException("No Telegram bot token configured")
         val loadBalancer = MultiBotLoadBalancer.getInstance(context)
         var currentToken = loadBalancer.acquireBotForChunk(primaryToken)
 
@@ -428,7 +527,7 @@ class EphemeralStreamManager private constructor(
             val chunkMessageId = chunk.telegramMessageId
             var activeFileId = chunk.telegramFileId
 
-            if (activeFileId.isNullOrBlank() && chunkChannelId.isNotBlank() && chunkMessageId != null) {
+            if ((activeFileId.isNullOrBlank() || forceRefresh) && chunkChannelId.isNotBlank() && chunkMessageId != null) {
                 val regen = repository.regenerateFileId(currentToken, chunkChannelId, chunkMessageId)
                 if (regen.isSuccess) {
                     activeFileId = regen.getOrThrow()
@@ -437,23 +536,13 @@ class EphemeralStreamManager private constructor(
             }
 
             val targetFileId = activeFileId
-                ?: throw IllegalStateException("Missing Telegram file_id for chunk ${chunk.chunkIndex + 1}")
+                ?: throw IOException("Missing Telegram file_id for chunk ${chunk.chunkIndex + 1}")
 
             var fileInfoResult = repository.getFileInfo(currentToken, targetFileId)
 
             if (fileInfoResult.isFailure) {
                 val rawEx = fileInfoResult.exceptionOrNull()
-                if (isLinkExpiredOrAuthError(rawEx)) {
-                    Log.w(TAG, "getFileInfo failed for chunk ${chunk.chunkIndex} (${rawEx?.message}). Refreshing token / file_id...")
-                    updateStatsSnapshot(
-                        activeChunkIndex = chunk.chunkIndex,
-                        totalChunks = file.totalChunks,
-                        isFetching = true,
-                        isRefreshingLink = true,
-                        incrementRefreshedLinks = true,
-                        statusLabel = "Re-requesting Telegram file link…"
-                    )
-
+                if (isLinkExpiredOrAuthError(rawEx) || forceRefresh) {
                     val rotated = credentialsManager.rotateToNextToken(currentToken)
                     if (rotated != null && rotated != currentToken) {
                         loadBalancer.releaseBotForChunk(currentToken, 0L, false)
@@ -475,10 +564,10 @@ class EphemeralStreamManager private constructor(
             }
 
             val remoteFile = fileInfoResult.getOrElse { ex ->
-                throw IllegalStateException("Telegram getFile failed: ${ex.message}", ex)
+                throw IOException("Telegram getFile failed: ${ex.message}", ex)
             }
             val filePath = remoteFile.filePath
-                ?: throw IllegalStateException("Telegram getFile returned empty file_path")
+                ?: throw IOException("Telegram getFile returned empty file_path")
 
             loadBalancer.releaseBotForChunk(currentToken, chunk.size, true)
 
@@ -526,13 +615,11 @@ class EphemeralStreamManager private constructor(
                 }
             }
 
-            // Evict least-recently-used chunks until the new chunk fits inside the 36 MB window
             val iterator = ramWindowCache.entries.iterator()
             while (iterator.hasNext() && (currentRamBytes + plainBytes.size > MAX_RAM_WINDOW_BYTES) && ramWindowCache.isNotEmpty()) {
                 val eldest = iterator.next()
                 val evictedBytes = eldest.value
                 currentRamBytes = (currentRamBytes - evictedBytes.size).coerceAtLeast(0L)
-                // Zero-fill evicted plaintext buffer immediately
                 evictedBytes.fill(0)
                 iterator.remove()
                 Log.d(TAG, "Evicted & zero-filled chunk ${eldest.key} (${evictedBytes.size / 1024} KB) from RAM sliding window")
@@ -564,7 +651,6 @@ class EphemeralStreamManager private constructor(
             return 0 to globalPosition.coerceAtLeast(0L)
         }
 
-        // Check if chunks have explicit byte sizes populated
         val allHaveSizes = chunks.all { it.size > 0L }
         if (allHaveSizes) {
             var cumulative = 0L
@@ -579,7 +665,6 @@ class EphemeralStreamManager private constructor(
             }
         }
 
-        // Fallback if chunk sizes were not populated in DB: uniform chunk size based on totalChunks
         val estimatedChunkSize = if (file.totalChunks > 1 && file.size > 0L) {
             ((file.size + file.totalChunks - 1) / file.totalChunks).coerceAtLeast(1L)
         } else {
@@ -594,6 +679,7 @@ class EphemeralStreamManager private constructor(
         activeChunkIndex: Int,
         totalChunks: Int,
         isFetching: Boolean,
+        fetchingChunkIndex: Int?,
         isRefreshingLink: Boolean = false,
         incrementRefreshedLinks: Boolean = false,
         statusLabel: String
@@ -612,6 +698,7 @@ class EphemeralStreamManager private constructor(
             activeChunkIndex = activeChunkIndex,
             totalChunks = totalChunks.coerceAtLeast(1),
             isFetchingChunk = isFetching,
+            fetchingChunkIndex = fetchingChunkIndex,
             isRefreshingLink = isRefreshingLink,
             refreshedLinksCount = if (incrementRefreshedLinks) prev.refreshedLinksCount + 1 else prev.refreshedLinksCount,
             statusLabel = statusLabel
@@ -619,13 +706,15 @@ class EphemeralStreamManager private constructor(
     }
 
     /**
-     * Immediately cancels all in-flight chunk streams, zero-fills every `ByteArray` in the
-     * RAM sliding window, clears cached links, and removes any temporary files.
-     * Called on viewer exit (`DisposableEffect`), app backgrounding (`ON_STOP`), and crash recovery.
+     * Immediately increments [wipeGeneration], cancels all in-flight chunk streams,
+     * zero-fills every `ByteArray` in the RAM sliding window, and resets [bufferStats]
+     * to 0.0 MB (`allocatedRamBytes = 0L`).
      */
     fun wipeAllEphemeralBuffers(reason: String = "Viewer exited") {
         try {
+            wipeGeneration.incrementAndGet()
             streamJob.cancelChildren()
+            inFlightChunks.forEach { (_, deferred) -> deferred.cancel() }
             inFlightChunks.clear()
 
             var wipedCount = 0
@@ -652,6 +741,7 @@ class EphemeralStreamManager private constructor(
                 activeChunkIndex = 0,
                 totalChunks = 1,
                 isFetchingChunk = false,
+                fetchingChunkIndex = null,
                 isRefreshingLink = false,
                 refreshedLinksCount = 0,
                 statusLabel = "RAM Buffer Wiped (0.0 MB)"
