@@ -162,6 +162,7 @@ fun FilePreviewScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            applyPlayerFullscreenSystemUi(context as? Activity, fullscreen = false, restoreUnspecifiedOrientation = true)
             streamManager.wipeAllEphemeralBuffers("Exited FilePreviewScreen for ${file.name}")
         }
     }
@@ -213,11 +214,33 @@ fun FilePreviewScreen(
     var isVideoFullscreen by remember(file.id) { mutableStateOf(false) }
     val isVideoLandscapeOrFullscreen = isVideo && (isLandscape || isVideoFullscreen)
 
+    // Synchronize system bars and orientation whenever isVideoFullscreen changes
+    LaunchedEffect(isVideoFullscreen) {
+        if (isVideo) {
+            if (isVideoFullscreen) {
+                applyPlayerFullscreenSystemUi(
+                    activity = context as? Activity,
+                    fullscreen = true,
+                    restoreUnspecifiedOrientation = false
+                )
+            }
+        }
+    }
+
     BackHandler {
-        if (isVideoFullscreen) {
+        if (isVideoFullscreen || (isVideo && isLandscape)) {
             isVideoFullscreen = false
-            (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            applyPlayerFullscreenSystemUi(
+                activity = context as? Activity,
+                fullscreen = false,
+                restoreUnspecifiedOrientation = false
+            )
         } else {
+            applyPlayerFullscreenSystemUi(
+                activity = context as? Activity,
+                fullscreen = false,
+                restoreUnspecifiedOrientation = true
+            )
             streamManager.wipeAllEphemeralBuffers("Back navigation from FilePreviewScreen")
             onBack()
         }
@@ -525,8 +548,22 @@ fun FilePreviewScreen(
                 ) {
                     IconButton(
                         onClick = {
-                            streamManager.wipeAllEphemeralBuffers("Back button clicked in FilePreviewScreen")
-                            onBack()
+                            if (isVideoFullscreen || (isVideo && isLandscape)) {
+                                isVideoFullscreen = false
+                                applyPlayerFullscreenSystemUi(
+                                    activity = context as? Activity,
+                                    fullscreen = false,
+                                    restoreUnspecifiedOrientation = false
+                                )
+                            } else {
+                                applyPlayerFullscreenSystemUi(
+                                    activity = context as? Activity,
+                                    fullscreen = false,
+                                    restoreUnspecifiedOrientation = true
+                                )
+                                streamManager.wipeAllEphemeralBuffers("Back button clicked in FilePreviewScreen")
+                                onBack()
+                            }
                         },
                         modifier = Modifier.testTag("preview_back_button")
                     ) {

@@ -1,60 +1,47 @@
-# Phased Implementation Plan: Universal Zero-Download File & Media Viewer
+# Phase 1 Polish + Fullscreen Orientation & Audio/Subtitle Selection Plan
 
-## Overview
-We are building an ephemeral, zero-download streaming engine and universal file viewer for **TeleVault** in phased milestones so each layer can be tested and verified independently.
-
-- **Phase 1 (Current Scope — Implement Now & Stop for Testing)**: Core `EphemeralStreamManager` (20–50 MB RAM sliding window with zero-fill wipe on exit, backgrounding, and startup crash recovery), automatic re-requesting of expiring Telegram `getFile` download links, and **Media3 ExoPlayer** with a custom chunk-based `TelegramChunkDataSource` supporting byte-range seeking and basic playback controls for both Video and Audio files.
-- **Phase 2 (Deferred — After Phase 1 Testing)**: Pro Video & Audio controls (Subtitles with SRT/VTT loader & styling, audio track switcher, up to 200% LoudnessEnhancer volume boost, swipe gestures for brightness/volume/seek, playback speed, A-B repeat loop, aspect ratio modes, screen lock, frame-by-frame step, rotation, and real-time FFT audio visualizer + 5-band equalizer).
-- **Phase 3 (Deferred — After Phase 2 Testing)**: Specialized non-media zero-download viewers (PDF viewer with zoom/thumbnails/night mode, ZIP/TAR archive inspector, CSV table grid, JSON collapsible tree, Markdown/Code viewer, and Hex + ASCII binary inspector).
+This update completes all Phase 1 polish requirements and adds **forced landscape immersive fullscreen** and **audio/subtitle track selection (with external `.srt`/`.vtt` side-loading)** without starting the rest of Phase 2.
 
 ---
 
-## Phase 1 Architecture & Implementation Details (Active Scope)
-
-### 1. Ephemeral RAM Sliding-Window Engine (`EphemeralStreamManager.kt`)
-- **20–50 MB RAM Sliding Window**:
-  - Maintains an in-memory LRU cache (`LinkedHashMap<Int, ByteArray>`) capped at **36 MB** (up to 2 decrypted 18 MB chunks in RAM simultaneously: the active playback chunk plus 1 lookahead/adjacent chunk, strictly within the 20–50 MB sliding window budget).
-  - Evicts older chunks automatically when advancing or seeking to a new chunk index, zero-filling (`fill(0)`) evicted `ByteArray` buffers before releasing references so sensitive plaintext never lingers on the heap.
-  - Exposes a `StateFlow<EphemeralBufferStats>` reporting live RAM usage (MB allocated vs. 36 MB window cap, active chunk index, total chunks, and link refresh status) for the top bar security telemetry pill.
-- **On-the-Fly Chunk Decryption**:
-  - Supports both unencrypted chunks and AES-256-GCM encrypted chunks (`FileEntity.isEncrypted == true` with `FileEntity.encryptionKey` Base64 key, 12-byte IV prefix, and 16-byte GCM auth tag via `CryptoStreamEngine`).
-  - Deduplicates concurrent requests for the same chunk index using a per-chunk `Mutex` / `Deferred<ByteArray>` map so rapid scrubbing does not trigger duplicate downloads.
-- **Expiring Telegram File Link Recovery**:
-  - Telegram Bot API `getFile` URLs (`https://api.telegram.org/file/bot<token>/<file_path>`) expire after ~1 hour.
-  - Caches resolved `file_path` URLs in memory with a timestamp, and automatically re-requests `TelegramRepository.getFile(botToken, telegramFileId)` (using `MultiBotLoadBalancer` / `EncryptedCredentialsManager` tokens) whenever a cached URL is older than 45 minutes or if an HTTP chunk fetch returns `400`, `401`, `403`, or `404`.
-- **Strict Lifecycle Wipe & Crash Recovery**:
-  - **On Viewer Exit**: `DisposableEffect(Unit)` zeroes out all in-memory chunk byte arrays and clears any temporary cache artifacts immediately.
-  - **On App Background (`ON_STOP`)**: `LifecycleEventObserver` pauses playback and flushes the ephemeral RAM buffer when the app is backgrounded.
-  - **On App Startup (Crash Recovery)**: `clearOrphanedEphemeralBuffers(context)` runs at initialization to purge any orphaned `.ephemeral_stream_tmp` cache directory if the process was previously killed by the OS.
-
-### 2. Media3 ExoPlayer & Custom Chunk DataSource (`TelegramChunkDataSource.kt`)
-- **Dependencies (`gradle/libs.versions.toml` & `app/build.gradle.kts`)**:
-  - Add `androidx.media3:media3-exoplayer`, `androidx.media3:media3-ui`, and `androidx.media3:media3-common` (`1.5.1`).
-- **Custom `TelegramChunkDataSource` (`BaseDataSource`)**:
-  - Implements `androidx.media3.datasource.DataSource` over the ordered list of `ChunkEntity` records (`sequenceNumber`, `telegramFileId`, `sizeBytes`) for a `FileEntity`.
-  - Computes total virtual stream length across all chunks and translates ExoPlayer `DataSpec(position, length)` reads into exact `(chunkIndex, offsetInChunk)` slices fetched through `EphemeralStreamManager`.
-  - Supports arbitrary random-access byte-range seeking (`C.LENGTH_UNSET` and bounded ranges) so MP4/MKV/WebM/MP3/FLAC/WAV container headers (`moov` atoms at start or end of file) and timeline scrubbing work seamlessly across 18 MB chunk boundaries without downloading the whole file.
-  - Triggers asynchronous background prefetching of `chunkIndex + 1` when the read cursor crosses 70% of the current chunk.
-
-### 3. Phase 1 Video & Audio Streaming UI (`FilePreviewScreen.kt`)
-- **Zero-Download Status Banner**:
-  - Displays a live `RAM Stream • Zero-Download` badge in the top bar showing real-time RAM sliding window usage (e.g., `18.0 / 36.0 MB RAM • Chunk 1/4`).
-- **Video Player View & Basic Controls**:
-  - Hardware-accelerated Media3 `PlayerView` rendering the custom `TelegramChunkDataSource` stream.
-  - Clean overlay controls with:
-    - Play / Pause toggle and buffering/chunk-decrypting progress indicator
-    - Interactive Seek Bar with current position, buffered position, and total duration (`mm:ss` / `hh:mm:ss`)
-    - Quick `-10s` Rewind and `+10s` Fast-Forward buttons
-    - Mute / Unmute toggle
-    - Fullscreen / Landscape orientation toggle
-- **Audio Player View & Basic Controls**:
-  - Dedicated audio streaming deck using the same Media3 `ExoPlayer` + `TelegramChunkDataSource` pipeline.
-  - Displays file metadata, animated playback state, interactive seek bar with timecodes, `-10s` / Play-Pause / `+10s` transport controls, and mute toggle.
-- **Existing Image & Text Preview Preservation**:
-  - Keeps existing zero-download in-memory preview for images and text files routed through `EphemeralStreamManager` so all existing previews benefit from link-expiry recovery and automatic RAM wiping.
+## 1. Fullscreen Orientation & Immersive Mode (Independent of Phone Posture)
+- **Force Sensor Landscape on Fullscreen Enter**:
+  - Tapping the Fullscreen button sets `activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE`, immediately rotating into landscape regardless of how the phone is held or whether system Auto-Rotate is disabled, while allowing flips between left and right landscape.
+  - Enters immersive mode using `WindowCompat.getInsetsController(window, window.decorView)` to hide both `WindowInsetsCompat.Type.statusBars()` and `WindowInsetsCompat.Type.navigationBars()` with `BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`, letting the video fill the entire screen.
+- **Return to Portrait on Fullscreen Exit or Back Press**:
+  - Tapping the Fullscreen toggle again or pressing Back while in fullscreen sets `activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT` and restores system status and navigation bars.
+  - Leaving the player screen entirely restores `SCREEN_ORIENTATION_UNSPECIFIED` and system bars.
+- **Zero-Restart Rotation & RAM Preservation**:
+  - Add `android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"` to `.MainActivity` in `AndroidManifest.xml` so rotating between portrait and landscape never recreates the Activity, restarts `ExoPlayer`, or wipes the `EphemeralStreamManager` RAM sliding window.
+- **Clean Fullscreen Viewport**:
+  - Hide the `Share / Move / Rename / Details / Delete` bottom action bar whenever fullscreen or landscape mode is active.
 
 ---
 
-## Verification & Stopping Point
-1. Compile the project using `compile_applet` and verify zero build or lint issues.
-2. **Stop immediately after Phase 1** so you can test video/audio streaming, seeking across chunks, RAM buffer wiping, and link refresh before we proceed to Phase 2.
+## 2. Audio Track & Subtitle Selection (`TRACK_TYPE_AUDIO` & `TRACK_TYPE_TEXT`)
+- **Player Control Bar Buttons**:
+  - Add dedicated **Audio** (audio track icon) and **Subtitles** (CC icon) action buttons to the bottom player control bar with active-track badges.
+- **Audio Track Bottom Sheet**:
+  - Inspects `exoPlayer.currentTracks` for `C.TRACK_TYPE_AUDIO`.
+  - Lists every embedded audio track with a formatted label combining language, track label, codec, and channel layout (e.g., `"Japanese – AAC 2.0"`, `"English – AC3 5.1"`).
+  - Selecting a track applies `TrackSelectionOverride(group.mediaTrackGroup, trackIndex)` on `exoPlayer.trackSelectionParameters` immediately without restarting playback.
+- **Subtitles Bottom Sheet & Side-Loaded `.srt` / `.vtt` Picker**:
+  - Inspects `exoPlayer.currentTracks` for `C.TRACK_TYPE_TEXT` (supporting SRT, VTT, ASS/SSA, PGS, TTML, etc.).
+  - Includes an **"Off"** option (`setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)`).
+  - If the container has no embedded subtitle tracks, displays `"No subtitles in this file"`.
+  - Includes a **"Load subtitle file…"** action using `ActivityResultContracts.OpenDocument` (`application/x-subrip`, `text/vtt`, `text/plain`, `*/*` filtered for `.srt`/`.vtt`).
+  - Reads the external subtitle file directly from the picker `content://` URI via `MediaItem.SubtitleConfiguration` and a delegating `DataSource.Factory` (routing `televault://` chunks through `TelegramChunkDataSource` and `content://` subtitle URIs through `DefaultDataSource`) without copying the file to storage, preserving current playback position and play state.
+- **Readable Subtitle Styling**:
+  - Configure `PlayerView.subtitleView` with `CaptionStyleCompat` using crisp white foreground text, black outline (`EDGE_TYPE_OUTLINE`), transparent background/window, and bottom alignment.
+- **Session Language Memory & Sheet Behavior**:
+  - Remember the user's selected audio and subtitle languages in memory for the current viewing session.
+  - Both bottom sheets work cleanly in portrait and fullscreen landscape, and keep player controls visible while open.
+
+---
+
+## 3. Phase 1 Polish & Verification Checklist
+- **Playback & Seek Bar**: Auto-play starts as soon as chunk 1 is buffered; real-time `0:00` timecode and buffered range bar update every 100ms.
+- **Auto-Hide Controls**: Controls and top bar hide after 3 seconds of active playback, reappear on tap, and stay visible when paused, buffering, scrubbing, or while the Audio/Subtitle sheet is open. Center of the video remains unobstructed in landscape.
+- **Buffering Card**: `"Buffering Chunk X/Y in RAM..."` appears strictly while waiting for data, hides as soon as the first frame renders, and reappears only when seeking to an unbuffered chunk.
+- **Single-Retry Error Handling**: Refresh expired Telegram `file_path` link and retry once per chunk; on second failure, stop immediately and display a clear error card with a **Retry** button (no retry loops).
+- **RAM Wipe Check**: RAM pill drops immediately to `0.0 MB` when leaving the player or when the app goes to the background.

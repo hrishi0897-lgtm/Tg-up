@@ -4,9 +4,15 @@ import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.Typeface
 import android.net.Uri
+import android.provider.OpenableColumns
+import android.util.TypedValue
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -22,35 +28,51 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.ClosedCaptionDisabled
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -74,19 +96,28 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import com.example.data.local.entity.ChunkEntity
 import com.example.data.local.entity.FileEntity
@@ -98,24 +129,87 @@ import com.example.ui.theme.LocalTeleVaultColors
 import com.example.ui.theme.NumericMonoFont
 import kotlinx.coroutines.delay
 import java.io.File
+import java.util.Locale
+
+/**
+ * In-memory session-only preferences for selected audio and subtitle language.
+ * Persists across videos during the current app viewing session without writing to disk.
+ */
+private object SessionMediaTrackPreferences {
+    var preferredAudioLanguage: String? = null
+    var preferredSubtitleLanguage: String? = null
+    var subtitlesDisabled: Boolean = false
+}
+
+/**
+ * Represents a selectable Audio or Subtitle track parsed from ExoPlayer's [Tracks].
+ */
+@OptIn(UnstableApi::class)
+private data class MediaTrackOption(
+    val id: String,
+    val group: Tracks.Group,
+    val trackIndex: Int,
+    val title: String,
+    val details: String?,
+    val languageCode: String?,
+    val isSelected: Boolean,
+    val isSupported: Boolean
+)
+
+/**
+ * Represents a side-loaded `.srt` or `.vtt` subtitle picked via the system document picker.
+ */
+private data class ExternalSubtitleItem(
+    val uri: Uri,
+    val displayName: String,
+    val mimeType: String,
+    val language: String
+)
+
+/**
+ * Helper to toggle forced sensor landscape + immersive system bars on fullscreen enter,
+ * and return to portrait (or unspecified on screen exit) + restore system bars on fullscreen exit.
+ */
+internal fun applyPlayerFullscreenSystemUi(
+    activity: Activity?,
+    fullscreen: Boolean,
+    restoreUnspecifiedOrientation: Boolean = false
+) {
+    if (activity == null) return
+    val window = activity.window ?: return
+    val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+
+    if (fullscreen) {
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        insetsController.systemBarsBehavior =
+            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        insetsController.hide(WindowInsetsCompat.Type.systemBars())
+    } else {
+        insetsController.show(WindowInsetsCompat.Type.systemBars())
+        activity.requestedOrientation = if (restoreUnspecifiedOrientation) {
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+    }
+}
 
 /**
  * Phase 1 Zero-Download Media3 ExoPlayer for Video Streaming.
  *
- * Polished behaviors:
- * 1. Automatic playback as soon as Chunk 1 loads (`playWhenReady = true`, low `bufferForPlaybackMs = 500`),
- *    real-time 100ms timecode & seek bar updates, and visible buffered position bar on the seek bar.
- * 2. Auto-hides player controls and top bar after 3 seconds of active playback; restores on video tap;
- *    keeps controls visible while paused, buffering, scrubbing, or on error.
- * 3. Fullscreen and landscape support with bottom action bar hidden and compact bottom-pinned HUD
- *    that never covers the center of the video.
- * 4. Shows `"Buffering Chunk X/Y in RAM..."` card ONLY when waiting for data (initial load before first frame
- *    renders or when seeking to an uncached chunk), never during background lookahead prefetching.
- * 5. Single-retry error handling (refreshes Telegram link once in `EphemeralStreamManager`, zero ExoPlayer
- *    looping retries via `DefaultLoadErrorHandlingPolicy(0)`), showing a clear error + Retry button on failure.
- * 6. Immediate RAM buffer wipe (`0.0/36 MB RAM`) when leaving the player or backgrounding the app.
+ * Includes:
+ * 1. Forced landscape fullscreen (`SCREEN_ORIENTATION_SENSOR_LANDSCAPE`) with immersive hidden system bars,
+ *    and return to portrait (`SCREEN_ORIENTATION_PORTRAIT`) with system bars restored on exit/back.
+ * 2. Audio Track & Subtitle Selection bottom sheets reading live from `player.currentTracks`
+ *    (`TRACK_TYPE_AUDIO` & `TRACK_TYPE_TEXT`), live switching via `TrackSelectionOverride`,
+ *    readable white-on-black-outline `SubtitleView` styling, session language memory, and
+ *    zero-copy external `.srt`/`.vtt` side-loading via `MediaItem.SubtitleConfiguration`.
+ * 3. Instant auto-play on chunk 1, real-time 100ms timecode & buffered range seek bar,
+ *    3-second auto-hide controls, accurate waiting-for-data buffering card, single-retry link refresh,
+ *    and immediate RAM wipe on exit/background.
  */
-@OptIn(UnstableApi::class)
+@androidx.annotation.OptIn(UnstableApi::class)
+@kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ZeroDownloadExoVideoPlayer(
     context: Context,
@@ -150,7 +244,20 @@ fun ZeroDownloadExoVideoPlayer(
     var playerError by remember { mutableStateOf<String?>(null) }
     var retryNonce by remember { mutableIntStateOf(0) }
     var resumePositionOnRetryMs by remember { mutableLongStateOf(0L) }
+    var resumePlayWhenReadyOnReload by remember { mutableStateOf(true) }
     var interactionTick by remember { mutableIntStateOf(0) }
+
+    // Audio & Subtitle track state
+    var audioTracks by remember(file.id) { mutableStateOf<List<MediaTrackOption>>(emptyList()) }
+    var subtitleTracks by remember(file.id) { mutableStateOf<List<MediaTrackOption>>(emptyList()) }
+    var isSubtitlesOff by remember(file.id) { mutableStateOf(SessionMediaTrackPreferences.subtitlesDisabled) }
+    var externalSubtitles by remember(file.id) { mutableStateOf<List<ExternalSubtitleItem>>(emptyList()) }
+    var pendingSelectLatestExternalSub by remember(file.id) { mutableStateOf(false) }
+    var hasAppliedInitialSessionPrefs by remember(file.id) { mutableStateOf(false) }
+
+    // Bottom sheet visibility
+    var isAudioSheetOpen by remember { mutableStateOf(false) }
+    var isSubtitleSheetOpen by remember { mutableStateOf(false) }
 
     val exoPlayer = remember(file.id, chunks.size, isFullFileDownloaded) {
         val loadControl = DefaultLoadControl.Builder()
@@ -169,49 +276,144 @@ fun ZeroDownloadExoVideoPlayer(
             .build()
             .apply {
                 playWhenReady = true
+                // Apply session-level audio/subtitle preferences initially
+                val paramsBuilder = trackSelectionParameters.buildUpon()
+                SessionMediaTrackPreferences.preferredAudioLanguage?.let {
+                    paramsBuilder.setPreferredAudioLanguage(it)
+                }
+                if (SessionMediaTrackPreferences.subtitlesDisabled) {
+                    paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                } else {
+                    SessionMediaTrackPreferences.preferredSubtitleLanguage?.let {
+                        paramsBuilder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        paramsBuilder.setPreferredTextLanguage(it)
+                    }
+                }
+                trackSelectionParameters = paramsBuilder.build()
             }
     }
 
-    // Bind media source (Zero-Download TelegramChunkDataSource or local file)
-    LaunchedEffect(exoPlayer, file.id, chunks, isFullFileDownloaded, retryNonce) {
+    // Helper to refresh audioTracks & subtitleTracks from exoPlayer.currentTracks
+    val refreshTracksFromPlayer: (Tracks) -> Unit = { currentTracks ->
+        val parsedAudio = parseAudioTracks(currentTracks)
+        val parsedSubtitles = parseSubtitleTracks(currentTracks)
+        audioTracks = parsedAudio
+        subtitleTracks = parsedSubtitles
+        val trackTypeDisabled = exoPlayer.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)
+        val anySubSelected = parsedSubtitles.any { it.isSelected }
+        isSubtitlesOff = trackTypeDisabled || !anySubSelected
+    }
+
+    // External .srt / .vtt document picker (reads directly through content:// URI without copying to disk)
+    val subtitleDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { pickedUri: Uri? ->
+        if (pickedUri != null) {
+            val displayName = resolveDocumentDisplayName(context, pickedUri) ?: "External Subtitle"
+            val ext = displayName.substringAfterLast('.', "").lowercase()
+            val resolverMime = context.contentResolver.getType(pickedUri)?.lowercase().orEmpty()
+            val isVtt = ext == "vtt" || resolverMime.contains("vtt")
+            val isSrt = ext == "srt" || resolverMime.contains("subrip") || resolverMime.contains("srt")
+
+            if (!isVtt && !isSrt && !displayName.endsWith(".srt", true) && !displayName.endsWith(".vtt", true)) {
+                Toast.makeText(context, "Please select a .srt or .vtt subtitle file", Toast.LENGTH_SHORT).show()
+                return@rememberLauncherForActivityResult
+            }
+
+            val subtitleMime = if (isVtt) MimeTypes.TEXT_VTT else MimeTypes.APPLICATION_SUBRIP
+            val newSubItem = ExternalSubtitleItem(
+                uri = pickedUri,
+                displayName = displayName,
+                mimeType = subtitleMime,
+                language = displayName.substringBeforeLast('.')
+            )
+
+            // Preserve current playback position & play state when attaching side-loaded subtitle
+            resumePositionOnRetryMs = exoPlayer.currentPosition.coerceAtLeast(0L)
+            resumePlayWhenReadyOnReload = exoPlayer.playWhenReady
+            SessionMediaTrackPreferences.subtitlesDisabled = false
+            isSubtitlesOff = false
+            pendingSelectLatestExternalSub = true
+            externalSubtitles = externalSubtitles.filterNot { it.uri == pickedUri } + newSubItem
+            interactionTick++
+        }
+    }
+
+    // Bind media source (Zero-Download TelegramChunkDataSource or local file) + side-loaded SubtitleConfigurations
+    LaunchedEffect(exoPlayer, file.id, chunks, isFullFileDownloaded, retryNonce, externalSubtitles) {
         playerError = null
         isBuffering = true
-        if (retryNonce == 0) {
+        if (retryNonce == 0 && externalSubtitles.isEmpty()) {
             hasRenderedFirstFrame = false
+        }
+
+        val subtitleConfigs = externalSubtitles.mapIndexed { idx, sub ->
+            val isLatest = idx == externalSubtitles.lastIndex
+            MediaItem.SubtitleConfiguration.Builder(sub.uri)
+                .setMimeType(sub.mimeType)
+                .setLanguage(sub.language)
+                .setLabel(sub.displayName)
+                .setSelectionFlags(if (isLatest) C.SELECTION_FLAG_DEFAULT else 0)
+                .setRoleFlags(C.ROLE_FLAG_SUBTITLE)
+                .build()
         }
 
         if (isFullFileDownloaded && !localTarget.isNullOrBlank()) {
             val localUri = if (localTarget.startsWith("/")) Uri.fromFile(File(localTarget)) else Uri.parse(localTarget)
-            val itemBuilder = MediaItem.Builder().setUri(localUri)
+            val itemBuilder = MediaItem.Builder()
+                .setUri(localUri)
+                .setSubtitleConfigurations(subtitleConfigs)
             resolveMedia3MimeType(file.mimeType, file.name)?.let { itemBuilder.setMimeType(it) }
-            exoPlayer.setMediaItem(itemBuilder.build())
-            exoPlayer.playWhenReady = true
-            exoPlayer.prepare()
+
+            val mediaSource = DefaultMediaSourceFactory(DefaultDataSource.Factory(context))
+                .createMediaSource(itemBuilder.build())
             if (resumePositionOnRetryMs > 0L) {
-                exoPlayer.seekTo(resumePositionOnRetryMs)
+                exoPlayer.setMediaSource(mediaSource, resumePositionOnRetryMs)
+            } else {
+                exoPlayer.setMediaSource(mediaSource)
             }
-            exoPlayer.play()
+            exoPlayer.playWhenReady = resumePlayWhenReadyOnReload
+            exoPlayer.prepare()
+            if (resumePlayWhenReadyOnReload) {
+                exoPlayer.play()
+            }
         } else if (chunks.isNotEmpty()) {
             val streamUri = Uri.parse("televault://stream/${file.id}/${Uri.encode(file.name)}")
-            val itemBuilder = MediaItem.Builder().setUri(streamUri)
+            val itemBuilder = MediaItem.Builder()
+                .setUri(streamUri)
+                .setSubtitleConfigurations(subtitleConfigs)
             resolveMedia3MimeType(file.mimeType, file.name)?.let { itemBuilder.setMimeType(it) }
 
             val dataSourceFactory = TelegramChunkDataSource.Factory(
                 file = file,
                 chunks = chunks,
-                streamManager = streamManager
+                streamManager = streamManager,
+                context = context
             )
-            // Disable ExoPlayer internal retry loops so EphemeralStreamManager's single retry (with link refresh) is authoritative
-            val mediaSource = ProgressiveMediaSource.Factory(dataSourceFactory)
-                .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount = */ 0))
-                .createMediaSource(itemBuilder.build())
-            exoPlayer.setMediaSource(mediaSource)
-            exoPlayer.playWhenReady = true
-            exoPlayer.prepare()
-            if (resumePositionOnRetryMs > 0L) {
-                exoPlayer.seekTo(resumePositionOnRetryMs)
+            // Use DefaultMediaSourceFactory when side-loaded subtitles are attached so Media3 merges
+            // SubtitleConfigurations automatically; disable internal retry loops so EphemeralStreamManager's
+            // single retry (with Telegram link refresh) is authoritative.
+            val errorPolicy = DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount = */ 0)
+            val mediaSource = if (subtitleConfigs.isNotEmpty()) {
+                DefaultMediaSourceFactory(dataSourceFactory)
+                    .setLoadErrorHandlingPolicy(errorPolicy)
+                    .createMediaSource(itemBuilder.build())
+            } else {
+                ProgressiveMediaSource.Factory(dataSourceFactory)
+                    .setLoadErrorHandlingPolicy(errorPolicy)
+                    .createMediaSource(itemBuilder.build())
             }
-            exoPlayer.play()
+
+            if (resumePositionOnRetryMs > 0L) {
+                exoPlayer.setMediaSource(mediaSource, resumePositionOnRetryMs)
+            } else {
+                exoPlayer.setMediaSource(mediaSource)
+            }
+            exoPlayer.playWhenReady = resumePlayWhenReadyOnReload
+            exoPlayer.prepare()
+            if (resumePlayWhenReadyOnReload) {
+                exoPlayer.play()
+            }
         } else {
             isBuffering = false
             playerError = "Waiting for cloud chunk metadata…"
@@ -233,6 +435,74 @@ fun ZeroDownloadExoVideoPlayer(
                     isPlaying = false
                     seekingUncachedChunkIndex = null
                     onSetOverlayControls(true)
+                }
+            }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                refreshTracksFromPlayer(tracks)
+
+                // If a side-loaded subtitle was just added, immediately select it
+                if (pendingSelectLatestExternalSub) {
+                    val parsedSubs = parseSubtitleTracks(tracks)
+                    val targetSub = parsedSubs.lastOrNull()
+                    if (targetSub != null) {
+                        pendingSelectLatestExternalSub = false
+                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                            .buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                            .setOverrideForType(
+                                TrackSelectionOverride(targetSub.group.mediaTrackGroup, targetSub.trackIndex)
+                            )
+                            .build()
+                        isSubtitlesOff = false
+                        refreshTracksFromPlayer(exoPlayer.currentTracks)
+                    }
+                } else if (!hasAppliedInitialSessionPrefs) {
+                    hasAppliedInitialSessionPrefs = true
+                    var updatedParams = exoPlayer.trackSelectionParameters.buildUpon()
+                    var changed = false
+
+                    val prefAudioLang = SessionMediaTrackPreferences.preferredAudioLanguage
+                    if (!prefAudioLang.isNullOrBlank()) {
+                        val matchingAudio = parseAudioTracks(tracks).firstOrNull {
+                            it.languageCode.equals(prefAudioLang, ignoreCase = true)
+                        }
+                        if (matchingAudio != null) {
+                            updatedParams = updatedParams
+                                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                                .setOverrideForType(
+                                    TrackSelectionOverride(matchingAudio.group.mediaTrackGroup, matchingAudio.trackIndex)
+                                )
+                            changed = true
+                        }
+                    }
+
+                    if (SessionMediaTrackPreferences.subtitlesDisabled) {
+                        updatedParams = updatedParams
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                        changed = true
+                    } else {
+                        val prefSubLang = SessionMediaTrackPreferences.preferredSubtitleLanguage
+                        if (!prefSubLang.isNullOrBlank()) {
+                            val matchingSub = parseSubtitleTracks(tracks).firstOrNull {
+                                it.languageCode.equals(prefSubLang, ignoreCase = true)
+                            }
+                            if (matchingSub != null) {
+                                updatedParams = updatedParams
+                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                    .setOverrideForType(
+                                        TrackSelectionOverride(matchingSub.group.mediaTrackGroup, matchingSub.trackIndex)
+                                    )
+                                changed = true
+                            }
+                        }
+                    }
+
+                    if (changed) {
+                        exoPlayer.trackSelectionParameters = updatedParams.build()
+                        refreshTracksFromPlayer(exoPlayer.currentTracks)
+                    }
                 }
             }
 
@@ -261,6 +531,7 @@ fun ZeroDownloadExoVideoPlayer(
             }
         }
         exoPlayer.addListener(listener)
+        refreshTracksFromPlayer(exoPlayer.currentTracks)
 
         val lifecycleObserver = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP) {
@@ -281,7 +552,11 @@ fun ZeroDownloadExoVideoPlayer(
             exoPlayer.clearMediaItems()
             exoPlayer.release()
             streamManager.wipeAllEphemeralBuffers("Left video player for ${file.name}")
-            (context as? Activity)?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            applyPlayerFullscreenSystemUi(
+                activity = context as? Activity,
+                fullscreen = false,
+                restoreUnspecifiedOrientation = true
+            )
         }
     }
 
@@ -318,10 +593,20 @@ fun ZeroDownloadExoVideoPlayer(
             seekingUncachedChunkIndex != null
         )
 
-    // Keep controls visible while paused, buffering, scrubbing, or on error;
+    val isAnySheetOpen = isAudioSheetOpen || isSubtitleSheetOpen
+
+    // Keep controls visible while paused, buffering, scrubbing, on error, or while a bottom sheet is open;
     // auto-hide controls and top bar after 3 seconds of active playback
-    LaunchedEffect(isPlaying, isWaitingForData, isUserScrubbing, playerError, showOverlayControls, interactionTick) {
-        if (!isPlaying || isWaitingForData || isUserScrubbing || playerError != null) {
+    LaunchedEffect(
+        isPlaying,
+        isWaitingForData,
+        isUserScrubbing,
+        playerError,
+        isAnySheetOpen,
+        showOverlayControls,
+        interactionTick
+    ) {
+        if (!isPlaying || isWaitingForData || isUserScrubbing || playerError != null || isAnySheetOpen) {
             if (!showOverlayControls) {
                 onSetOverlayControls(true)
             }
@@ -370,6 +655,24 @@ fun ZeroDownloadExoVideoPlayer(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
+                    // Configure Media3 SubtitleView with readable defaults:
+                    // White text, crisp black outline, transparent background, bottom aligned
+                    subtitleView?.apply {
+                        setStyle(
+                            CaptionStyleCompat(
+                                android.graphics.Color.WHITE,
+                                android.graphics.Color.TRANSPARENT,
+                                android.graphics.Color.TRANSPARENT,
+                                CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                                android.graphics.Color.BLACK,
+                                Typeface.DEFAULT_BOLD
+                            )
+                        )
+                        setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                        setBottomPaddingFraction(0.08f)
+                        setApplyEmbeddedStyles(true)
+                        setApplyEmbeddedFontSizes(true)
+                    }
                     player = exoPlayer
                     setOnClickListener {
                         interactionTick++
@@ -459,6 +762,7 @@ fun ZeroDownloadExoVideoPlayer(
                 FilledTonalButton(
                     onClick = {
                         resumePositionOnRetryMs = currentPositionMs
+                        resumePlayWhenReadyOnReload = true
                         playerError = null
                         isBuffering = true
                         interactionTick++
@@ -486,7 +790,7 @@ fun ZeroDownloadExoVideoPlayer(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .padding(
-                    bottom = if (isLandscapeOrFullscreen) 14.dp else 76.dp,
+                    bottom = if (isLandscapeOrFullscreen) 12.dp else 76.dp,
                     start = if (isLandscapeOrFullscreen) 24.dp else 14.dp,
                     end = if (isLandscapeOrFullscreen) 24.dp else 14.dp
                 )
@@ -569,117 +873,691 @@ fun ZeroDownloadExoVideoPlayer(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Compact Transport Buttons Row: Mute | -10s | Play/Pause | +10s | Fullscreen
+                // Compact Transport & Track Selection Row:
+                // Mute | Audio Tracks | -10s | Play/Pause | +10s | Subtitles (CC) | Fullscreen
+                val hasActiveSubtitles = !isSubtitlesOff && subtitleTracks.any { it.isSelected }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(
-                        onClick = {
-                            isMuted = !isMuted
-                            exoPlayer.volume = if (isMuted) 0f else 1f
-                            interactionTick++
-                        },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .testTag("preview_video_mute_button")
+                    // Left group: Mute + Audio Track Selector
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
-                            contentDescription = if (isMuted) "Unmute" else "Mute",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            val target = (exoPlayer.currentPosition - 10_000L).coerceAtLeast(0L)
-                            performSeekToMs(target)
-                        },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .testTag("preview_video_rewind_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Replay10,
-                            contentDescription = "Rewind 10 seconds",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(CircleShape)
-                            .background(colors.teal)
-                            .clickable {
+                        IconButton(
+                            onClick = {
+                                isMuted = !isMuted
+                                exoPlayer.volume = if (isMuted) 0f else 1f
                                 interactionTick++
-                                if (exoPlayer.isPlaying) {
-                                    exoPlayer.pause()
-                                } else {
-                                    if (exoPlayer.playbackState == Player.STATE_ENDED) {
-                                        performSeekToMs(0L)
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag("preview_video_mute_button")
+                        ) {
+                            Icon(
+                                imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                                contentDescription = if (isMuted) "Unmute" else "Mute",
+                                tint = Color.White,
+                                modifier = Modifier.size(21.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                interactionTick++
+                                refreshTracksFromPlayer(exoPlayer.currentTracks)
+                                isAudioSheetOpen = true
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag("preview_video_audio_tracks_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GraphicEq,
+                                contentDescription = "Audio Tracks",
+                                tint = if (audioTracks.size > 1) colors.teal else Color.White,
+                                modifier = Modifier.size(21.dp)
+                            )
+                        }
+                    }
+
+                    // Center transport group: -10s | Play/Pause | +10s
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        IconButton(
+                            onClick = {
+                                val target = (exoPlayer.currentPosition - 10_000L).coerceAtLeast(0L)
+                                performSeekToMs(target)
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag("preview_video_rewind_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Replay10,
+                                contentDescription = "Rewind 10 seconds",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .size(46.dp)
+                                .clip(CircleShape)
+                                .background(colors.teal)
+                                .clickable {
+                                    interactionTick++
+                                    if (exoPlayer.isPlaying) {
+                                        exoPlayer.pause()
+                                    } else {
+                                        if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                                            performSeekToMs(0L)
+                                        }
+                                        exoPlayer.play()
                                     }
-                                    exoPlayer.play()
                                 }
-                            }
-                            .testTag("preview_video_play_pause_button"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = Color.White,
-                            modifier = Modifier.size(26.dp)
-                        )
+                                .testTag("preview_video_play_pause_button"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                val maxDur = if (durationMs > 0L) durationMs else Long.MAX_VALUE
+                                val target = (exoPlayer.currentPosition + 10_000L).coerceAtMost(maxDur)
+                                performSeekToMs(target)
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag("preview_video_ffwd_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Forward10,
+                                contentDescription = "Fast-forward 10 seconds",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
 
-                    IconButton(
-                        onClick = {
-                            val maxDur = if (durationMs > 0L) durationMs else Long.MAX_VALUE
-                            val target = (exoPlayer.currentPosition + 10_000L).coerceAtMost(maxDur)
-                            performSeekToMs(target)
-                        },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .testTag("preview_video_ffwd_button")
+                    // Right group: Subtitles (CC) + Fullscreen
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Forward10,
-                            contentDescription = "Fast-forward 10 seconds",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                        IconButton(
+                            onClick = {
+                                interactionTick++
+                                refreshTracksFromPlayer(exoPlayer.currentTracks)
+                                isSubtitleSheetOpen = true
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag("preview_video_subtitles_button")
+                        ) {
+                            Icon(
+                                imageVector = if (hasActiveSubtitles) {
+                                    Icons.Default.ClosedCaption
+                                } else {
+                                    Icons.Default.Subtitles
+                                },
+                                contentDescription = "Subtitles",
+                                tint = if (hasActiveSubtitles) colors.teal else Color.White,
+                                modifier = Modifier.size(21.dp)
+                            )
+                        }
 
-                    IconButton(
-                        onClick = {
-                            interactionTick++
-                            val targetFullscreen = !isLandscapeOrFullscreen
-                            onFullscreenChange(targetFullscreen)
-                            (context as? Activity)?.requestedOrientation = if (targetFullscreen) {
-                                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                            } else {
-                                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                            }
-                        },
-                        modifier = Modifier
-                            .size(40.dp)
-                            .testTag("preview_video_fullscreen_button")
-                    ) {
-                        Icon(
-                            imageVector = if (isLandscapeOrFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                            contentDescription = if (isLandscapeOrFullscreen) "Exit Fullscreen" else "Fullscreen",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        IconButton(
+                            onClick = {
+                                interactionTick++
+                                val targetFullscreen = !isLandscapeOrFullscreen
+                                onFullscreenChange(targetFullscreen)
+                                applyPlayerFullscreenSystemUi(
+                                    activity = context as? Activity,
+                                    fullscreen = targetFullscreen,
+                                    restoreUnspecifiedOrientation = false
+                                )
+                            },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .testTag("preview_video_fullscreen_button")
+                        ) {
+                            Icon(
+                                imageVector = if (isLandscapeOrFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                contentDescription = if (isLandscapeOrFullscreen) "Exit Fullscreen" else "Fullscreen",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+
+    // Audio Track Selection Bottom Sheet (works in both portrait and fullscreen landscape)
+    if (isAudioSheetOpen) {
+        val audioSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = {
+                isAudioSheetOpen = false
+                interactionTick++
+            },
+            sheetState = audioSheetState,
+            containerColor = colors.surface,
+            contentColor = colors.text,
+            modifier = Modifier.widthIn(max = 540.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 20.dp)
+                    .verticalScroll(rememberScrollState())
+                    .testTag("audio_tracks_bottom_sheet")
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = null,
+                        tint = colors.teal,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Audio Tracks",
+                            color = colors.text,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Switch embedded audio streams without restarting playback",
+                            color = colors.textDim,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = colors.line)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (audioTracks.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(colors.surfaceHi)
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "No embedded audio tracks in this file",
+                            color = colors.textDim,
+                            fontSize = 13.sp
+                        )
+                    }
+                } else {
+                    audioTracks.forEachIndexed { index, track ->
+                        TrackSelectionRow(
+                            title = track.title,
+                            subtitle = track.details,
+                            isSelected = track.isSelected,
+                            isEnabled = track.isSupported,
+                            onClick = {
+                                SessionMediaTrackPreferences.preferredAudioLanguage = track.languageCode
+                                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                                    .buildUpon()
+                                    .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+                                    .setOverrideForType(
+                                        TrackSelectionOverride(track.group.mediaTrackGroup, track.trackIndex)
+                                    )
+                                    .build()
+                                refreshTracksFromPlayer(exoPlayer.currentTracks)
+                                isAudioSheetOpen = false
+                                interactionTick++
+                            },
+                            testTag = "audio_track_option_$index"
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+                }
+            }
+        }
+    }
+
+    // Subtitle Track Selection Bottom Sheet (works in both portrait and fullscreen landscape)
+    if (isSubtitleSheetOpen) {
+        val subtitleSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = {
+                isSubtitleSheetOpen = false
+                interactionTick++
+            },
+            sheetState = subtitleSheetState,
+            containerColor = colors.surface,
+            contentColor = colors.text,
+            modifier = Modifier.widthIn(max = 540.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 20.dp)
+                    .verticalScroll(rememberScrollState())
+                    .testTag("subtitle_tracks_bottom_sheet")
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ClosedCaption,
+                        contentDescription = null,
+                        tint = colors.teal,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Subtitles & Captions",
+                            color = colors.text,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Embedded tracks (SRT, ASS/SSA, VTT, PGS) or side-loaded files",
+                            color = colors.textDim,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = colors.line)
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // "Off" option
+                TrackSelectionRow(
+                    title = "Off",
+                    subtitle = "Disable subtitle display",
+                    isSelected = isSubtitlesOff,
+                    isEnabled = true,
+                    onClick = {
+                        SessionMediaTrackPreferences.subtitlesDisabled = true
+                        isSubtitlesOff = true
+                        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                            .buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                            .build()
+                        refreshTracksFromPlayer(exoPlayer.currentTracks)
+                        isSubtitleSheetOpen = false
+                        interactionTick++
+                    },
+                    testTag = "subtitle_track_option_off"
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (subtitleTracks.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(colors.surfaceHi)
+                            .padding(16.dp)
+                            .testTag("no_subtitles_message"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ClosedCaptionDisabled,
+                                contentDescription = null,
+                                tint = colors.textDim,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "No subtitles in this file",
+                                color = colors.textDim,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                } else {
+                    subtitleTracks.forEachIndexed { index, track ->
+                        TrackSelectionRow(
+                            title = track.title,
+                            subtitle = track.details,
+                            isSelected = !isSubtitlesOff && track.isSelected,
+                            isEnabled = track.isSupported,
+                            onClick = {
+                                SessionMediaTrackPreferences.subtitlesDisabled = false
+                                SessionMediaTrackPreferences.preferredSubtitleLanguage = track.languageCode
+                                isSubtitlesOff = false
+                                exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters
+                                    .buildUpon()
+                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                    .setOverrideForType(
+                                        TrackSelectionOverride(track.group.mediaTrackGroup, track.trackIndex)
+                                    )
+                                    .build()
+                                refreshTracksFromPlayer(exoPlayer.currentTracks)
+                                isSubtitleSheetOpen = false
+                                interactionTick++
+                            },
+                            testTag = "subtitle_track_option_$index"
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider(color = colors.line)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // "Load subtitle file…" button (.srt or .vtt via system document picker)
+                OutlinedButton(
+                    onClick = {
+                        isSubtitleSheetOpen = false
+                        interactionTick++
+                        subtitleDocumentLauncher.launch(
+                            arrayOf(
+                                "application/x-subrip",
+                                "text/vtt",
+                                "text/plain",
+                                "application/octet-stream",
+                                "*/*"
+                            )
+                        )
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("load_external_subtitle_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FileOpen,
+                        contentDescription = null,
+                        tint = colors.teal,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Load subtitle file… (.srt / .vtt)",
+                        color = colors.text,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrackSelectionRow(
+    title: String,
+    subtitle: String?,
+    isSelected: Boolean,
+    isEnabled: Boolean,
+    onClick: () -> Unit,
+    testTag: String
+) {
+    val colors = LocalTeleVaultColors.current
+    val bgColor = if (isSelected) colors.teal.copy(alpha = 0.14f) else colors.surfaceHi
+    val borderColor = if (isSelected) colors.teal.copy(alpha = 0.55f) else Color.Transparent
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(bgColor)
+            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .clickable(enabled = isEnabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .testTag(testTag)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = if (isEnabled) colors.text else colors.textDim.copy(alpha = 0.5f),
+                fontSize = 14.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    color = colors.textDim,
+                    fontSize = 11.sp,
+                    fontFamily = NumericMonoFont,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        if (isSelected) {
+            Spacer(modifier = Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(colors.teal),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "Selected",
+                    tint = Color.White,
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Parses all `TRACK_TYPE_AUDIO` tracks from [Tracks], formatting human-readable labels like
+ * `"Japanese – AAC 2.0"` or `"English – AC3 5.1"`.
+ */
+@OptIn(UnstableApi::class)
+private fun parseAudioTracks(tracks: Tracks): List<MediaTrackOption> {
+    val result = mutableListOf<MediaTrackOption>()
+    var counter = 1
+    for (group in tracks.groups) {
+        if (group.type != C.TRACK_TYPE_AUDIO) continue
+        val mediaGroup = group.mediaTrackGroup
+        for (i in 0 until mediaGroup.length) {
+            val format = mediaGroup.getFormat(i)
+            val langDisplay = formatLanguageDisplay(format.language)
+            val labelText = format.label?.takeIf { it.isNotBlank() && !it.equals(langDisplay, ignoreCase = true) }
+            val primaryName = when {
+                langDisplay != null && labelText != null -> "$langDisplay ($labelText)"
+                langDisplay != null -> langDisplay
+                labelText != null -> labelText
+                else -> "Audio Track $counter"
+            }
+
+            val codecName = formatAudioCodecName(format)
+            val channelLayout = formatChannelLayout(format.channelCount)
+            val codecAndChannels = listOfNotNull(codecName, channelLayout).joinToString(" ")
+            val fullTitle = if (codecAndChannels.isNotBlank()) {
+                "$primaryName – $codecAndChannels"
+            } else {
+                primaryName
+            }
+
+            val extraParts = mutableListOf<String>()
+            if (format.sampleRate != Format.NO_VALUE && format.sampleRate > 0) {
+                extraParts.add("${format.sampleRate / 1000.0} kHz")
+            }
+            if (format.bitrate != Format.NO_VALUE && format.bitrate > 0) {
+                extraParts.add("${format.bitrate / 1000} kbps")
+            }
+            if (!group.isTrackSupported(i)) {
+                extraParts.add("Unsupported codec")
+            }
+
+            result.add(
+                MediaTrackOption(
+                    id = "${mediaGroup.id}_$i",
+                    group = group,
+                    trackIndex = i,
+                    title = fullTitle,
+                    details = extraParts.joinToString(" • ").ifBlank { null },
+                    languageCode = format.language,
+                    isSelected = group.isTrackSelected(i),
+                    isSupported = group.isTrackSupported(i)
+                )
+            )
+            counter++
+        }
+    }
+    return result
+}
+
+/**
+ * Parses all `TRACK_TYPE_TEXT` subtitle tracks from [Tracks], supporting embedded SRT, ASS/SSA,
+ * VTT, PGS, TTML, and side-loaded `.srt`/`.vtt` tracks.
+ */
+@OptIn(UnstableApi::class)
+private fun parseSubtitleTracks(tracks: Tracks): List<MediaTrackOption> {
+    val result = mutableListOf<MediaTrackOption>()
+    var counter = 1
+    for (group in tracks.groups) {
+        if (group.type != C.TRACK_TYPE_TEXT) continue
+        val mediaGroup = group.mediaTrackGroup
+        for (i in 0 until mediaGroup.length) {
+            val format = mediaGroup.getFormat(i)
+            val langDisplay = formatLanguageDisplay(format.language)
+            val labelText = format.label?.takeIf { it.isNotBlank() && !it.equals(langDisplay, ignoreCase = true) }
+            val primaryName = when {
+                langDisplay != null && labelText != null -> "$langDisplay – $labelText"
+                labelText != null -> labelText
+                langDisplay != null -> langDisplay
+                else -> "Subtitle Track $counter"
+            }
+
+            val subFormatBadge = formatSubtitleCodecBadge(format.sampleMimeType ?: format.codecs)
+            val flagsList = mutableListOf<String>()
+            if (subFormatBadge != null) flagsList.add(subFormatBadge)
+            if ((format.selectionFlags and C.SELECTION_FLAG_FORCED) != 0) flagsList.add("Forced")
+            if ((format.selectionFlags and C.SELECTION_FLAG_DEFAULT) != 0) flagsList.add("Default")
+            if ((format.roleFlags and C.ROLE_FLAG_DESCRIBES_MUSIC_AND_SOUND) != 0) flagsList.add("SDH")
+
+            result.add(
+                MediaTrackOption(
+                    id = "${mediaGroup.id}_$i",
+                    group = group,
+                    trackIndex = i,
+                    title = primaryName,
+                    details = flagsList.joinToString(" • ").ifBlank { null },
+                    languageCode = format.language,
+                    isSelected = group.isTrackSelected(i),
+                    isSupported = group.isTrackSupported(i)
+                )
+            )
+            counter++
+        }
+    }
+    return result
+}
+
+private fun formatLanguageDisplay(langCode: String?): String? {
+    val clean = langCode?.trim()?.takeIf { it.isNotEmpty() && !it.equals("und", ignoreCase = true) } ?: return null
+    val locale = Locale.forLanguageTag(clean.replace('_', '-'))
+    val display = locale.getDisplayLanguage(Locale.ENGLISH)
+    return if (display.isNotBlank() && !display.equals(clean, ignoreCase = true)) {
+        display.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ENGLISH) else it.toString() }
+    } else {
+        clean.uppercase(Locale.ENGLISH)
+    }
+}
+
+@OptIn(UnstableApi::class)
+private fun formatAudioCodecName(format: Format): String? {
+    val mime = format.sampleMimeType?.lowercase().orEmpty()
+    val codecs = format.codecs?.lowercase().orEmpty()
+    return when {
+        mime.contains("eac3-joc") || codecs.contains("ec+3") -> "Dolby Atmos"
+        mime.contains("eac3") || codecs.startsWith("ec-3") -> "E-AC3"
+        mime.contains("ac3") || codecs.startsWith("ac-3") -> "AC3"
+        mime.contains("truehd") -> "TrueHD"
+        mime.contains("vnd.dts.hd") -> "DTS-HD"
+        mime.contains("vnd.dts") -> "DTS"
+        mime.contains("mp4a") || mime.contains("aac") || codecs.startsWith("mp4a") -> "AAC"
+        mime.contains("opus") || codecs.contains("opus") -> "Opus"
+        mime.contains("vorbis") || codecs.contains("vorbis") -> "Vorbis"
+        mime.contains("flac") -> "FLAC"
+        mime.contains("mpeg") || mime.contains("mp3") -> "MP3"
+        mime.contains("raw") || mime.contains("pcm") -> "PCM"
+        else -> null
+    }
+}
+
+@OptIn(UnstableApi::class)
+private fun formatChannelLayout(channelCount: Int): String? {
+    if (channelCount == Format.NO_VALUE || channelCount <= 0) return null
+    return when (channelCount) {
+        1 -> "1.0"
+        2 -> "2.0"
+        6 -> "5.1"
+        8 -> "7.1"
+        else -> "${channelCount}ch"
+    }
+}
+
+private fun formatSubtitleCodecBadge(mimeOrCodec: String?): String? {
+    val lower = mimeOrCodec?.lowercase() ?: return null
+    return when {
+        lower.contains("subrip") || lower.contains("srt") -> "SRT"
+        lower.contains("vtt") -> "VTT"
+        lower.contains("ssa") || lower.contains("ass") -> "ASS/SSA"
+        lower.contains("pgs") -> "PGS"
+        lower.contains("ttml") -> "TTML"
+        lower.contains("tx3g") || lower.contains("mp4vtt") -> "TX3G"
+        lower.contains("dvbsubs") -> "DVB"
+        else -> null
+    }
+}
+
+private fun resolveDocumentDisplayName(context: Context, uri: Uri): String? {
+    return try {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0) cursor.getString(idx) else null
+            } else null
+        } ?: uri.lastPathSegment?.substringAfterLast('/')
+    } catch (_: Exception) {
+        uri.lastPathSegment?.substringAfterLast('/')
     }
 }
 
@@ -758,7 +1636,8 @@ fun ZeroDownloadExoAudioPlayerCard(
             val dataSourceFactory = TelegramChunkDataSource.Factory(
                 file = file,
                 chunks = chunks,
-                streamManager = streamManager
+                streamManager = streamManager,
+                context = context
             )
             val mediaSource = ProgressiveMediaSource.Factory(dataSourceFactory)
                 .setLoadErrorHandlingPolicy(DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount = */ 0))

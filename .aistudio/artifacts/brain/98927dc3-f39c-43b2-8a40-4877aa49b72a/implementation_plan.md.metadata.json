@@ -1,6 +1,6 @@
 {
-  "summary":  "Revised phased implementation plan for the Universal Zero-Download File & Media Viewer. Scopes immediate implementation to Phase 1 only: EphemeralStreamManager (20–50 MB RAM sliding window with automatic zero-fill wipe on exit, background, and crash recovery), expiring Telegram file link refresh, and Media3 ExoPlayer with a custom chunk-based TelegramChunkDataSource for video and audio streaming with seek support and basic playback controls.",
-  "updatedAt":  "2026-10-23T11:29:14.682206097Z",
+  "summary":  "Phase 1 Polish, Immersive Landscape Fullscreen Orientation, and Audio/Subtitle Track Switcher with Side-Loaded .srt/.vtt Support for the Zero-Download Media3 Video Player.",
+  "updatedAt":  "2026-10-23T13:00:45.105733688Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
