@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan to open the File Details screen on file tap (with a center Play button for video/audio and 0.0 MB RAM until Play is pressed) and reduce all typography/font sizes and line heights by 2sp across the entire app.",
-  "updatedAt":  "2026-10-23T13:47:52.687148394Z",
+  "summary":  "Implementation plan for hiding the bottom action bar whenever the streaming player is active (in both portrait and landscape), restoring it when returning to the File Details screen, and anchoring portrait player controls to the bottom of the screen with proper system navigation bar padding.",
+  "updatedAt":  "2026-10-23T15:03:34.397509480Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

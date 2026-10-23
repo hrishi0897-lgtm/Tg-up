@@ -1,43 +1,76 @@
-# File Details First Flow & Global -2sp Typography Plan
+# Streaming Player Bottom Bar & Portrait Controls Layout Fix
 
-This update changes how files open from lists/grids so tapping any file opens the **File Details Screen** first (keeping RAM at `0.0 MB` until the user presses the center **Play** button on video/audio files), and reduces all font sizes and line heights across the entire app by `2.sp`.
+This update hides the file action bar (**Share / Move / Rename / Details / Delete**) whenever the streaming media player is active (`isStreamingMediaActive == true`) in both portrait and landscape modes, and anchors the portrait player controls cleanly to the bottom of the screen with system navigation bar inset padding. All streaming, buffering, fullscreen, audio track, and subtitle logic remain untouched.
 
----
+## User Review & Critical Decisions
 
-## 1. Tap a File → Details Screen First (Zero Buffering Until Play is Pressed)
-- **Unified Tap Behavior (`TeleVaultViewModel.onFileItemClick`)**:
-  - Tapping any file in a list or grid always navigates to the File Details screen (`AppScreen.PREVIEW` / `FilePreviewScreen`) instead of auto-starting the media player or opening a separate bottom sheet first.
-  - Pass the current folder name (resolved from `allFolders` / `currentFolderId`) so the Details screen displays the file's folder alongside its other metadata.
-- **Details Screen Layout & Metadata (`FilePreviewScreen.kt`)**:
-  - Shows the **RAM pill** in the top bar (staying at `0.0/36 MB RAM` while on the Details screen).
-  - Displays full file details:
-    - **File Name**
-    - **Type Icon or Thumbnail** in the preview area
-    - **Size** & **Upload Date**
-    - **Folder Name** (e.g., `Root Vault` or folder name)
-    - **Encryption Status** (`AES-256-GCM Encrypted` with key fingerprint or `Standard Cloud Storage`)
-    - **Number of Chunks** (`X chunks`)
-    - **Existing Actions Bar**: `Share`, `Move`, `Rename`, `Details`, `Delete`.
-- **Video & Audio Center Play Button & Deferred Streaming**:
-  - For video and audio files, `isStreamingMediaActive` starts as `false` when the Details screen opens.
-  - While `isStreamingMediaActive == false`, `ZeroDownloadExoVideoPlayer` and `ZeroDownloadExoAudioPlayerCard` are **not** instantiated—zero network requests, chunk fetches, or decryptions occur, and the RAM pill stays strictly at `0.0 MB`.
-  - The center of the preview area displays the video thumbnail or audio artwork card with a **large Play button** (`68.dp` circular button) in the center.
-  - For non-video/non-audio file types (images, PDFs, text/code, other files), the existing preview behavior is preserved alongside the metadata details.
-- **Play & Two-Stage Back Navigation**:
-  - Pressing the center **Play** button transitions `isStreamingMediaActive` to `true`, launching the streaming player and starting playback automatically as soon as Chunk 1 is loaded in RAM.
-  - Pressing **Back** (system back or top-bar back button) while in the player (`isStreamingMediaActive == true`):
-    - If in fullscreen/landscape, exits fullscreen to portrait first.
-    - Otherwise closes the streaming player, immediately wipes the RAM buffer back to `0.0 MB`, and returns to the **Details screen** (`isStreamingMediaActive = false`).
-  - Pressing **Back** from the **Details screen** (`isStreamingMediaActive == false`) returns to the file list.
-  - Fullscreen orientation (`SCREEN_ORIENTATION_SENSOR_LANDSCAPE` / `SCREEN_ORIENTATION_PORTRAIT`), immersive mode, audio track switching, and subtitle selection (including `.srt`/`.vtt` side-loading) remain unchanged inside the player.
+> [!IMPORTANT]
+> - **Zero Streaming Logic Changes**: `EphemeralStreamManager`, `TelegramChunkDataSource`, fullscreen orientation switching, and audio/subtitle track selection remain completely unchanged.
+> - **Action Bar Visibility**: The bottom action bar (`Share / Move / Rename / Details / Delete`) is now shown **only** when `isStreamingMediaActive == false` (on the File Details screen and non-streaming previews) and is completely hidden during active video or audio streaming in both portrait and landscape.
+> - **Bottom-Anchored Portrait Controls**: Removing the bottom action bar during playback frees the bottom edge of the screen. The portrait player control card now sits directly at the bottom of the screen using `.navigationBarsPadding()` plus a clean `12.dp` bottom margin so no transport or track buttons are ever clipped by the system navigation bar.
 
 ---
 
-## 2. Reduce Text Size & Line Height by `2.sp` Across the Entire App
-- **Central Theme Typography (`Type.kt`)**:
-  - Lower `fontSize` by `2.sp` and `lineHeight` by `2.sp` for every style in `Typography` (`displayLarge`, `displayMedium`, `headlineLarge`, `headlineMedium`, `titleLarge`, `titleMedium`, `bodyLarge`, `bodyMedium`, `bodySmall`, `labelLarge`, `labelSmall`) and all signature styles (`WordmarkTextStyle`, `EmptyHeadlineStyle`, `MonoStatValueLarge`, `MonoStatValueMedium`, `MonoStatValueSmall`).
-- **Component & Screen Hardcoded `fontSize` / `lineHeight` Values**:
-  - Reduce every hardcoded `fontSize = X.sp` and `lineHeight = Y.sp` by `2.sp` across `MainActivity.kt` and all screens, dialogs, bottom sheets, top bars, the RAM pill, and player controls in `app/src/main/java/com/example/ui/screens/` (including `SubtitleView` default caption text size).
-- **Preserve Touch Targets & Iconography**:
-  - Keep all icon sizes, button dimensions, touch targets (`>= 48.dp`), and the large center Play button unchanged.
-  - Verify no text truncation or overlap occurs in portrait or landscape.
+## 1. Overview & Core Concept
+
+- **What It Does**: Eliminates the overlapping/stacked bottom action bar during media playback so the player canvas utilizes the full height below the top bar, while positioning the player controls cleanly at the bottom edge in portrait mode.
+- **Key Value**: Prevents cramped vertical space and clipped bottom controls in portrait playback while keeping all file management actions accessible on the File Details screen before and after playback.
+
+---
+
+## 2. User Experience & Visual Design
+
+- **Key User Flows**:
+  1. **File Details Screen (`isStreamingMediaActive == false`)**: The bottom action bar (**Share**, **Move**, **Rename**, **Details**, **Delete**) is visible at the bottom of the screen with `navigationBarsPadding()`.
+  2. **Active Streaming Player (`isStreamingMediaActive == true`)**:
+     - Tapping the center **Play** button opens the player and immediately hides the bottom action bar in both portrait and landscape.
+     - In portrait mode, the player controls card (seek bar, current/total time, RAM badge, volume mute, audio tracks, `-10s`, Play/Pause, `+10s`, subtitles, fullscreen) sits at the bottom of the screen with `.navigationBarsPadding()` and `12.dp` bottom spacing so all buttons are fully visible and unobstructed.
+  3. **Closing the Player (Back to Details)**:
+     - Pressing **Back** from the player sets `isStreamingMediaActive = false`, wipes the RAM buffer to `0.0 MB`, and immediately restores the bottom action bar on the Details screen.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+- **Decision 1: Gate Bottom Action Bar on `!isStreamingMediaActive`**
+  - *Chosen Approach*: Update the bottom bar `AnimatedVisibility` condition in the preview screen to `visible = !isStreamingMediaActive && showControls`.
+  - *Why*: Ensures the Share / Move / Rename / Details / Delete bar is never rendered while video or audio streaming is active (regardless of portrait or landscape orientation), and automatically reappears as soon as the player closes.
+- **Decision 2: Replace Portrait `76.dp` Offset with `navigationBarsPadding()` + `12.dp` Bottom Padding**
+  - *Chosen Approach*: Previously, the video player controls used `bottom = 76.dp` in portrait to float above the bottom action bar. With the action bar hidden during playback, the controls overlay now applies `.navigationBarsPadding()` and `bottom = 12.dp`.
+  - *Why*: Anchors the player controls to the true bottom of the screen while respecting gesture/3-button system navigation insets so buttons are never cut off.
+
+---
+
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                             FilePreviewScreen                              │
+│                                                                            │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ Top Bar Overlay (Back, Filename, Size, RAM Pill, Info)               │  │
+│  │ • Visible on Details screen; auto-hides after 3s during playback     │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                            │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ Full-Height Content Area                                             │  │
+│  │                                                                      │  │
+│  │  isStreamingMediaActive == false:                                    │  │
+│  │   └── MediaFileDetailsOverview (Metadata + Center 68.dp Play Button) │  │
+│  │                                                                      │  │
+│  │  isStreamingMediaActive == true:                                     │  │
+│  │   └── ZeroDownloadExoVideoPlayer / ZeroDownloadExoAudioPlayerCard    │  │
+│  │        └── Bottom-Pinned Controls Overlay                            │  │
+│  │             • .align(Alignment.BottomCenter)                         │  │
+│  │             • .navigationBarsPadding()                               │  │
+│  │             • .padding(bottom = 12.dp, start/end = 14.dp / 24.dp)    │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                            │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ Bottom Action Bar (Share / Move / Rename / Details / Delete)         │  │
+│  │ • visible = !isStreamingMediaActive && showControls                  │  │
+│  │ • Hidden in both portrait & landscape when player is active          │  │
+│  │ • Restored automatically when closing player back to Details screen  │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────────┘
+```

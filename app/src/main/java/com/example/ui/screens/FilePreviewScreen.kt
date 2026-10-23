@@ -223,7 +223,6 @@ fun FilePreviewScreen(
     // Nothing is fetched, buffered, or decrypted until the user presses the center Play button.
     var isStreamingMediaActive by remember(file.id) { mutableStateOf(false) }
     var isVideoFullscreen by remember(file.id) { mutableStateOf(false) }
-    val isVideoPlayingInLandscapeOrFullscreen = isVideo && isStreamingMediaActive && (isLandscape || isVideoFullscreen)
 
     // Ensure RAM is strictly at 0.0 MB whenever on the Details screen (before Play is pressed or after returning from Player)
     LaunchedEffect(isStreamingMediaActive) {
@@ -691,9 +690,9 @@ fun FilePreviewScreen(
             }
         }
 
-        // Bottom Controls & Action Bar (hidden in landscape and fullscreen mode when video player is active)
+        // Bottom Controls & Action Bar (hidden in both portrait and landscape when streaming player is active)
         AnimatedVisibility(
-            visible = (showControls || !isStreamingMediaActive) && !isVideoPlayingInLandscapeOrFullscreen,
+            visible = !isStreamingMediaActive && showControls,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)

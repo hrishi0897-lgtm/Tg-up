@@ -789,8 +789,9 @@ fun ZeroDownloadExoVideoPlayer(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(
-                    bottom = if (isLandscapeOrFullscreen) 12.dp else 76.dp,
+                    bottom = 12.dp,
                     start = if (isLandscapeOrFullscreen) 24.dp else 14.dp,
                     end = if (isLandscapeOrFullscreen) 24.dp else 14.dp
                 )
@@ -1760,6 +1761,7 @@ fun ZeroDownloadExoAudioPlayerCard(
         colors = CardDefaults.cardColors(containerColor = colors.surface),
         modifier = Modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
             .padding(horizontal = 24.dp)
             .border(1.dp, colors.line, RoundedCornerShape(24.dp))
             .testTag("zero_download_audio_player")
