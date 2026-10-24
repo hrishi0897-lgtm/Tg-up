@@ -152,30 +152,6 @@ fun FilePreviewScreen(
     val bufferStats by streamManager.bufferStats.collectAsState()
     var fileChunks by remember(file.id) { mutableStateOf<List<ChunkEntity>>(emptyList()) }
 
-    // Load ordered chunk metadata rows from local Room DB (zero network / zero RAM allocation)
-    LaunchedEffect(file.id) {
-        streamManager.wipeAllEphemeralBuffers("Opened File Details screen for ${file.name}")
-        fileChunks = streamManager.getOrderedChunks(file.id)
-    }
-
-    // Strict lifecycle RAM wipe on viewer exit and app backgrounding (ON_STOP)
-    DisposableEffect(file.id, lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
-                val activity = context as? Activity
-                if (activity?.isChangingConfigurations != true) {
-                    streamManager.wipeAllEphemeralBuffers("App backgrounded (ON_STOP)")
-                }
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            applyPlayerFullscreenSystemUi(context as? Activity, fullscreen = false, restoreUnspecifiedOrientation = true)
-            streamManager.wipeAllEphemeralBuffers("Exited FilePreviewScreen for ${file.name}")
-        }
-    }
-
     val isImage = remember(file.mimeType) { ThumbnailUtil.isImage(file.mimeType) }
     val isVideo = remember(file.mimeType, file.name) {
         ThumbnailUtil.isVideo(file.mimeType) ||
@@ -197,6 +173,35 @@ fun FilePreviewScreen(
             ext in setOf("txt", "md", "json", "csv", "log", "xml", "yml", "yaml", "kt", "java", "py", "js", "ts", "html", "css", "sh", "sql")
     }
 
+    // Load ordered chunk metadata rows from local Room DB (zero media bytes downloaded / 0.0 MB RAM allocation),
+    // and pre-resolve lightweight getFile URL strings so tapping Play starts streaming without RPC latency.
+    LaunchedEffect(file.id) {
+        streamManager.wipeAllEphemeralBuffers("Opened File Details screen for ${file.name}")
+        val loadedChunks = streamManager.getOrderedChunks(file.id)
+        fileChunks = loadedChunks
+        if ((isVideo || isAudio) && loadedChunks.isNotEmpty()) {
+            streamManager.preResolveLinksOnly(file, loadedChunks)
+        }
+    }
+
+    // Strict lifecycle RAM wipe on viewer exit and app backgrounding (ON_STOP)
+    DisposableEffect(file.id, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                val activity = context as? Activity
+                if (activity?.isChangingConfigurations != true) {
+                    streamManager.wipeAllEphemeralBuffers("App backgrounded (ON_STOP)")
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            applyPlayerFullscreenSystemUi(context as? Activity, fullscreen = false, restoreUnspecifiedOrientation = true)
+            streamManager.wipeAllEphemeralBuffers("Exited FilePreviewScreen for ${file.name}")
+        }
+    }
+
     // Check if full file exists locally
     val localTarget = file.localUri ?: file.localPath
     val isFullFileDownloaded = remember(localTarget, file.status) {
@@ -211,8 +216,17 @@ fun FilePreviewScreen(
         }
     }
 
-    val cachedThumbFile = remember(file.id, file.thumbnailLocalPath, file.thumbnailFileId) {
-        ThumbnailManager.getInstance(context).getOrFetchThumbnail(file)
+    val thumbnailManager = remember { ThumbnailManager.getInstance(context) }
+    var thumbRefreshTick by remember(file.id) { mutableIntStateOf(0) }
+    LaunchedEffect(file.id) {
+        thumbnailManager.thumbnailUpdatedFlow.collect { updatedFileId ->
+            if (updatedFileId == file.id) {
+                thumbRefreshTick++
+            }
+        }
+    }
+    val cachedThumbFile = remember(file.id, file.thumbnailLocalPath, file.thumbnailFileId, thumbRefreshTick) {
+        thumbnailManager.getOrFetchThumbnail(file)
     }
 
     val configuration = LocalConfiguration.current

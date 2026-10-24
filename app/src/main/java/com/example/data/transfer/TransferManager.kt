@@ -30,9 +30,11 @@ import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.job
@@ -45,6 +47,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
@@ -742,9 +746,58 @@ class TransferManager private constructor(
             val incompleteChunks = chunks.filter { !it.isUploaded }.sortedBy { it.chunkIndex }
             val chunkQueue = ConcurrentLinkedQueue(incompleteChunks)
 
+            // Precompute O(1) byte offsets per chunkIndex
+            val offsetsByChunkIndex = HashMap<Int, Long>(chunks.size)
+            var runningOffset = 0L
+            for (c in chunks.sortedBy { it.chunkIndex }) {
+                offsetsByChunkIndex[c.chunkIndex] = runningOffset
+                runningOffset += c.size
+            }
+
             try {
                 if (incompleteChunks.isNotEmpty()) {
                     coroutineScope {
+                        val prepMutex = Mutex()
+                        val preparedChunks = ConcurrentHashMap<Int, Deferred<Pair<File, String>>>()
+
+                        fun prepareChunkAsync(targetChunk: ChunkEntity): Deferred<Pair<File, String>> {
+                            return preparedChunks.computeIfAbsent(targetChunk.chunkIndex) { idx ->
+                                async(Dispatchers.IO) {
+                                    val cLen = targetChunk.size
+                                    val cOffset = offsetsByChunkIndex[idx] ?: 0L
+                                    val rawChunkFile = File(chunksDir, "chunk_$idx.tpart")
+                                    val (plainChunkFile, plainSha256) = if (!rawChunkFile.exists() || rawChunkFile.length() != cLen) {
+                                        if (rawChunkFile.exists()) rawChunkFile.delete()
+                                        writeChunkFileOnDisk(stagingFile, chunksDir, idx, cOffset, cLen)
+                                    } else {
+                                        val existingSha256 = if (targetChunk.checksum.isNotEmpty() && !fileEntity.isEncrypted) {
+                                            targetChunk.checksum
+                                        } else {
+                                            ChecksumUtil.computeSha256(rawChunkFile)
+                                        }
+                                        Pair(rawChunkFile, existingSha256)
+                                    }
+
+                                    if (fileEntity.isEncrypted && !fileEntity.encryptionKeyBase64.isNullOrBlank()) {
+                                        val encFile = File(chunksDir, "chunk_${idx}.enc.tpart")
+                                        val encSha256 = CryptoStreamEngine.encryptChunkFile(
+                                            plainChunkFile = plainChunkFile,
+                                            encryptedOutFile = encFile,
+                                            keyBase64 = fileEntity.encryptionKeyBase64!!,
+                                            chunkIndex = idx
+                                        )
+                                        plainChunkFile.delete()
+                                        Pair(encFile, encSha256)
+                                    } else {
+                                        Pair(plainChunkFile, plainSha256)
+                                    }
+                                }
+                            }
+                        }
+
+                        // Pre-stage the first 2 chunks immediately so network workers never wait on disk/crypto
+                        incompleteChunks.take(2).forEach { prepareChunkAsync(it) }
+
                         val workers = (0 until workerCount).map { workerId ->
                             launch(Dispatchers.IO) {
                                 while (isActive && !chunkQueue.isEmpty() && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId) && uploadFailedReason.get() == null) {
@@ -759,7 +812,6 @@ class TransferManager private constructor(
                                     val chunk = chunkQueue.poll() ?: break
                                     val chunkIndex = chunk.chunkIndex
                                     val totalChunks = fileEntity.totalChunks
-                                    val offset = chunks.filter { it.chunkIndex < chunkIndex }.sumOf { it.size }
                                     val chunkLength = chunk.size
 
                                     if (pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId)) {
@@ -767,31 +819,18 @@ class TransferManager private constructor(
                                         break
                                     }
 
+                                    // Pipeline preparation of the next queued chunk while this chunk uploads
+                                    chunkQueue.peek()?.let { nextInQueue ->
+                                        prepareChunkAsync(nextInQueue)
+                                    }
+
                                     inProgressBytesMap[chunkIndex] = 0L
                                     publishProgress(force = false)
 
-                                    val rawChunkFile = File(chunksDir, "chunk_$chunkIndex.tpart")
-                                    val (plainChunkFile, plainSha256) = if (!rawChunkFile.exists() || rawChunkFile.length() != chunkLength) {
-                                        if (rawChunkFile.exists()) rawChunkFile.delete()
-                                        writeChunkFileOnDisk(stagingFile, chunksDir, chunkIndex, offset, chunkLength)
-                                    } else {
-                                        val existingSha256 = if (chunk.checksum.isNotEmpty() && !fileEntity.isEncrypted) chunk.checksum else ChecksumUtil.computeSha256(rawChunkFile)
-                                        Pair(rawChunkFile, existingSha256)
-                                    }
-
-                                    // Client-side AES-256-GCM encryption if enabled for this file
-                                    val (readyChunkFile, localSha256) = if (fileEntity.isEncrypted && !fileEntity.encryptionKeyBase64.isNullOrBlank()) {
-                                        val encFile = File(chunksDir, "chunk_${chunkIndex}.enc.tpart")
-                                        val encSha256 = CryptoStreamEngine.encryptChunkFile(
-                                            plainChunkFile = plainChunkFile,
-                                            encryptedOutFile = encFile,
-                                            keyBase64 = fileEntity.encryptionKeyBase64!!,
-                                            chunkIndex = chunkIndex
-                                        )
-                                        plainChunkFile.delete()
-                                        Pair(encFile, encSha256)
-                                    } else {
-                                        Pair(plainChunkFile, plainSha256)
+                                    val (readyChunkFile, localSha256) = try {
+                                        prepareChunkAsync(chunk).await()
+                                    } finally {
+                                        preparedChunks.remove(chunkIndex)
                                     }
 
                                     val actualFileSizeOnDisk = readyChunkFile.length()
@@ -1348,26 +1387,74 @@ class TransferManager private constructor(
                     return@launch
                 }
 
-                var downloadedBytes = 0L
-                var completedChunks = 0
+                val confirmedDownloadBytes = AtomicLong(0L)
+                val completedChunksAtomic = AtomicInteger(0)
+                val inProgressDownloadBytes = ConcurrentHashMap<Int, Long>()
+                val maxReportedDownloadBytes = AtomicLong(initialDiskBytes)
+                val lastDownloadUiMs = AtomicLong(0L)
+                val downloadFailedReason = AtomicReference<String?>(null)
 
                 val speedEstimator = RollingSpeedEstimator(windowDurationMs = 1800L)
                 speedEstimator.addSample(System.currentTimeMillis(), initialDiskBytes)
 
-                try {
-                    // Download each chunk in sequence
-                    for (chunk in chunks.sortedBy { it.chunkIndex }) {
-                        val chunkTempFile = File(downloadTempDir, "chunk_${chunk.chunkIndex}.part")
+                fun publishDownloadProgress(force: Boolean = false, errorMessage: String? = null) {
+                    if (cancelledFiles.contains(fileId)) return
+                    val nowElapsed = SystemClock.elapsedRealtime()
+                    val prevElapsed = lastDownloadUiMs.get()
+                    if (!force && (nowElapsed - prevElapsed < 100L)) return
+                    lastDownloadUiMs.set(nowElapsed)
 
-                        // Resume check: a chunk is only skipped if its .part file physically exists on disk with exact size & valid SHA-256
+                    val confirmed = confirmedDownloadBytes.get()
+                    val inProgress = inProgressDownloadBytes.values.sum()
+                    val rawTotal = (confirmed + inProgress).coerceIn(confirmed, fileEntity.size)
+                    val currentTotalDownloaded = maxReportedDownloadBytes.updateAndGet { cur -> maxOf(cur, rawTotal) }
+                    val liveSpeed = speedEstimator.addSample(System.currentTimeMillis(), currentTotalDownloaded)
+                    val completedNow = completedChunksAtomic.get()
+
+                    val fraction = if (fileEntity.size > 0) {
+                        (currentTotalDownloaded.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
+                    } else 0f
+
+                    val remainingBytes = (fileEntity.size - currentTotalDownloaded).coerceAtLeast(0L)
+                    val etaSec = if (liveSpeed > 0L && remainingBytes > 0L) remainingBytes / liveSpeed else null
+
+                    updateProgressState(
+                        TransferProgress(
+                            fileId = fileId,
+                            fileName = fileEntity.name,
+                            isUpload = false,
+                            currentChunk = (completedNow + 1).coerceAtMost(fileEntity.totalChunks.coerceAtLeast(1)),
+                            totalChunks = fileEntity.totalChunks,
+                            progressFraction = fraction,
+                            bytesTransferred = currentTotalDownloaded,
+                            totalBytes = fileEntity.size,
+                            speedBytesPerSec = liveSpeed,
+                            status = FileStatus.DOWNLOADING,
+                            errorMessage = errorMessage,
+                            etaSeconds = etaSec,
+                            activeConcurrentChunks = inProgressDownloadBytes.size,
+                            completedChunksCount = completedNow,
+                            isEncrypted = fileEntity.isEncrypted
+                        ),
+                        forceStatus = force
+                    )
+                }
+
+                try {
+                    val orderedChunks = chunks.sortedBy { it.chunkIndex }
+                    val pendingDownloadChunks = mutableListOf<ChunkEntity>()
+
+                    // 1. Fast resume check for already-verified .part files on disk
+                    for (chunk in orderedChunks) {
+                        val chunkTempFile = File(downloadTempDir, "chunk_${chunk.chunkIndex}.part")
                         if (chunkTempFile.exists() && chunkTempFile.length() == chunk.size) {
                             val existingHash = ChecksumUtil.computeSha256(chunkTempFile)
                             if (existingHash == chunk.checksum) {
                                 if (!chunk.isDownloaded) {
                                     database.chunkDao().markChunkDownloaded(fileId, chunk.chunkIndex)
                                 }
-                                downloadedBytes += chunk.size
-                                completedChunks++
+                                confirmedDownloadBytes.addAndGet(chunk.size)
+                                completedChunksAtomic.incrementAndGet()
                                 continue
                             } else {
                                 chunkTempFile.delete()
@@ -1375,306 +1462,317 @@ class TransferManager private constructor(
                         } else if (chunkTempFile.exists() && chunkTempFile.length() > chunk.size) {
                             chunkTempFile.delete()
                         }
+                        pendingDownloadChunks.add(chunk)
+                    }
 
-                        // Cancel/Pause check at chunk boundary before starting chunk download
-                        if (cancelledFiles.contains(fileId)) {
-                            throw CancellationException("Download cancelled")
-                        }
-                        if (pauseRequestedFiles.contains(fileId)) {
-                            throw CancellationException("Download paused")
-                        }
+                    // 2. Download remaining chunks using up to 3 concurrent workers + pre-resolved getFile links
+                    if (pendingDownloadChunks.isNotEmpty()) {
+                        val downloadQueue = ConcurrentLinkedQueue(pendingDownloadChunks)
+                        val preResolvedPaths = ConcurrentHashMap<Int, Pair<String, String>>() // chunkIndex -> (token, filePath)
+                        val downloadWorkerCount = minOf(
+                            3,
+                            pendingDownloadChunks.size,
+                            getEffectiveMaxConcurrency(context).coerceAtLeast(2)
+                        )
 
-                        var remoteFileId = chunk.telegramFileId
-                        val chunkMessageId = chunk.telegramMessageId
-                        val chunkChannelId = chunk.channelId ?: fileEntity.channelId ?: credentialsManager.getChatId()
-
-                        val maxRetries = 5
-                        var attempt = 0
-                        var chunkSuccess = false
-                        var lastError: String? = null
-
-                        while (attempt < maxRetries && !chunkSuccess && isActive && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId)) {
-                            attempt++
-                            try {
-                                var currentToken = token ?: credentialsManager.getBotToken()
-                                    ?: throw IllegalStateException("No Telegram bot token available")
-
-                                // If remoteFileId is missing, attempt regeneration from channelId + messageId
-                                if (remoteFileId.isNullOrBlank() && !chunkChannelId.isNullOrBlank() && chunkMessageId != null) {
-                                    Log.i("TransferManager", "Missing file_id for chunk ${chunk.chunkIndex}. Regenerating via channel $chunkChannelId, message $chunkMessageId...")
-                                    val regenResult = repository.regenerateFileId(currentToken, chunkChannelId, chunkMessageId)
-                                    if (regenResult.isSuccess) {
-                                        val freshId = regenResult.getOrThrow()
-                                        remoteFileId = freshId
-                                        database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, freshId)
+                        coroutineScope {
+                            // Pre-resolve Telegram getFile URLs in background for the initial batch
+                            pendingDownloadChunks.take(4).forEach { preChunk ->
+                                val preFileId = preChunk.telegramFileId
+                                if (!preFileId.isNullOrBlank()) {
+                                    launch(Dispatchers.IO) {
+                                        try {
+                                            val curTok = token ?: credentialsManager.getBotToken() ?: return@launch
+                                            val info = repository.getFileInfo(curTok, preFileId)
+                                            val path = info.getOrNull()?.filePath
+                                            if (!path.isNullOrBlank()) {
+                                                preResolvedPaths[preChunk.chunkIndex] = Pair(curTok, path)
+                                            }
+                                        } catch (_: Throwable) {}
                                     }
                                 }
+                            }
 
-                                var activeFileId = remoteFileId
-                                    ?: throw IllegalStateException("Missing Telegram file_id for chunk ${chunk.chunkIndex} (messageId=$chunkMessageId, channelId=$chunkChannelId)")
+                            val workers = (0 until downloadWorkerCount).map {
+                                launch(Dispatchers.IO) {
+                                    while (isActive && !downloadQueue.isEmpty() && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId) && downloadFailedReason.get() == null) {
+                                        val chunk = downloadQueue.poll() ?: break
+                                        val chunkTempFile = File(downloadTempDir, "chunk_${chunk.chunkIndex}.part")
 
-                                // Check chunk size against Telegram Bot API's 20MB getFile download limit
-                                val telegramGetFileLimit = 20 * 1024 * 1024L
-                                if (chunk.size > telegramGetFileLimit) {
-                                    val limitMsg = "Telegram Bot API getFile download limit is 20MB. Chunk size of ${ChecksumUtil.formatBytes(chunk.size)} exceeds Telegram's limit. Chunks must be <= 18MB to download with a bot. Please delete and re-upload this file."
-                                    Log.e("TransferManager", "[Download getFile] $limitMsg")
-                                    throw IllegalStateException(limitMsg)
-                                }
-
-                                var fileInfoResult = repository.getFileInfo(currentToken, activeFileId)
-
-                                if (fileInfoResult.isFailure) {
-                                    val rawEx = fileInfoResult.exceptionOrNull()
-                                    val rawMsg = rawEx?.message ?: "Unknown error"
-                                    val isAuthOrFileIdError = rawMsg.contains("file_id", ignoreCase = true) ||
-                                            rawMsg.contains("FILE_ID_INVALID", ignoreCase = true) ||
-                                            rawMsg.contains("Unauthorized", ignoreCase = true) ||
-                                            (rawEx is TelegramApiException && (rawEx.errorCode == 400 || rawEx.errorCode == 401 || rawEx.errorCode == 403))
-
-                                    if (isAuthOrFileIdError) {
-                                        Log.w("TransferManager", "Download getFileInfo error ($rawMsg). Triggering ban-resilient recovery for chunk ${chunk.chunkIndex}...")
-
-                                        if (rawMsg.contains("Unauthorized", ignoreCase = true) || (rawEx is TelegramApiException && (rawEx.errorCode == 401 || rawEx.errorCode == 403))) {
-                                            val nextToken = credentialsManager.rotateToNextToken()
-                                            if (nextToken != null && nextToken != currentToken) {
-                                                Log.i("TransferManager", "Rotated to next bot token in pool following auth error.")
-                                                token = nextToken
-                                                currentToken = nextToken
+                                        // Pre-resolve the next chunk in queue while this worker downloads
+                                        downloadQueue.peek()?.let { nextChunk ->
+                                            val nextFileId = nextChunk.telegramFileId
+                                            if (!nextFileId.isNullOrBlank() && !preResolvedPaths.containsKey(nextChunk.chunkIndex)) {
+                                                launch(Dispatchers.IO) {
+                                                    try {
+                                                        val curTok = token ?: credentialsManager.getBotToken() ?: return@launch
+                                                        val info = repository.getFileInfo(curTok, nextFileId)
+                                                        val path = info.getOrNull()?.filePath
+                                                        if (!path.isNullOrBlank()) {
+                                                            preResolvedPaths[nextChunk.chunkIndex] = Pair(curTok, path)
+                                                        }
+                                                    } catch (_: Throwable) {}
+                                                }
                                             }
                                         }
 
-                                        if (!chunkChannelId.isNullOrBlank() && chunkMessageId != null) {
-                                            val regenResult = repository.regenerateFileId(currentToken, chunkChannelId, chunkMessageId)
-                                            if (regenResult.isSuccess) {
-                                                val freshId = regenResult.getOrThrow()
-                                                remoteFileId = freshId
-                                                activeFileId = freshId
-                                                database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, freshId)
-                                                Log.i("TransferManager", "Regenerated fresh file_id for chunk ${chunk.chunkIndex}: $freshId. Retrying getFileInfo...")
-                                                fileInfoResult = repository.getFileInfo(currentToken, freshId)
-                                            } else {
-                                                Log.w("TransferManager", "Failed to regenerate file_id: ${regenResult.exceptionOrNull()?.message}")
-                                                val rotated = credentialsManager.rotateToNextToken()
-                                                if (rotated != null && rotated != currentToken) {
-                                                    token = rotated
-                                                    currentToken = rotated
-                                                    val retryRegen = repository.regenerateFileId(currentToken, chunkChannelId, chunkMessageId)
-                                                    if (retryRegen.isSuccess) {
-                                                        val freshId = retryRegen.getOrThrow()
-                                                        remoteFileId = freshId
-                                                        activeFileId = freshId
-                                                        database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, freshId)
-                                                        fileInfoResult = repository.getFileInfo(currentToken, freshId)
+                                        if (cancelledFiles.contains(fileId) || pauseRequestedFiles.contains(fileId)) {
+                                            downloadQueue.add(chunk)
+                                            break
+                                        }
+
+                                        var remoteFileId = chunk.telegramFileId
+                                        val chunkMessageId = chunk.telegramMessageId
+                                        val chunkChannelId = chunk.channelId ?: fileEntity.channelId ?: credentialsManager.getChatId()
+
+                                        val maxRetries = 5
+                                        var attempt = 0
+                                        var chunkSuccess = false
+                                        var lastError: String? = null
+
+                                        while (attempt < maxRetries && !chunkSuccess && isActive && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId) && downloadFailedReason.get() == null) {
+                                            attempt++
+                                            try {
+                                                var currentToken = token ?: credentialsManager.getBotToken()
+                                                    ?: throw IllegalStateException("No Telegram bot token available")
+
+                                                // Check if we already pre-resolved (token, filePath) on attempt 1
+                                                val preResolved = if (attempt == 1) preResolvedPaths.remove(chunk.chunkIndex) else null
+                                                val remoteFilePath: String
+
+                                                if (preResolved != null) {
+                                                    currentToken = preResolved.first
+                                                    remoteFilePath = preResolved.second
+                                                } else {
+                                                    if (remoteFileId.isNullOrBlank() && !chunkChannelId.isNullOrBlank() && chunkMessageId != null) {
+                                                        val regenResult = repository.regenerateFileId(currentToken, chunkChannelId, chunkMessageId)
+                                                        if (regenResult.isSuccess) {
+                                                            val freshId = regenResult.getOrThrow()
+                                                            remoteFileId = freshId
+                                                            database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, freshId)
+                                                        }
+                                                    }
+
+                                                    var activeFileId = remoteFileId
+                                                        ?: throw IllegalStateException("Missing Telegram file_id for chunk ${chunk.chunkIndex} (messageId=$chunkMessageId, channelId=$chunkChannelId)")
+
+                                                    val telegramGetFileLimit = 20 * 1024 * 1024L
+                                                    if (chunk.size > telegramGetFileLimit) {
+                                                        val limitMsg = "Telegram Bot API getFile download limit is 20MB. Chunk size of ${ChecksumUtil.formatBytes(chunk.size)} exceeds Telegram's limit."
+                                                        throw IllegalStateException(limitMsg)
+                                                    }
+
+                                                    var fileInfoResult = repository.getFileInfo(currentToken, activeFileId)
+
+                                                    if (fileInfoResult.isFailure) {
+                                                        val rawEx = fileInfoResult.exceptionOrNull()
+                                                        val rawMsg = rawEx?.message ?: "Unknown error"
+                                                        val isAuthOrFileIdError = rawMsg.contains("file_id", ignoreCase = true) ||
+                                                            rawMsg.contains("FILE_ID_INVALID", ignoreCase = true) ||
+                                                            rawMsg.contains("Unauthorized", ignoreCase = true) ||
+                                                            (rawEx is TelegramApiException && (rawEx.errorCode == 400 || rawEx.errorCode == 401 || rawEx.errorCode == 403))
+
+                                                        if (isAuthOrFileIdError) {
+                                                            if (rawMsg.contains("Unauthorized", ignoreCase = true) || (rawEx is TelegramApiException && (rawEx.errorCode == 401 || rawEx.errorCode == 403))) {
+                                                                val nextToken = credentialsManager.rotateToNextToken()
+                                                                if (nextToken != null && nextToken != currentToken) {
+                                                                    token = nextToken
+                                                                    currentToken = nextToken
+                                                                }
+                                                            }
+
+                                                            if (!chunkChannelId.isNullOrBlank() && chunkMessageId != null) {
+                                                                val regenResult = repository.regenerateFileId(currentToken, chunkChannelId, chunkMessageId)
+                                                                if (regenResult.isSuccess) {
+                                                                    val freshId = regenResult.getOrThrow()
+                                                                    remoteFileId = freshId
+                                                                    activeFileId = freshId
+                                                                    database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, freshId)
+                                                                    fileInfoResult = repository.getFileInfo(currentToken, freshId)
+                                                                } else {
+                                                                    val rotated = credentialsManager.rotateToNextToken()
+                                                                    if (rotated != null && rotated != currentToken) {
+                                                                        token = rotated
+                                                                        currentToken = rotated
+                                                                        val retryRegen = repository.regenerateFileId(currentToken, chunkChannelId, chunkMessageId)
+                                                                        if (retryRegen.isSuccess) {
+                                                                            val freshId = retryRegen.getOrThrow()
+                                                                            remoteFileId = freshId
+                                                                            activeFileId = freshId
+                                                                            database.chunkDao().updateRemoteFileId(fileId, chunk.chunkIndex, freshId)
+                                                                            fileInfoResult = repository.getFileInfo(currentToken, freshId)
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    if (fileInfoResult.isFailure) {
+                                                        val rawEx = fileInfoResult.exceptionOrNull()
+                                                        val rawMsg = rawEx?.message ?: "Unknown error"
+                                                        val extraInfo = if (rawMsg.contains("file is too big", ignoreCase = true)) {
+                                                            " (Telegram Bot API getFile download limit is 20MB; chunk size is ${ChecksumUtil.formatBytes(chunk.size)})"
+                                                        } else ""
+                                                        throw IllegalStateException("[Download getFile] $rawMsg$extraInfo", rawEx)
+                                                    }
+                                                    remoteFilePath = fileInfoResult.getOrThrow().filePath
+                                                        ?: throw IllegalStateException("[Download getFile] Telegram returned an empty file_path")
+                                                }
+
+                                                val existingPartialBytes = if (chunkTempFile.exists() && chunkTempFile.length() in 1 until chunk.size) {
+                                                    chunkTempFile.length()
+                                                } else {
+                                                    if (chunkTempFile.exists()) chunkTempFile.delete()
+                                                    0L
+                                                }
+
+                                                inProgressDownloadBytes[chunk.chunkIndex] = existingPartialBytes
+                                                publishDownloadProgress(force = false)
+
+                                                val streamResult = repository.downloadFileStreamWithRange(currentToken, remoteFilePath, existingPartialBytes)
+                                                if (streamResult.isFailure) {
+                                                    val rawEx = streamResult.exceptionOrNull()
+                                                    throw IllegalStateException("[Download fileStream] ${rawEx?.message}", rawEx)
+                                                }
+
+                                                val downloadStream = streamResult.getOrThrow()
+                                                val body = downloadStream.body
+                                                val appendToPartial = downloadStream.isPartialContent && existingPartialBytes > 0L
+                                                var chunkWritten = if (appendToPartial) existingPartialBytes else 0L
+
+                                                val cancelCloseHandle = coroutineContext.job.invokeOnCompletion { cause ->
+                                                    if (cause != null) {
+                                                        try {
+                                                            body.close()
+                                                        } catch (_: Throwable) {}
+                                                    }
+                                                }
+
+                                                try {
+                                                    body.byteStream().use { input ->
+                                                        FileOutputStream(chunkTempFile, appendToPartial).use { output ->
+                                                            val buffer = ByteArray(64 * 1024)
+                                                            var read: Int
+                                                            while (input.read(buffer).also { read = it } != -1) {
+                                                                if (!isActive || pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId) || downloadFailedReason.get() != null) {
+                                                                    output.flush()
+                                                                    throw CancellationException("Download paused or cancelled")
+                                                                }
+                                                                output.write(buffer, 0, read)
+                                                                chunkWritten += read
+                                                                inProgressDownloadBytes[chunk.chunkIndex] = minOf(chunkWritten, chunk.size)
+                                                                publishDownloadProgress(force = false)
+                                                            }
+                                                            output.flush()
+                                                        }
+                                                    }
+                                                } finally {
+                                                    cancelCloseHandle.dispose()
+                                                }
+
+                                                val computedChunkSha256 = ChecksumUtil.computeSha256(chunkTempFile)
+                                                if (computedChunkSha256 != chunk.checksum) {
+                                                    chunkTempFile.delete()
+                                                    throw IllegalStateException("Checksum mismatch on chunk ${chunk.chunkIndex}! Expected ${chunk.checksum}, got $computedChunkSha256")
+                                                }
+
+                                                chunkSuccess = true
+                                            } catch (e: Throwable) {
+                                                if (e is CancellationException || !isActive || pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId)) {
+                                                    inProgressDownloadBytes.remove(chunk.chunkIndex)
+                                                    throw CancellationException("Download paused or cancelled")
+                                                }
+
+                                                if (chunkTempFile.exists() && chunkTempFile.length() >= chunk.size) {
+                                                    chunkTempFile.delete()
+                                                }
+
+                                                lastError = e.localizedMessage ?: "Download error"
+                                                val isTransient = isTransientNetworkError(e)
+                                                Log.w("TransferManager", "Download attempt $attempt/$maxRetries for chunk ${chunk.chunkIndex + 1}/${fileEntity.totalChunks} failed (isTransient=$isTransient): $lastError", e)
+
+                                                repository.evictConnectionPool("Download chunk ${chunk.chunkIndex + 1} attempt $attempt failed")
+
+                                                if (!isTransient) {
+                                                    Log.e("TransferManager", "Permanent non-retryable error on download chunk ${chunk.chunkIndex + 1}: '$lastError'. Aborting retries immediately.")
+                                                    break
+                                                }
+
+                                                if (attempt < maxRetries && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId) && downloadFailedReason.get() == null) {
+                                                    val backoffMs = when (attempt) {
+                                                        1 -> 2000L
+                                                        2 -> 4000L
+                                                        3 -> 8000L
+                                                        4 -> 16000L
+                                                        else -> 30000L
+                                                    }
+                                                    val retryStatusMsg = "Reconnecting… retrying chunk ${chunk.chunkIndex + 1}/${fileEntity.totalChunks} (attempt $attempt/$maxRetries)"
+                                                    publishDownloadProgress(force = true, errorMessage = retryStatusMsg)
+
+                                                    var waited = 0L
+                                                    while (waited < backoffMs) {
+                                                        if (pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId) || downloadFailedReason.get() != null) break
+                                                        val step = minOf(500L, backoffMs - waited)
+                                                        delay(step)
+                                                        waited += step
                                                     }
                                                 }
                                             }
                                         }
-                                    }
-                                }
 
-                                if (fileInfoResult.isFailure) {
-                                    val rawEx = fileInfoResult.exceptionOrNull()
-                                    val rawMsg = rawEx?.message ?: "Unknown error"
-                                    val extraInfo = if (rawMsg.contains("file is too big", ignoreCase = true)) {
-                                        " (Telegram Bot API getFile download limit is 20MB; chunk size is ${ChecksumUtil.formatBytes(chunk.size)})"
-                                    } else ""
-                                    throw IllegalStateException("[Download getFile] $rawMsg$extraInfo", rawEx)
-                                }
-                                val remoteFilePath = fileInfoResult.getOrThrow().filePath
-                                    ?: throw IllegalStateException("[Download getFile] Telegram returned an empty file_path")
-
-                                // Check if we have a partially downloaded .part file on disk to resume from exact byte offset
-                                val existingPartialBytes = if (chunkTempFile.exists() && chunkTempFile.length() in 1 until chunk.size) {
-                                    chunkTempFile.length()
-                                } else {
-                                    if (chunkTempFile.exists()) chunkTempFile.delete()
-                                    0L
-                                }
-
-                                if (existingPartialBytes > 0L) {
-                                    Log.i("TransferManager", "Resuming download for chunk ${chunk.chunkIndex} from byte offset $existingPartialBytes / ${chunk.size}")
-                                }
-
-                                val streamResult = repository.downloadFileStreamWithRange(currentToken, remoteFilePath, existingPartialBytes)
-                                if (streamResult.isFailure) {
-                                    val rawEx = streamResult.exceptionOrNull()
-                                    throw IllegalStateException("[Download fileStream] ${rawEx?.message}", rawEx)
-                                }
-
-                                val downloadStream = streamResult.getOrThrow()
-                                val body = downloadStream.body
-                                val appendToPartial = downloadStream.isPartialContent && existingPartialBytes > 0L
-                                var chunkWritten = if (appendToPartial) existingPartialBytes else 0L
-                                var lastProgressUiUpdate = 0L
-
-                                val cancelCloseHandle = coroutineContext.job.invokeOnCompletion { cause ->
-                                    if (cause != null) {
-                                        try {
-                                            body.close()
-                                        } catch (_: Throwable) {}
-                                    }
-                                }
-
-                                try {
-                                    body.byteStream().use { input ->
-                                        FileOutputStream(chunkTempFile, appendToPartial).use { output ->
-                                            val buffer = ByteArray(64 * 1024)
-                                            var read: Int
-                                            while (input.read(buffer).also { read = it } != -1) {
-                                                if (!isActive || pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId)) {
-                                                    output.flush()
-                                                    throw CancellationException("Download paused or cancelled")
-                                                }
-                                                output.write(buffer, 0, read)
-                                                chunkWritten += read
-
-                                                val now = System.currentTimeMillis()
-                                                val currentTotalDownloaded = (downloadedBytes + chunkWritten).coerceAtMost(fileEntity.size)
-                                                val liveSpeed = speedEstimator.addSample(now, currentTotalDownloaded)
-
-                                                val shouldUpdateUi = (now - lastProgressUiUpdate >= 100L) || (chunkWritten >= chunk.size)
-                                                if (shouldUpdateUi && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId)) {
-                                                    lastProgressUiUpdate = now
-                                                    val fraction = if (fileEntity.size > 0) {
-                                                        (currentTotalDownloaded.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f)
-                                                    } else 0f
-
-                                                    val remainingBytes = (fileEntity.size - currentTotalDownloaded).coerceAtLeast(0L)
-                                                    val etaSec = if (liveSpeed > 0L && remainingBytes > 0L) remainingBytes / liveSpeed else null
-
-                                                    updateProgressState(
-                                                        TransferProgress(
-                                                            fileId = fileId,
-                                                            fileName = fileEntity.name,
-                                                            isUpload = false,
-                                                            currentChunk = chunk.chunkIndex + 1,
-                                                            totalChunks = fileEntity.totalChunks,
-                                                            progressFraction = fraction,
-                                                            bytesTransferred = currentTotalDownloaded,
-                                                            totalBytes = fileEntity.size,
-                                                            speedBytesPerSec = liveSpeed,
-                                                            status = FileStatus.DOWNLOADING,
-                                                            etaSeconds = etaSec,
-                                                            completedChunksCount = completedChunks,
-                                                            isEncrypted = fileEntity.isEncrypted
-                                                        )
-                                                    )
-                                                }
-                                            }
-                                            output.flush()
+                                        if (cancelledFiles.contains(fileId) || pauseRequestedFiles.contains(fileId) || !isActive) {
+                                            inProgressDownloadBytes.remove(chunk.chunkIndex)
+                                            throw CancellationException("Download paused or cancelled")
                                         }
-                                    }
-                                } finally {
-                                    cancelCloseHandle.dispose()
-                                }
 
-                                // Verify full chunk SHA-256 integrity across the complete .part file on disk
-                                val computedChunkSha256 = ChecksumUtil.computeSha256(chunkTempFile)
-                                if (computedChunkSha256 != chunk.checksum) {
-                                    chunkTempFile.delete()
-                                    throw IllegalStateException("Checksum mismatch on chunk ${chunk.chunkIndex}! Expected ${chunk.checksum}, got $computedChunkSha256")
-                                }
+                                        if (!chunkSuccess) {
+                                            inProgressDownloadBytes.remove(chunk.chunkIndex)
+                                            val failReason = "[Download Chunk ${chunk.chunkIndex + 1}/${fileEntity.totalChunks}] $lastError"
+                                            downloadFailedReason.compareAndSet(null, failReason)
+                                            break
+                                        }
 
-                                chunkSuccess = true
-                            } catch (e: Throwable) {
-                                if (e is CancellationException || !isActive || pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId)) {
-                                    // Preserve partial chunkTempFile on disk for exact byte-offset resume!
-                                    throw CancellationException("Download paused or cancelled")
-                                }
-
-                                if (chunkTempFile.exists() && chunkTempFile.length() >= chunk.size) {
-                                    chunkTempFile.delete()
-                                }
-
-                                lastError = e.localizedMessage ?: "Download error"
-                                val isTransient = isTransientNetworkError(e)
-                                Log.w("TransferManager", "Download attempt $attempt/$maxRetries for chunk ${chunk.chunkIndex + 1}/${fileEntity.totalChunks} failed (isTransient=$isTransient): $lastError", e)
-
-                                // Evict connection pool so retries use a fresh connection
-                                repository.evictConnectionPool("Download chunk ${chunk.chunkIndex + 1} attempt $attempt failed")
-
-                                // Permanent errors abort retries immediately
-                                if (!isTransient) {
-                                    Log.e("TransferManager", "Permanent non-retryable error on download chunk ${chunk.chunkIndex + 1}: '$lastError'. Aborting retries immediately.")
-                                    break
-                                }
-
-                                if (attempt < maxRetries && !pauseRequestedFiles.contains(fileId) && !cancelledFiles.contains(fileId)) {
-                                    val backoffMs = when (attempt) {
-                                        1 -> 2000L   // 2s
-                                        2 -> 4000L   // 4s
-                                        3 -> 8000L   // 8s
-                                        4 -> 16000L  // 16s
-                                        else -> 30000L // 30s
-                                    }
-                                    val (curDiskBytes, _) = computeTotalDownloadedBytesOnDisk(chunks, downloadTempDir, fileEntity.size)
-                                    val retryStatusMsg = "Reconnecting… retrying chunk ${chunk.chunkIndex + 1}/${fileEntity.totalChunks} (attempt $attempt/$maxRetries)"
-                                    updateProgressState(
-                                        TransferProgress(
-                                            fileId = fileId,
-                                            fileName = fileEntity.name,
-                                            isUpload = false,
-                                            currentChunk = chunk.chunkIndex + 1,
-                                            totalChunks = fileEntity.totalChunks,
-                                            progressFraction = if (fileEntity.size > 0) (curDiskBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f) else 0f,
-                                            bytesTransferred = curDiskBytes,
-                                            totalBytes = fileEntity.size,
-                                            speedBytesPerSec = 0L,
-                                            status = FileStatus.DOWNLOADING,
-                                            errorMessage = retryStatusMsg,
-                                            isEncrypted = fileEntity.isEncrypted
-                                        )
-                                    )
-
-                                    var waited = 0L
-                                    while (waited < backoffMs) {
-                                        if (pauseRequestedFiles.contains(fileId) || cancelledFiles.contains(fileId)) break
-                                        val step = minOf(500L, backoffMs - waited)
-                                        delay(step)
-                                        waited += step
+                                        inProgressDownloadBytes.remove(chunk.chunkIndex)
+                                        database.chunkDao().markChunkDownloaded(fileId, chunk.chunkIndex)
+                                        confirmedDownloadBytes.addAndGet(chunk.size)
+                                        completedChunksAtomic.incrementAndGet()
+                                        publishDownloadProgress(force = true)
                                     }
                                 }
                             }
+                            workers.forEach { it.join() }
                         }
+                    }
 
-                        if (cancelledFiles.contains(fileId) || pauseRequestedFiles.contains(fileId) || !isActive) {
-                            throw CancellationException("Download paused or cancelled")
-                        }
+                    if (cancelledFiles.contains(fileId) || pauseRequestedFiles.contains(fileId)) {
+                        throw CancellationException("Download paused or cancelled")
+                    }
 
-                        if (!chunkSuccess) {
-                            val (curDiskBytes, _) = computeTotalDownloadedBytesOnDisk(chunks, downloadTempDir, fileEntity.size)
-                            val failReason = "[Download Chunk ${chunk.chunkIndex + 1}/${fileEntity.totalChunks}] $lastError"
-                            database.fileDao().updateStatus(fileId, FileStatus.FAILED, failReason)
-                            updateProgressState(
-                                TransferProgress(
-                                    fileId = fileId,
-                                    fileName = fileEntity.name,
-                                    isUpload = false,
-                                    currentChunk = completedChunks,
-                                    totalChunks = fileEntity.totalChunks,
-                                    progressFraction = if (fileEntity.size > 0) (curDiskBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f) else 0f,
-                                    bytesTransferred = curDiskBytes,
-                                    totalBytes = fileEntity.size,
-                                    speedBytesPerSec = 0L,
-                                    status = FileStatus.FAILED,
-                                    errorMessage = failReason,
-                                    isEncrypted = fileEntity.isEncrypted
-                                ),
-                                forceStatus = true
-                            )
-                            _transferErrorEvents.tryEmit(failReason)
-                            notifyService("Download failed: ${fileEntity.name}")
-                            return@launch
-                        }
-
-                        database.chunkDao().markChunkDownloaded(fileId, chunk.chunkIndex)
-                        downloadedBytes += chunk.size
-                        completedChunks++
-
-                        // Pause check at chunk boundary after chunk download
-                        if (cancelledFiles.contains(fileId) || pauseRequestedFiles.contains(fileId)) {
-                            throw CancellationException("Download paused or cancelled")
-                        }
+                    val failReason = downloadFailedReason.get()
+                    if (failReason != null) {
+                        val (curDiskBytes, _) = computeTotalDownloadedBytesOnDisk(chunks, downloadTempDir, fileEntity.size)
+                        database.fileDao().updateStatus(fileId, FileStatus.FAILED, failReason)
+                        updateProgressState(
+                            TransferProgress(
+                                fileId = fileId,
+                                fileName = fileEntity.name,
+                                isUpload = false,
+                                currentChunk = completedChunksAtomic.get(),
+                                totalChunks = fileEntity.totalChunks,
+                                progressFraction = if (fileEntity.size > 0) (curDiskBytes.toFloat() / fileEntity.size.toFloat()).coerceIn(0f, 1f) else 0f,
+                                bytesTransferred = curDiskBytes,
+                                totalBytes = fileEntity.size,
+                                speedBytesPerSec = 0L,
+                                status = FileStatus.FAILED,
+                                errorMessage = failReason,
+                                isEncrypted = fileEntity.isEncrypted
+                            ),
+                            forceStatus = true
+                        )
+                        _transferErrorEvents.tryEmit(failReason)
+                        notifyService("Download failed: ${fileEntity.name}")
+                        return@launch
                     }
 
                     // Concatenate all chunks sequentially into temporary reassembly file (decrypting AES-256-GCM if encrypted)

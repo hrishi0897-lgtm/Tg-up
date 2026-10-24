@@ -2036,11 +2036,22 @@ fun FileThumbnailView(
     val isVideo = remember(file.mimeType) { ThumbnailUtil.isVideo(file.mimeType) }
 
     val thumbnailManager = remember { ThumbnailManager.getInstance(context) }
-    val thumbFile = remember(file.thumbnailLocalPath, file.thumbnailFileId, file.id) {
+    var thumbRefreshTick by remember(file.id) { mutableStateOf(0) }
+    val thumbFile = remember(file.thumbnailLocalPath, file.thumbnailFileId, file.id, thumbRefreshTick) {
         if (isMedia) thumbnailManager.getOrFetchThumbnail(file) else null
     }
 
-    if (thumbFile != null && thumbFile.exists() && thumbFile.length() > 0L) {
+    if (isMedia && thumbFile == null && !file.thumbnailFileId.isNullOrBlank()) {
+        LaunchedEffect(file.id, file.thumbnailFileId) {
+            thumbnailManager.thumbnailUpdatedFlow.collect { updatedId ->
+                if (updatedId == file.id) {
+                    thumbRefreshTick++
+                }
+            }
+        }
+    }
+
+    if (thumbFile != null) {
         Box(
             modifier = modifier
                 .size(size + 14.dp)

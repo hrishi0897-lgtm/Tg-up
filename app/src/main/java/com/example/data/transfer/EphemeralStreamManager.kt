@@ -234,6 +234,7 @@ class EphemeralStreamManager private constructor(
 
     private val streamJob = SupervisorJob()
     private val streamScope = CoroutineScope(Dispatchers.IO + streamJob)
+    private val linkWarmupScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Incremented on every wipe so late-completing fetches never repopulate a wiped RAM window
     private val wipeGeneration = AtomicLong(0L)
@@ -250,6 +251,9 @@ class EphemeralStreamManager private constructor(
 
     // Active progressive / range chunk states
     private val progressiveStates = ConcurrentHashMap<String, ProgressiveChunkState>()
+
+    // 12-byte GCM IV cache per chunk key ("$fileId:$chunkIndex"), wiped on wipeAllEphemeralBuffers
+    private val gcmIvCache = ConcurrentHashMap<String, ByteArray>()
 
     // Resolved Telegram file_path links with timestamp
     private val resolvedLinks = ConcurrentHashMap<String, ResolvedTelegramLink>()
@@ -279,6 +283,61 @@ class EphemeralStreamManager private constructor(
         }
         val prog = progressiveStates[key] ?: return false
         return prog.contiguousPlainBytes >= (256 * 1024) || prog.isProgressiveComplete || prog.rangeWindowAvailable > 0
+    }
+
+    /**
+     * Pre-resolves lightweight Telegram `getFile` URL metadata on the Details screen before
+     * the user taps Play.
+     *
+     * IMPORTANT: Downloads ZERO media bytes and allocates 0.0 MB of media buffer RAM
+     * (`allocatedRamBytes` remains strictly 0L). When the user subsequently presses Play,
+     * `warmStartStreamingSession` skips the `getFile` RPC round-trip and starts streaming
+     * media bytes immediately.
+     */
+    fun preResolveLinksOnly(file: FileEntity, chunks: List<ChunkEntity>) {
+        if (chunks.isEmpty()) return
+        val candidateIndices = buildList {
+            add(0)
+            if (chunks.size > 1) add(chunks.lastIndex)
+            if (chunks.size > 2) add(1)
+            if (chunks.size > 3) add(2)
+        }.distinct()
+
+        for (idx in candidateIndices) {
+            val chunk = chunks.getOrNull(idx) ?: continue
+            val linkKey = "${file.id}:${chunk.chunkIndex}"
+            val existing = resolvedLinks[linkKey]
+            if (existing != null && (System.currentTimeMillis() - existing.resolvedAtMs) < LINK_TTL_MS) {
+                continue
+            }
+            linkWarmupScope.launch {
+                try {
+                    resolveTelegramFileLink(file, chunk, forceRefresh = false)
+                } catch (e: Throwable) {
+                    Log.d(TAG, "Background link pre-resolve skipped for chunk ${idx + 1}: ${e.message}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Cancels superseded HTTP Range downloads on chunks other than [activeChunkIndex] (and
+     * preserves the last chunk tail index read during the first 4 seconds of startup).
+     */
+    private fun cancelSupersededRangeJobs(fileId: String, activeChunkIndex: Int, totalChunks: Int) {
+        val isInitialStartupWindow = (SystemClock.elapsedRealtime() - sessionStartElapsedMs.get()) < 4_000L
+        val lastIdx = (totalChunks - 1).coerceAtLeast(0)
+        for ((key, st) in progressiveStates) {
+            if (!key.startsWith("$fileId:")) continue
+            if (st.chunkIndex == activeChunkIndex) continue
+            if (isInitialStartupWindow && (st.chunkIndex == 0 || st.chunkIndex == lastIdx)) continue
+            synchronized(st.stateLock) {
+                if (st.rangeJob?.isActive == true) {
+                    st.rangeJob?.cancel()
+                    st.rangeJob = null
+                }
+            }
+        }
     }
 
     /**
@@ -822,9 +881,11 @@ class EphemeralStreamManager private constructor(
                                     remainingInNet -= toTakeIv
 
                                     if (ivBytesCollected == CryptoStreamEngine.GCM_IV_BYTES) {
+                                        val ivCopy = ivBuffer.copyOf()
+                                        gcmIvCache[key] = ivCopy
                                         synchronized(state.stateLock) {
                                             if (state.gcmIv == null) {
-                                                state.gcmIv = ivBuffer.copyOf()
+                                                state.gcmIv = ivCopy.copyOf()
                                             }
                                         }
                                     }
@@ -1013,6 +1074,7 @@ class EphemeralStreamManager private constructor(
         expectedGeneration: Long
     ) {
         val chunk = chunks.getOrNull(chunkIndex) ?: return
+        cancelSupersededRangeJobs(file.id, chunkIndex, chunks.size)
         val expectedPlainSize = getExpectedPlaintextChunkSize(file, chunks, chunkIndex)
         val state = getOrCreateProgressiveState(file, chunks, chunkIndex, expectedPlainSize)
 
@@ -1090,7 +1152,8 @@ class EphemeralStreamManager private constructor(
                 )
 
                 // Step 1: If encrypted, ensure we have the 12-byte GCM IV from bytes 0..11 of the chunk
-                var iv = synchronized(state.stateLock) { state.gcmIv }
+                val chunkKey = "${file.id}:$chunkIndex"
+                var iv = synchronized(state.stateLock) { state.gcmIv } ?: gcmIvCache[chunkKey]
                 if (isEncrypted && iv == null) {
                     val ivStartMs = SystemClock.elapsedRealtime()
                     val ivResult = repository.downloadFileStreamWithRange(
@@ -1128,6 +1191,7 @@ class EphemeralStreamManager private constructor(
                         }
                         if (totalIv == CryptoStreamEngine.GCM_IV_BYTES) {
                             iv = fetchedIv
+                            gcmIvCache[chunkKey] = fetchedIv.copyOf()
                             synchronized(state.stateLock) {
                                 state.gcmIv = fetchedIv.copyOf()
                             }
@@ -1705,6 +1769,9 @@ class EphemeralStreamManager private constructor(
                 }
             }
             progressiveStates.clear()
+
+            gcmIvCache.forEach { (_, ivBytes) -> ivBytes.fill(0) }
+            gcmIvCache.clear()
 
             var wipedCount = 0
             var wipedBytes = 0L

@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -25,6 +27,11 @@ class ThumbnailManager(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val activeDownloads = ConcurrentHashMap.newKeySet<String>()
+    private val downloadSemaphore = Semaphore(4)
+
+    // O(1) in-memory cache of verified non-empty thumbnail files to eliminate main-thread disk I/O during scroll
+    private val resolvedFileCache = ConcurrentHashMap<String, File>()
+    private val missingLocalSet = ConcurrentHashMap.newKeySet<String>()
 
     private val _thumbnailUpdatedFlow = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val thumbnailUpdatedFlow: SharedFlow<String> = _thumbnailUpdatedFlow.asSharedFlow()
@@ -46,18 +53,30 @@ class ThumbnailManager(
     }
 
     /**
-     * Checks if a local thumbnail exists on disk. Returns the File if available, or null.
+     * Checks if a local thumbnail exists on disk, using an O(1) in-memory cache first
+     * so scrolling through large Vault lists/grids never blocks the UI thread on filesystem I/O.
      */
     fun getLocalThumbnail(file: FileEntity): File? {
+        resolvedFileCache[file.id]?.let { return it }
+        if (missingLocalSet.contains(file.id) && file.thumbnailLocalPath.isNullOrBlank()) {
+            return null
+        }
+
         // 1. Check entity's recorded path
         if (!file.thumbnailLocalPath.isNullOrBlank()) {
             val local = File(file.thumbnailLocalPath)
-            if (local.exists() && local.length() > 0L) return local
+            if (local.exists() && local.length() > 0L) {
+                resolvedFileCache[file.id] = local
+                missingLocalSet.remove(file.id)
+                return local
+            }
         }
 
         // 2. Check standard cache location
         val cached = ThumbnailUtil.getThumbnailFile(context, file.id)
         if (cached.exists() && cached.length() > 0L) {
+            resolvedFileCache[file.id] = cached
+            missingLocalSet.remove(file.id)
             // Update database path in background if missing
             if (file.thumbnailLocalPath == null) {
                 scope.launch {
@@ -69,6 +88,7 @@ class ThumbnailManager(
             return cached
         }
 
+        missingLocalSet.add(file.id)
         return null
     }
 
@@ -89,31 +109,37 @@ class ThumbnailManager(
     }
 
     /**
-     * Asynchronously downloads a thumbnail for the specified file and saves it to local cache.
+     * Asynchronously downloads a thumbnail for the specified file using bounded concurrency (4 workers)
+     * and saves it to local cache.
      */
     fun enqueueThumbnailDownload(fileId: String, remoteFileId: String) {
+        if (resolvedFileCache.containsKey(fileId)) return
         if (!activeDownloads.add(fileId)) {
             return // Already in progress
         }
 
         scope.launch {
             try {
-                val token = credentialsManager.getBotToken()
-                if (token.isNullOrBlank()) {
-                    Log.w(TAG, "Cannot download thumbnail: bot token missing")
-                    return@launch
-                }
+                downloadSemaphore.withPermit {
+                    val token = credentialsManager.getBotToken()
+                    if (token.isNullOrBlank()) {
+                        Log.w(TAG, "Cannot download thumbnail: bot token missing")
+                        return@withPermit
+                    }
 
-                val destFile = ThumbnailUtil.getThumbnailFile(context, fileId)
-                Log.d(TAG, "Downloading thumbnail for fileId=$fileId remoteFileId=$remoteFileId...")
-                val result = repository.downloadThumbnail(token, remoteFileId, destFile)
+                    val destFile = ThumbnailUtil.getThumbnailFile(context, fileId)
+                    Log.d(TAG, "Downloading thumbnail for fileId=$fileId remoteFileId=$remoteFileId...")
+                    val result = repository.downloadThumbnail(token, remoteFileId, destFile)
 
-                if (result.isSuccess && destFile.exists() && destFile.length() > 0L) {
-                    database.fileDao().updateThumbnailLocalPath(fileId, destFile.absolutePath)
-                    _thumbnailUpdatedFlow.tryEmit(fileId)
-                    Log.i(TAG, "Thumbnail downloaded successfully for fileId=$fileId (${destFile.length()} bytes)")
-                } else {
-                    Log.w(TAG, "Failed to download thumbnail for fileId=$fileId: ${result.exceptionOrNull()?.message}")
+                    if (result.isSuccess && destFile.exists() && destFile.length() > 0L) {
+                        resolvedFileCache[fileId] = destFile
+                        missingLocalSet.remove(fileId)
+                        database.fileDao().updateThumbnailLocalPath(fileId, destFile.absolutePath)
+                        _thumbnailUpdatedFlow.tryEmit(fileId)
+                        Log.i(TAG, "Thumbnail downloaded successfully for fileId=$fileId (${destFile.length()} bytes)")
+                    } else {
+                        Log.w(TAG, "Failed to download thumbnail for fileId=$fileId: ${result.exceptionOrNull()?.message}")
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error downloading thumbnail for fileId=$fileId", e)
@@ -143,6 +169,9 @@ class ThumbnailManager(
                 null
             }
         } ?: return Result.failure(Exception("Could not extract frame or thumbnail from source file."))
+
+        resolvedFileCache[file.id] = thumbFile
+        missingLocalSet.remove(file.id)
 
         // Upload to Telegram
         val token = credentialsManager.getBotToken()

@@ -22,6 +22,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,6 +58,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -89,6 +91,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
@@ -134,13 +137,72 @@ import java.io.File
 import java.util.Locale
 
 /**
- * In-memory session-only preferences for selected audio and subtitle language.
- * Persists across videos during the current app viewing session without writing to disk.
+ * In-memory session-only preferences for selected audio and subtitle language and playback speed.
+ * Persists across videos during the current app viewing session without writing media to disk.
  */
 private object SessionMediaTrackPreferences {
     var preferredAudioLanguage: String? = null
     var preferredSubtitleLanguage: String? = null
     var subtitlesDisabled: Boolean = false
+    var preferredPlaybackSpeed: Float = 1.0f
+}
+
+private val PLAYBACK_SPEED_OPTIONS = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+
+internal fun formatPlaybackSpeedLabel(speed: Float): String {
+    return when {
+        speed == 1.0f -> "1x"
+        speed == 2.0f -> "2x"
+        speed == 0.5f -> "0.5x"
+        speed == 1.5f -> "1.5x"
+        else -> "${speed}x"
+    }
+}
+
+/**
+ * Lightweight persistent store for per-file streaming playback resume positions (`positionMs`).
+ * Stores only `(fileId -> timestampMs)` in local SharedPreferences so reopening any video or
+ * audio file resumes where the user left off (resetting automatically on playback completion).
+ */
+internal object PlaybackPositionStore {
+    private const val PREFS_NAME = "televault_playback_positions"
+    private val memoryCache = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    fun getResumePositionMs(context: Context, fileId: String): Long {
+        memoryCache[fileId]?.let { return it }
+        return try {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val saved = prefs.getLong("pos_$fileId", 0L).coerceAtLeast(0L)
+            memoryCache[fileId] = saved
+            saved
+        } catch (_: Throwable) {
+            0L
+        }
+    }
+
+    fun savePosition(context: Context, fileId: String, positionMs: Long, durationMs: Long) {
+        try {
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            // Reset to 0 if near the beginning (< 2s) or near completion (>= 97% of duration)
+            val shouldClear = positionMs < 2_000L ||
+                (durationMs > 0L && positionMs >= (durationMs * 97L) / 100L)
+            if (shouldClear) {
+                memoryCache[fileId] = 0L
+                prefs.edit().remove("pos_$fileId").apply()
+            } else {
+                memoryCache[fileId] = positionMs
+                prefs.edit().putLong("pos_$fileId", positionMs).apply()
+            }
+        } catch (_: Throwable) {}
+    }
+
+    fun clearPosition(context: Context, fileId: String) {
+        try {
+            memoryCache[fileId] = 0L
+            val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().remove("pos_$fileId").apply()
+        } catch (_: Throwable) {}
+    }
 }
 
 /**
@@ -245,9 +307,14 @@ fun ZeroDownloadExoVideoPlayer(
     var scrubFraction by remember { mutableFloatStateOf(0f) }
     var playerError by remember { mutableStateOf<String?>(null) }
     var retryNonce by remember { mutableIntStateOf(0) }
-    var resumePositionOnRetryMs by remember { mutableLongStateOf(0L) }
+    var resumePositionOnRetryMs by remember(file.id) {
+        mutableLongStateOf(PlaybackPositionStore.getResumePositionMs(context, file.id))
+    }
     var resumePlayWhenReadyOnReload by remember { mutableStateOf(true) }
     var interactionTick by remember { mutableIntStateOf(0) }
+    var playbackSpeed by remember { mutableFloatStateOf(SessionMediaTrackPreferences.preferredPlaybackSpeed) }
+    var doubleTapSeekOverlaySide by remember { mutableStateOf<Int?>(null) } // -1 = left (-10s), +1 = right (+10s)
+    var doubleTapTriggerTick by remember { mutableIntStateOf(0) }
 
     // Audio & Subtitle track state
     var audioTracks by remember(file.id) { mutableStateOf<List<MediaTrackOption>>(emptyList()) }
@@ -260,6 +327,7 @@ fun ZeroDownloadExoVideoPlayer(
     // Bottom sheet visibility
     var isAudioSheetOpen by remember { mutableStateOf(false) }
     var isSubtitleSheetOpen by remember { mutableStateOf(false) }
+    var isSpeedSheetOpen by remember { mutableStateOf(false) }
 
     var playerOpenElapsedMs by remember(file.id) { mutableLongStateOf(SystemClock.elapsedRealtime()) }
 
@@ -280,6 +348,7 @@ fun ZeroDownloadExoVideoPlayer(
             .build()
             .apply {
                 playWhenReady = true
+                setPlaybackSpeed(SessionMediaTrackPreferences.preferredPlaybackSpeed)
                 // Apply session-level audio/subtitle preferences initially
                 val paramsBuilder = trackSelectionParameters.buildUpon()
                 SessionMediaTrackPreferences.preferredAudioLanguage?.let {
@@ -443,6 +512,7 @@ fun ZeroDownloadExoVideoPlayer(
                 } else if (playbackState == Player.STATE_ENDED) {
                     isPlaying = false
                     seekingUncachedChunkIndex = null
+                    PlaybackPositionStore.clearPosition(context, file.id)
                     onSetOverlayControls(true)
                 }
             }
@@ -553,6 +623,12 @@ fun ZeroDownloadExoVideoPlayer(
             if (event == Lifecycle.Event.ON_STOP) {
                 val activity = context as? Activity
                 if (activity?.isChangingConfigurations != true) {
+                    PlaybackPositionStore.savePosition(
+                        context = context,
+                        fileId = file.id,
+                        positionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
+                        durationMs = durationMs
+                    )
                     exoPlayer.pause()
                     exoPlayer.stop()
                     streamManager.wipeAllEphemeralBuffers("App backgrounded during video playback")
@@ -563,6 +639,12 @@ fun ZeroDownloadExoVideoPlayer(
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
+            PlaybackPositionStore.savePosition(
+                context = context,
+                fileId = file.id,
+                positionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
+                durationMs = durationMs
+            )
             exoPlayer.removeListener(listener)
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
@@ -576,7 +658,17 @@ fun ZeroDownloadExoVideoPlayer(
         }
     }
 
+    // Auto-clear the double-tap ±10s visual indicator after 500ms
+    LaunchedEffect(doubleTapTriggerTick) {
+        if (doubleTapSeekOverlaySide != null) {
+            delay(500L)
+            doubleTapSeekOverlaySide = null
+        }
+    }
+
     // Real-time 100ms polling for current time (0:00), duration, and buffered position on seek bar
+    // plus periodic resume position persistence every ~2s
+    var savePositionTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(exoPlayer) {
         while (true) {
             val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
@@ -593,6 +685,10 @@ fun ZeroDownloadExoVideoPlayer(
             if (exoPlayer.isPlaying && pos > 0L) {
                 hasRenderedFirstFrame = true
                 seekingUncachedChunkIndex = null
+                savePositionTick++
+                if (savePositionTick % 20 == 0) {
+                    PlaybackPositionStore.savePosition(context, file.id, pos, durationMs)
+                }
             }
             val pendingSeekChunk = seekingUncachedChunkIndex
             if (pendingSeekChunk != null && streamManager.isChunkCachedInRam(file.id, pendingSeekChunk) && exoPlayer.playbackState == Player.STATE_READY) {
@@ -609,7 +705,7 @@ fun ZeroDownloadExoVideoPlayer(
             seekingUncachedChunkIndex != null
         )
 
-    val isAnySheetOpen = isAudioSheetOpen || isSubtitleSheetOpen
+    val isAnySheetOpen = isAudioSheetOpen || isSubtitleSheetOpen || isSpeedSheetOpen
 
     // Keep controls visible while paused, buffering, scrubbing, on error, or while a bottom sheet is open;
     // auto-hide controls and top bar after 3 seconds of active playback
@@ -690,10 +786,6 @@ fun ZeroDownloadExoVideoPlayer(
                         setApplyEmbeddedFontSizes(true)
                     }
                     player = exoPlayer
-                    setOnClickListener {
-                        interactionTick++
-                        onToggleOverlayControls()
-                    }
                 }
             },
             update = { view ->
@@ -703,6 +795,89 @@ fun ZeroDownloadExoVideoPlayer(
             },
             modifier = Modifier.fillMaxSize()
         )
+
+        // Interactive Gesture Surface:
+        // - Single-tap anywhere: toggle overlay controls
+        // - Double-tap left 38%: seek back 10s (-10s)
+        // - Double-tap right 38%: seek forward 10s (+10s)
+        // - Double-tap center 24%: toggle Play/Pause
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(exoPlayer, durationMs) {
+                    detectTapGestures(
+                        onTap = {
+                            interactionTick++
+                            onToggleOverlayControls()
+                        },
+                        onDoubleTap = { offset ->
+                            val widthPx = size.width.toFloat().coerceAtLeast(1f)
+                            val xFraction = offset.x / widthPx
+                            interactionTick++
+                            when {
+                                xFraction < 0.38f -> {
+                                    val target = (exoPlayer.currentPosition - 10_000L).coerceAtLeast(0L)
+                                    doubleTapSeekOverlaySide = -1
+                                    doubleTapTriggerTick++
+                                    performSeekToMs(target)
+                                }
+                                xFraction > 0.62f -> {
+                                    val maxDur = if (durationMs > 0L) durationMs else Long.MAX_VALUE
+                                    val target = (exoPlayer.currentPosition + 10_000L).coerceAtMost(maxDur)
+                                    doubleTapSeekOverlaySide = 1
+                                    doubleTapTriggerTick++
+                                    performSeekToMs(target)
+                                }
+                                else -> {
+                                    if (exoPlayer.isPlaying) {
+                                        exoPlayer.pause()
+                                    } else {
+                                        exoPlayer.play()
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+                .testTag("video_gesture_surface")
+        )
+
+        // Minimal Double-Tap ±10s Seek Pill Feedback (fades out after 500ms)
+        AnimatedVisibility(
+            visible = doubleTapSeekOverlaySide != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(
+                    if (doubleTapSeekOverlaySide == -1) Alignment.CenterStart else Alignment.CenterEnd
+                )
+                .padding(horizontal = 36.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                    .testTag("video_double_tap_seek_badge")
+            ) {
+                Icon(
+                    imageVector = if (doubleTapSeekOverlaySide == -1) Icons.Default.Replay10 else Icons.Default.Forward10,
+                    contentDescription = null,
+                    tint = colors.teal,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = if (doubleTapSeekOverlaySide == -1) "-10s" else "+10s",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = NumericMonoFont
+                )
+            }
+        }
 
         // Buffering UI: Show ONLY a centered circular loading spinner while waiting for data
         if (isWaitingForData) {
@@ -975,11 +1150,36 @@ fun ZeroDownloadExoVideoPlayer(
                         }
                     }
 
-                    // Right group: Subtitles (CC) + Fullscreen
+                    // Right group: Speed + Subtitles (CC) + Fullscreen
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .height(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (playbackSpeed != 1.0f) colors.teal.copy(alpha = 0.22f)
+                                    else Color.White.copy(alpha = 0.10f)
+                                )
+                                .clickable {
+                                    interactionTick++
+                                    isSpeedSheetOpen = true
+                                }
+                                .padding(horizontal = 8.dp)
+                                .testTag("preview_video_speed_button"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = formatPlaybackSpeedLabel(playbackSpeed),
+                                color = if (playbackSpeed != 1.0f) colors.teal else Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = NumericMonoFont
+                            )
+                        }
+
                         IconButton(
                             onClick = {
                                 interactionTick++
@@ -1028,6 +1228,24 @@ fun ZeroDownloadExoVideoPlayer(
                 }
             }
         }
+    }
+
+    // Playback Speed Bottom Sheet (works in both portrait and fullscreen landscape)
+    if (isSpeedSheetOpen) {
+        PlaybackSpeedBottomSheet(
+            currentSpeed = playbackSpeed,
+            onSelectSpeed = { newSpeed ->
+                playbackSpeed = newSpeed
+                SessionMediaTrackPreferences.preferredPlaybackSpeed = newSpeed
+                exoPlayer.setPlaybackSpeed(newSpeed)
+                isSpeedSheetOpen = false
+                interactionTick++
+            },
+            onDismiss = {
+                isSpeedSheetOpen = false
+                interactionTick++
+            }
+        )
     }
 
     // Audio Track Selection Bottom Sheet (works in both portrait and fullscreen landscape)
@@ -1575,7 +1793,11 @@ fun ZeroDownloadExoAudioPlayerCard(
     var scrubFraction by remember { mutableFloatStateOf(0f) }
     var playerError by remember { mutableStateOf<String?>(null) }
     var retryNonce by remember { mutableIntStateOf(0) }
-    var resumePositionOnRetryMs by remember { mutableLongStateOf(0L) }
+    var resumePositionOnRetryMs by remember(file.id) {
+        mutableLongStateOf(PlaybackPositionStore.getResumePositionMs(context, file.id))
+    }
+    var playbackSpeed by remember { mutableFloatStateOf(SessionMediaTrackPreferences.preferredPlaybackSpeed) }
+    var isSpeedSheetOpen by remember { mutableStateOf(false) }
 
     val exoPlayer = remember(file.id, chunks.size, isFullFileDownloaded) {
         val loadControl = DefaultLoadControl.Builder()
@@ -1594,6 +1816,7 @@ fun ZeroDownloadExoAudioPlayerCard(
             .build()
             .apply {
                 playWhenReady = true
+                setPlaybackSpeed(SessionMediaTrackPreferences.preferredPlaybackSpeed)
             }
     }
 
@@ -1652,6 +1875,7 @@ fun ZeroDownloadExoAudioPlayerCard(
                 } else if (playbackState == Player.STATE_ENDED) {
                     isPlaying = false
                     seekingUncachedChunkIndex = null
+                    PlaybackPositionStore.clearPosition(context, file.id)
                 }
             }
 
@@ -1678,6 +1902,12 @@ fun ZeroDownloadExoAudioPlayerCard(
             if (event == Lifecycle.Event.ON_STOP) {
                 val activity = context as? Activity
                 if (activity?.isChangingConfigurations != true) {
+                    PlaybackPositionStore.savePosition(
+                        context = context,
+                        fileId = file.id,
+                        positionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
+                        durationMs = durationMs
+                    )
                     exoPlayer.pause()
                     exoPlayer.stop()
                     streamManager.wipeAllEphemeralBuffers("App backgrounded during audio playback")
@@ -1688,6 +1918,12 @@ fun ZeroDownloadExoAudioPlayerCard(
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
+            PlaybackPositionStore.savePosition(
+                context = context,
+                fileId = file.id,
+                positionMs = exoPlayer.currentPosition.coerceAtLeast(0L),
+                durationMs = durationMs
+            )
             exoPlayer.removeListener(listener)
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
@@ -1696,6 +1932,7 @@ fun ZeroDownloadExoAudioPlayerCard(
         }
     }
 
+    var saveAudioPosTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(exoPlayer) {
         while (true) {
             val pos = exoPlayer.currentPosition.coerceAtLeast(0L)
@@ -1711,6 +1948,10 @@ fun ZeroDownloadExoAudioPlayerCard(
             }
             if (exoPlayer.isPlaying && pos > 0L) {
                 seekingUncachedChunkIndex = null
+                saveAudioPosTick++
+                if (saveAudioPosTick % 20 == 0) {
+                    PlaybackPositionStore.savePosition(context, file.id, pos, durationMs)
+                }
             }
             delay(100L)
         }
@@ -1905,7 +2146,7 @@ fun ZeroDownloadExoAudioPlayerCard(
 
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(18.dp)
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     IconButton(
                         onClick = {
@@ -1977,7 +2218,118 @@ fun ZeroDownloadExoAudioPlayerCard(
                             modifier = Modifier.size(28.dp)
                         )
                     }
+
+                    Box(
+                        modifier = Modifier
+                            .height(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (playbackSpeed != 1.0f) colors.teal.copy(alpha = 0.18f)
+                                else colors.surfaceHi
+                            )
+                            .clickable {
+                                isSpeedSheetOpen = true
+                            }
+                            .padding(horizontal = 10.dp)
+                            .testTag("preview_audio_speed_button"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = formatPlaybackSpeedLabel(playbackSpeed),
+                            color = if (playbackSpeed != 1.0f) colors.teal else colors.text,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = NumericMonoFont
+                        )
+                    }
                 }
+            }
+        }
+    }
+
+    if (isSpeedSheetOpen) {
+        PlaybackSpeedBottomSheet(
+            currentSpeed = playbackSpeed,
+            onSelectSpeed = { newSpeed ->
+                playbackSpeed = newSpeed
+                SessionMediaTrackPreferences.preferredPlaybackSpeed = newSpeed
+                exoPlayer.setPlaybackSpeed(newSpeed)
+                isSpeedSheetOpen = false
+            },
+            onDismiss = {
+                isSpeedSheetOpen = false
+            }
+        )
+    }
+}
+
+@kotlin.OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlaybackSpeedBottomSheet(
+    currentSpeed: Float,
+    onSelectSpeed: (Float) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val colors = LocalTeleVaultColors.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = colors.surface,
+        contentColor = colors.text,
+        modifier = Modifier.widthIn(max = 540.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 20.dp)
+                .verticalScroll(rememberScrollState())
+                .testTag("playback_speed_bottom_sheet")
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.padding(bottom = 12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Speed,
+                    contentDescription = null,
+                    tint = colors.teal,
+                    modifier = Modifier.size(22.dp)
+                )
+                Column {
+                    Text(
+                        text = "Playback Speed",
+                        color = colors.text,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Adjust streaming playback rate without rebuffering",
+                        color = colors.textDim,
+                        fontSize = 10.sp
+                    )
+                }
+            }
+
+            HorizontalDivider(color = colors.line)
+            Spacer(modifier = Modifier.height(10.dp))
+
+            PLAYBACK_SPEED_OPTIONS.forEachIndexed { index, speed ->
+                val isSelected = kotlin.math.abs(currentSpeed - speed) < 0.01f
+                val label = if (speed == 1.0f) "1.0x (Normal)" else "${speed}x"
+                TrackSelectionRow(
+                    title = label,
+                    subtitle = null,
+                    isSelected = isSelected,
+                    isEnabled = true,
+                    onClick = { onSelectSpeed(speed) },
+                    testTag = "playback_speed_option_$index"
+                )
+                Spacer(modifier = Modifier.height(6.dp))
             }
         }
     }

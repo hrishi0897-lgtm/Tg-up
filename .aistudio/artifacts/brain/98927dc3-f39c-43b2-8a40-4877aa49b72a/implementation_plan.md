@@ -1,74 +1,114 @@
-# Fast First-Frame Streaming Engine & Minimal Spinner Player UI
+# End-to-End Performance, Streaming & UX Polish Plan
 
-This update accelerates video and audio playback start-up so the first frame renders as quickly as possible while cleaning up the player UI to show only a minimal circular spinner during buffering and removing RAM/buffer text from the player screen. All internal 36 MB RAM sliding-window accounting, zero-disk guarantees, Details-first navigation, fullscreen, audio track switching, and subtitle features remain intact.
+This upgrade accelerates streaming startup and mid-stream seeking, adds minimal high-utility media controls (playback speed, double-tap 10s seek gestures, and per-file resume memory), speeds up multi-chunk file uploads and downloads, and makes vault browsing and thumbnail loading instantaneous.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> - **Spinner-Only Buffering & Clean Player Chrome**:
->   - Replaces the `"Buffering Chunk X/Y in RAM..."` card and `"X/36 MB RAM"` text over the video with a clean centered circular loading spinner (`CircularProgressIndicator`) shown **only** while the player is waiting for data (before the first frame renders or when seeking to unbuffered data).
->   - Removes the RAM status pill from the top bar and removes the `"X/36 MB RAM • Buf X%"` text from the player controls while keeping internal 36 MB RAM accounting and wipe guarantees active.
-> - **Sub-Second First Frame Architecture**:
->   - **Parallel Start (`Chunk 0` + `Last Chunk`)**: Immediately upon opening the player, resolves `getFile` links and begins streaming both the **first chunk** (header/initial frames) and the **last chunk** (MP4 `moov` atom / MKV `Cues` index) in parallel, while warming `getFile` links for the next 2 chunks (`chunk 1` and `chunk 2`) in the background.
->   - **Progressive Partial Reads & HTTP Range (`2–4 MB` Window)**: Satisfies `ExoPlayer` reads as soon as the requested bytes arrive rather than waiting for an entire 18 MB chunk to finish. Uses HTTP `Range` requests (`2–4 MB` read-ahead window) against the Telegram file URL, and if the server returns `200 OK` (ignoring `Range`), streams the chunk progressively in RAM and unblocks `ExoPlayer` reads immediately as bytes arrive.
->   - **Random-Access Progressive AES-CTR Decryption (GCM Counter Offset)**: Because AES-256-GCM encrypts payload bytes using AES-CTR starting at counter block `J_0 + 2` (for a standard 12-byte IV where `J_0 = IV || 0x00000001`), any arbitrary byte range inside an encrypted chunk can be decrypted on the fly using `AES/CTR/NoPadding` by reading the 12-byte IV header and computing the 16-byte counter block for `blockIndex = 2 + (plaintextOffset / 16)`. When a full encrypted chunk completes in RAM, non-blocking AES-GCM tag verification is performed without delaying the first frame.
->   - **Shared HTTP/2 + Keep-Alive `OkHttpClient`**: Reuses a single shared `OkHttpClient` configured with `Protocol.HTTP_2`, `Protocol.HTTP_1_1`, and a persistent `ConnectionPool` across all Bot API and file stream requests.
->   - **Fast `LoadControl` Thresholds**: Configures `bufferForPlaybackMs = 500`, `bufferForPlaybackAfterRebufferMs = 1500`, `minBufferMs = 2000`, and `maxBufferMs = 8000`.
->   - **`StreamTiming` Logcat Instrumentation**: Logs `Log.d("StreamTiming", ...)` measurements for link resolution latency, time to first byte of chunk 1, progressive decryption time, and time to first rendered frame.
+> All four improvement tracks and media player enhancements selected during clarification are included below while strictly preserving your Phase 1 invariants:
+> - **Zero-Download RAM-Only Rule**: Media streaming remains strictly capped within the 36 MB RAM sliding window (`ByteArray.fill(0)` on eviction, player exit, and `ON_STOP`).
+> - **Details-First Flow with 0.0 MB RAM**: Opening the Details screen never downloads or decrypts chunk bytes (`allocatedRamBytes == 0`). Only lightweight `getFile` URL metadata strings are pre-resolved in the background so tapping **Play** skips the initial Bot API round-trip.
+> - **Minimal Spinner-Only Player UI**: The video surface keeps the clean centered `CircularProgressIndicator` without any RAM pill or chunk text overlays.
+
+- **Confirmed Decision 1 (Pre-Resolve Links on Details Screen)**: When a video or audio file's Details screen opens, the app resolves the Telegram `getFile` download URLs for Chunk 0, the Last Chunk, and Chunk 1 in the background without downloading any media payload bytes (`0.0 MB` RAM used). When the user taps **Play**, HTTP byte-range streaming starts immediately.
+- **Confirmed Decision 2 (Minimal Speed Selector, Double-Tap 10s Seek & Resume Position)**: Add a compact `1.0x` playback speed selector (`0.5x` – `2.0x`), left/right double-tap `±10s` seek gestures on the video surface, and automatic per-file playback position memory—while keeping the player chrome minimal and uncluttered.
+- **Confirmed Decision 3 (Transfer Pipeline Acceleration)**: Overlap next-chunk preparation/encryption during uploads and use bounded concurrent chunk workers + pre-resolved `getFile` URLs during full-file downloads.
+- **Confirmed Decision 4 (Vault Browser & Thumbnail Responsiveness)**: Add an in-memory thumbnail lookup cache (`ConcurrentHashMap`) to eliminate `File.exists()` disk I/O on the main thread during scroll, and wire `ThumbnailManager.thumbnailUpdatedFlow` into the Vault list/grid and Details screen so thumbnails appear live as soon as they finish fetching.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Eliminates the multi-second wait for full 18 MB chunk downloads and sequential MP4/MKV index fetches before playback begins, while decluttering the player UI.
-- **Key Value**: Delivers near-instant first-frame video rendering and responsive seeking while strictly preserving the 36 MB RAM-only zero-download security model.
+- **What It Does**: Eliminates network round-trip dead time before the first video frame, makes rapid scrubbing and seeking responsive, remembers where you left off in every video/audio file, speeds up large multi-chunk transfers, and ensures smooth 60fps scrolling in the vault browser.
+- **Target Audience / Persona**: Privacy-conscious power users streaming large encrypted MKV/MP4 videos and managing multi-gigabyte cloud vaults backed by Telegram.
+- **Key Value**: Sub-second time-to-first-frame after tapping Play, effortless one-handed playback navigation, faster bulk transfers, and zero UI jank when browsing large folders.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-- **Clean Player Overlay**:
-  - **Buffering State**: Displays only a centered `CircularProgressIndicator` over the video canvas when waiting for initial frames or unbuffered seek data; hides immediately once playback continues.
-  - **Top Bar**: Displays the Back button, file name, file size, encryption badge, and Details info button (no RAM pill on the player/preview top bar).
-  - **Bottom Player Controls**: Displays the dual-layer seek bar (showing active and buffered position visually), current time (`0:00`) on the left, total duration on the right, and the transport/track buttons below (no `"X/36 MB RAM • Buf X%"` label).
+- **Key User Flows**:
+  1. **Zero-Latency Play from Details Screen**:
+     - User taps a video or audio item in the Vault -> Details screen opens immediately (`0.0 MB` RAM allocated).
+     - In the background, lightweight `getFile` path strings for the first, last, and second chunks are resolved and cached in `resolvedLinkCache`.
+     - User taps the center **Play** button -> `ExoPlayer` immediately opens the pre-resolved HTTP/2 URLs without waiting for `getFile` RPC calls, rendering the first frame significantly faster.
+  2. **Minimal Player Controls & Gestures**:
+     - **Double-Tap Edge Seek**: Double-tapping the left third of the video seeks back 10 seconds (`-10s`); double-tapping the right third seeks forward 10 seconds (`+10s`) with a subtle, brief visual badge fade, while single-tapping anywhere toggles the control overlay as before.
+     - **Playback Speed Chip**: A compact speed button (`1x`, `1.25x`, `1.5x`, `2x`, etc.) in the player controls opens a clean bottom sheet (matching the Audio/Subtitle sheet style) to switch playback speed immediately on both video and audio players.
+     - **Automatic Per-File Resume**: Leaving a video or audio stream saves the current timestamp (`positionMs`) for that `fileId`. Re-pressing Play automatically seeks to the saved timestamp (unless the file was already completed past 97%, in which case it starts fresh from `0:00`).
+  3. **Live Vault Thumbnails & Smooth Scrolling**:
+     - Scrolling through hundreds of files in Grid or List view queries an O(1) in-memory thumbnail path cache instead of hitting the filesystem on every frame.
+     - When cloud thumbnails finish downloading in the background, the corresponding Vault card and Details preview crossfade from the category icon to the real thumbnail automatically.
+
+- **Visual Identity & Theme**:
+  - Preserves the **Obsidian Vault** dark/light aesthetic and reduced `-2sp` typography hierarchy across all screens and bottom sheets.
+  - Double-tap seek feedback uses a translucent pill indicator (`Color.Black.copy(alpha = 0.55f)`) with a 450ms fade animation so it never clutters the video frame.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Progressive Chunk Buffer + Range Read-Ahead (`3 MB` Window)**
-  - *Chosen Approach*: Maintain per-chunk progressive buffers in the 36 MB RAM window. When `ExoPlayer` requests bytes at `offsetInChunk`, if those bytes are already present in the progressive buffer, return them immediately. Otherwise, issue an HTTP `Range` request covering the needed range plus a `3 MB` read-ahead window (or stream progressively from byte 0 if `Range` is not honored), notifying waiting reader coroutines as each `32 KB` network slice arrives.
-  - *Why*: `ExoPlayer` typically needs only the first `256 KB – 1 MB` of Chunk 0 plus the tail index of the last chunk (`moov` / `Cues`) to render the first video frame. Returning partial reads immediately cuts startup latency by 80–90%.
-- **Decision 2: On-the-Fly AES-CTR Decryption with GCM Counter Derivation**
-  - *Chosen Approach*: For AES-256-GCM encrypted chunks (`[12-byte IV][Ciphertext][16-byte Tag]`), cache the 12-byte IV as soon as the first 12 bytes of the chunk are fetched. Decrypt any arbitrary plaintext slice `[offset, offset + length)` directly in RAM using `AES/CTR/NoPadding` initialized with counter block `IV (12 bytes) || bigEndianInt32(2 + (offset / 16))`, discarding the initial `offset % 16` keystream bytes. Run full `AES/GCM/NoPadding` tag verification asynchronously once a full chunk finishes downloading without blocking frame rendering.
-  - *Why*: Standard `AES/GCM/NoPadding` (`cipher.doFinal`) requires the entire 18 MB chunk and trailing 16-byte tag before outputting a single byte of plaintext. Mathematical equivalence of GCM's CTR mode (NIST SP 800-38D, counter starting at `2` for 96-bit IVs) enables instant random-access range decryption in RAM.
+- **Decision 1: Metadata-Only Link Warm-Up on Details Screen**
+  - *Chosen Approach*: Add `preResolveLinksOnly(file, chunks)` to `EphemeralStreamManager`. Call it when `FilePreviewScreen` loads chunk metadata on the Details screen.
+  - *Why*: Calling Telegram's `getFile` endpoint only returns a JSON object with `file_path` (~100 bytes) and allocates zero media buffer RAM (`allocatedRamBytes` stays strictly `0L`), honoring the Details-screen zero-buffer requirement while shaving 300–600 ms off Play startup.
+  - *Alternatives Considered*: Pre-fetching Chunk 0 bytes on the Details screen—rejected because it violates the strict rule that no media bytes may be fetched or decrypted before Play is pressed.
+
+- **Decision 2: Superseded Seek Cancellation & Adaptive Boundary Prefetch**
+  - *Chosen Approach*: When `ExoPlayer` issues a new mid-chunk HTTP Range read outside the active range window, immediately cancel any in-flight `rangeJob` on that chunk and cancel stale background chunk prefetches outside `[activeChunkIndex, activeChunkIndex + 1]`. Trigger next-chunk prefetch when playback or read offset passes 60% of the active chunk.
+  - *Why*: Prevents competing HTTP streams from saturating bandwidth when the user scrubs across the timeline.
+
+- **Decision 3: Bounded Concurrent Download Workers & Pipelined Upload Preparation**
+  - *Chosen Approach*: In `TransferManager`, pre-resolve `getFile` URLs in parallel batches and download up to 3 chunks concurrently during full-file downloads (writing each to its dedicated `chunk_N.part` file before sequential SHA-256 verification and reassembly). For uploads, prepare/encrypt chunk `N+1` in a background coroutine while chunk `N` is uploading.
+  - *Why*: Maximizes throughput on fast connections while respecting Telegram Bot API rate limits and keeping disk cache bounded.
 
 ---
 
 ## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
+### Architecture & Component Diagram
+
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        ZeroDownloadExoVideoPlayer                            │
-│  • LoadControl: min=2000ms, max=8000ms, playback=500ms, rebuffer=1500ms      │
-│  • UI: Centered CircularProgressIndicator only while waiting for data        │
-│  • Logs: Log.d("StreamTiming", "firstRenderedFrameMs=...")                   │
-└──────────────────────────────────────┬───────────────────────────────────────┘
-                                       │
-                                       ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                          EphemeralStreamManager                              │
-│                                                                              │
-│  1. warmStartSession(file, chunks):                                          │
-│     ├── Parallel: resolve link + start progressive stream for FIRST chunk    │
-│     ├── Parallel: resolve link + start progressive stream for LAST chunk     │
-│     └── Background: pre-resolve getFile links for chunk 1 and chunk 2        │
-│                                                                              │
-│  2. Progressive RAM Chunk Buffer (36 MB Sliding Window Cap):                 │
-│     ├── HTTP Range request (3 MB read-ahead) via shared HTTP/2 OkHttpClient  │
-│     ├── Progressive fallback if server responds 200 OK instead of 206        │
-│     ├── AES-CTR range decryption (counter = 2 + offset/16 for 12-byte IV)    │
-│     ├── Satisfies ExoPlayer DataSource.read() as soon as partial bytes exist │
-│     └── Background prefetch of next chunk (chunkIndex + 1) during playback   │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                         FilePreviewScreen (Details)                        │
+│  • Displays metadata + actions (0.0 MB RAM)                                │
+│  • Calls streamManager.preResolveLinksOnly(file, chunks) in background     │
+└─────────────────────────────────────┬──────────────────────────────────────┘
+                                      │ User taps center Play button
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│            ZeroDownloadExoVideoPlayer / ZeroDownloadAudioPlayer            │
+│  • Restores saved resume position (PlaybackPositionStore)                  │
+│  • Left/Right Double-Tap ±10s Gesture + Center Single-Tap Controls Toggle  │
+│  • Compact Speed Selector (0.5x – 2.0x) + Audio & Subtitle Bottom Sheets   │
+│  • Centered Spinner-Only Buffering Indicator                               │
+└─────────────────────────────────────┬──────────────────────────────────────┘
+                                      │ Media3 DataSource reads
+                                      ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│               EphemeralStreamManager (36 MB RAM Sliding Window)            │
+│  • Instant HTTP/2 Range requests using pre-resolved Telegram file_path     │
+│  • Progressive AES-CTR range decryption (counter = 2 + plainOffset / 16)   │
+│  • Immediate cancellation of superseded range jobs on rapid seek           │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│                    TransferManager & ThumbnailManager                      │
+│  • Downloads: 3x concurrent chunk workers + batch getFile link warm-up     │
+│  • Uploads: Pipelined next-chunk encryption/hashing during network upload  │
+│  • Thumbnails: O(1) in-memory path cache + SharedFlow live UI updates      │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Interactive Component & State Mapping
+
+1. **Pre-Resolve Links & Fast Seek (`EphemeralStreamManager`)**:
+   - `preResolveLinksOnly(file, chunks)` resolves `getFile` links for indices `0`, `lastIndex`, `1`, and `2` in parallel and caches them in `resolvedLinkCache` without creating any `ProgressiveChunkState` or allocating any byte arrays.
+   - `readChunkBytes(...)` cancels any prior `rangeJob` immediately when a new range offset is requested and starts `prefetchNextChunkInBackground` once `chunkOffset >= expectedSize * 3 / 5` (60%).
+2. **Player Controls, Gestures & Resume Memory (`ZeroDownloadMediaPlayers`)**:
+   - `PlaybackPositionStore` persists per-file playback timestamps (`positionMs` and `durationMs`) in lightweight local preferences and restores them when `ExoPlayer` prepares the media source.
+   - Video surface gesture detector distinguishes left-third double-tap (`seekBack 10s`), right-third double-tap (`seekForward 10s`), and single-tap (`onToggleOverlayControls()`).
+   - Speed selector updates `exoPlayer.setPlaybackSpeed(speed)` and `MediaPlayer` `PlaybackParams` live without restarting playback.
+3. **Transfer & Thumbnail Acceleration (`TransferManager`, `ThumbnailManager`, `HomeScreen`, `FilePreviewScreen`)**:
+   - `ThumbnailManager` maintains a thread-safe `resolvedPathCache: ConcurrentHashMap<String, File>` and bounds concurrent thumbnail downloads via a `Semaphore(4)` so visible items load first.
+   - `HomeScreen` and `FilePreviewScreen` collect `thumbnailManager.thumbnailUpdatedFlow` to trigger instant recomposition when a thumbnail arrives.
+   - `TransferManager` pipelines chunk preparation during uploads and uses bounded parallel chunk workers (`Semaphore(3)`) for full-file downloads.
